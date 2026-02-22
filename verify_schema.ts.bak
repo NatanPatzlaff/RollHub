@@ -1,0 +1,80 @@
+
+import User from '#models/user'
+import Character from '#models/character'
+import Campaign from '#models/campaign'
+import string from '@adonisjs/core/helpers/string'
+
+async function run() {
+    console.log('Starting verification...')
+
+    // 1. Create Users
+    const gmEmail = `gm_${string.random(5)}@example.com`
+    const playerEmail = `player_${string.random(5)}@example.com`
+
+    const gm = await User.create({ email: gmEmail, password: 'password', fullName: 'GM User' })
+    const player = await User.create({ email: playerEmail, password: 'password', fullName: 'Player User' })
+
+    console.log(`Created Users: GM (${gm.id}), Player (${player.id})`)
+
+    // 2. Create Campaign (GM)
+    const campaign = await Campaign.create({
+        gameMasterId: gm.id,
+        name: 'Epic Adventure',
+        description: 'A test campaign',
+    })
+    console.log(`Created Campaign: ${campaign.id}`)
+
+    // 3. Create Character (Player)
+    const character = await Character.create({
+        userId: player.id,
+        name: 'Heroic Warrior',
+        data: { str: 18, dex: 12 },
+    })
+    console.log(`Created Character: ${character.id}`)
+
+    // 4. Verify Relationships (Before Join)
+    await gm.load('campaignsMastered')
+    if (gm.campaignsMastered.length !== 1) throw new Error('GM should map to 1 campaign')
+
+    await player.load('characters')
+    if (player.characters.length !== 1) throw new Error('Player should map to 1 character')
+
+    // 5. Join Campaign
+    await campaign.related('players').attach({
+        [player.id]: { role: 'PLAYER' }
+    })
+    console.log('Player joined campaign')
+
+    // 6. Assign Character to Campaign
+    // The pivot table has id, campaign_id, user_id, character_id.
+    // We need to update the pivot row.
+    // Adonis sync/attach might create new rows. Let's use the query builder for the pivot update to be safe and specific,
+    // or simple detach/attach with extra data.
+    // easier: just detach and attach with character_id
+    await campaign.related('players').detach([player.id])
+    await campaign.related('players').attach({
+        [player.id]: { role: 'PLAYER', character_id: character.id }
+    })
+    console.log('Character assigned to campaign')
+
+    // 7. Verify GM sees Character
+    // We need to reload the campaign and its relations
+    // Specifically, we defined `characters` relation on Campaign model using pivot
+    const campaignCheck = await Campaign.findOrFail(campaign.id)
+    await campaignCheck.load('characters')
+
+    if (campaignCheck.characters.length === 1 && campaignCheck.characters[0].id === character.id) {
+        console.log('SUCCESS: GM sees the specific character in the campaign!')
+    } else {
+        console.error('FAILURE: GM does not see the character.')
+        console.log(JSON.stringify(campaignCheck.characters, null, 2))
+    }
+}
+
+run().then(() => {
+    console.log('Done.')
+    process.exit(0)
+}).catch((err) => {
+    console.error(err)
+    process.exit(1)
+})

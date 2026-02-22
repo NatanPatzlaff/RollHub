@@ -1,0 +1,107 @@
+﻿ÔØ» migrating database/migrations/1771450315283_create_characters_table
+[2K[1A[2K[GÔØ» error database/migrations/1771450315283_create_characters_table
+ÔØ» migrating database/migrations/1771450318659_create_campaigns_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771450321548_create_campaign_members_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455607816_create_classes_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455609610_create_origins_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455611545_create_skills_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455613565_create_abilities_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455615491_create_rituals_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455617619_create_items_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455686804_create_class_progressions_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455688875_create_origin_benefits_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455690859_create_trails_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455692887_create_trail_progressions_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455755060_create_character_attributes_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455757060_create_character_stats_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455759210_create_character_skills_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455761266_create_character_abilities_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455763276_create_character_rituals_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455765193_create_character_items_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771456855921_create_combats_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771456857499_create_combat_participants_table_v
+2
+[2K[1A[2K[1A[2K[GÔØ» migrating database/migrations/1771524634106_create_make_character_fields_nulla
+bles_table
+node : [ error ] create 
+table `characters` (`id` int 
+unsigned not null 
+auto_increment primary key, 
+`user_id` int unsigned, 
+`class_id` int unsigned, 
+`origin_id` int unsigned, 
+`trail_id` int unsigned 
+null, `nex` int default '5', 
+`xp` int default '0', `name` 
+varchar(255) not null, 
+`lore` text null, 
+`appearance` text null, 
+`created_at` timestamp not 
+null, `updated_at` timestamp 
+null) - Table 'characters' 
+already exists
+No linha:1 caractere:1
++ node ace migration:run > 
+migration_error.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: ([ error  
+   ] creat... already exis   
+ ts:String) [], RemoteExc    
+eption
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+          at Packet.asError (
+C:\Users\natan\Desktop\Escudo
+ do Mestre\Escudo do Mestre\e
+scudo-do-mestre-v2\node_modul
+es\mysql2\lib\packets\packet.
+js:739:17)
+          at Query.execute (C
+:\Users\natan\Desktop\Escudo 
+do Mestre\Escudo do Mestre\es
+cudo-do-mestre-v2\node_module
+s\mysql2\lib\commands\command
+.js:29:26)
+          at 
+Connection.handlePacket (C:\U
+sers\natan\Desktop\Escudo do 
+Mestre\Escudo do Mestre\escud
+o-do-mestre-v2\node_modules\m
+ysql2\lib\base\connection.js:
+508:34)
+          at 
+PacketParser.onPacket (C:\Use
+rs\natan\Desktop\Escudo do 
+Mestre\Escudo do Mestre\escud
+o-do-mestre-v2\node_modules\m
+ysql2\lib\base\connection.js:
+93:12)
+          at 
+PacketParser.executeStart (C:
+\Users\natan\Desktop\Escudo 
+do Mestre\Escudo do Mestre\es
+cudo-do-mestre-v2\node_module
+s\mysql2\lib\packet_parser.js
+:75:16)
+          at 
+Socket.<anonymous> (C:\Users\
+natan\Desktop\Escudo do 
+Mestre\Escudo do Mestre\escud
+o-do-mestre-v2\node_modules\m
+ysql2\lib\base\connection.js:
+100:25)
+          at Socket.emit 
+(node:events:518:28)
+          at addChunk (node:i
+nternal/streams/readable:561:
+12)
+          at 
+readableAddChunkPushByteMode 
+(node:internal/streams/readab
+le:512:3)
+          at Readable.push (n
+ode:internal/streams/readable
+:392:5)

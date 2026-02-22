@@ -1,0 +1,138 @@
+﻿[ success ] Dropped tables successfully
+[ info ] Upgrading migrations version from "1" to "2"
+ÔØ» migrating database/migrations/1771446254922_create_users_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771446254922_create_users_table
+ÔØ» migrating database/migrations/1771450318659_create_campaigns_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771450318659_create_campaigns_table
+ÔØ» migrating database/migrations/1771455607816_create_classes_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455607816_create_classes_table
+ÔØ» migrating database/migrations/1771455609610_create_origins_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455609610_create_origins_table
+ÔØ» migrating database/migrations/1771455611545_create_skills_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455611545_create_skills_table
+ÔØ» migrating database/migrations/1771455613565_create_abilities_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455613565_create_abilities_table
+ÔØ» migrating database/migrations/1771455615491_create_rituals_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455615491_create_rituals_table
+ÔØ» migrating database/migrations/1771455617619_create_items_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455617619_create_items_table
+ÔØ» migrating database/migrations/1771455686804_create_class_progressions_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455686804_create_class_progressions_table
+ÔØ» migrating database/migrations/1771455688875_create_origin_benefits_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455688875_create_origin_benefits_table
+ÔØ» migrating database/migrations/1771455690859_create_trails_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455690859_create_trails_table
+ÔØ» migrating database/migrations/1771455692887_create_trail_progressions_table
+[2K[1A[2K[GÔØ» migrated database/migrations/1771455692887_create_trail_progressions_table
+ÔØ» migrating database/migrations/1771455755060_create_character_attributes_table
+[2K[1A[2K[GÔØ» error database/migrations/1771455755060_create_character_attributes_table
+ÔØ» migrating database/migrations/1771455757060_create_character_stats_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455759210_create_character_skills_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455761266_create_character_abilities_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455763276_create_character_rituals_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455765193_create_character_items_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455766000_create_characters_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771455767000_create_campaign_members_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771456855921_create_combats_table
+[2K[1A[2K[GÔØ» migrating database/migrations/1771456857499_create_combat_participants_table_v
+2
+[2K[1A[2K[1A[2K[GÔØ» migrating database/migrations/1771524634106_create_make_character_fields_nulla
+bles_table
+node : [ error ] alter 
+table 
+`character_attributes` 
+add constraint `charact
+er_attributes_character
+_id_foreign` foreign 
+key (`character_id`) 
+references 
+`characters` (`id`) on 
+delete CASCADE - Can't 
+create table `escudo 
+do mestre`.`character_a
+ttributes` (errno: 150 
+"Foreign key 
+constraint is 
+incorrectly formed")
+No linha:1 caractere:1
++ node ace 
+migration:fresh > 
+migration_fresh3.txt 
+2>&1 ; Get-Content mi 
+...
++ ~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo     
+         : NotSpecifi  
+  ed: ([ error ] alt   
+ er...rectly formed    
+"):String) [], Rem    
+oteException
+    + FullyQualifiedEr 
+   rorId : NativeComm  
+  andError
+ 
+          at 
+Packet.asError (C:\User
+s\natan\Desktop\Escudo 
+do Mestre\Escudo do Mes
+tre\escudo-do-mestre-v2
+\node_modules\mysql2\li
+b\packets\packet.js:739
+:17)
+          at 
+Query.execute (C:\Users
+\natan\Desktop\Escudo 
+do Mestre\Escudo do Mes
+tre\escudo-do-mestre-v2
+\node_modules\mysql2\li
+b\commands\command.js:2
+9:26)
+          at Connection
+.handlePacket (C:\Users
+\natan\Desktop\Escudo 
+do Mestre\Escudo do Mes
+tre\escudo-do-mestre-v2
+\node_modules\mysql2\li
+b\base\connection.js:50
+8:34)
+          at 
+PacketParser.onPacket (
+C:\Users\natan\Desktop\
+Escudo do 
+Mestre\Escudo do Mestre
+\escudo-do-mestre-v2\no
+de_modules\mysql2\lib\b
+ase\connection.js:93:12
+)
+          at PacketPars
+er.executeStart (C:\Use
+rs\natan\Desktop\Escudo
+ do Mestre\Escudo do Me
+stre\escudo-do-mestre-v
+2\node_modules\mysql2\l
+ib\packet_parser.js:75:
+16)
+          at 
+Socket.<anonymous> (C:\
+Users\natan\Desktop\Esc
+udo do Mestre\Escudo 
+do Mestre\escudo-do-mes
+tre-v2\node_modules\mys
+ql2\lib\base\connection
+.js:100:25)
+          at 
+Socket.emit 
+(node:events:518:28)
+          at addChunk (
+node:internal/streams/r
+eadable:561:12)
+          at readableAd
+dChunkPushByteMode (nod
+e:internal/streams/read
+able:512:3)
+          at 
+Readable.push (node:int
+ernal/streams/readable:
+392:5)

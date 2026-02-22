@@ -1,0 +1,58 @@
+import {
+    BookOpen,
+    Stethoscope,
+    Brain,
+    Palette,
+    Dumbbell,
+    Gavel,
+    Ghost,
+    Tent,
+    Wrench,
+    Briefcase,
+    Search,
+    Sword,
+    Coins,
+    Shield,
+    Hammer,
+    Siren,
+    Cross,
+    Building2,
+    Eye,
+    Monitor,
+    Sprout,
+    Dice5,
+    GraduationCap,
+    HeartCrack,
+    User
+} from 'lucide-react';
+
+export const getOriginIcon = (name: string) => {
+    const map: Record<string, any> = {
+        'Acadêmico': BookOpen,
+        'Agente de Saúde': Stethoscope,
+        'Amnésico': Brain,
+        'Artista': Palette,
+        'Atleta': Dumbbell,
+        'Criminoso': Gavel,
+        'Cultista Arrependido': Ghost,
+        'Desgarrado': Tent,
+        'Engenheiro': Wrench,
+        'Executivo': Briefcase,
+        'Investigador': Search,
+        'Lutador': Sword,
+        'Mercenário': Coins,
+        'Militar': Shield,
+        'Operário': Hammer,
+        'Policial': Siren,
+        'Religioso': Cross,
+        'Servidor Público': Building2,
+        'Teórico da Conspiração': Eye,
+        'T.I.': Monitor,
+        'Trabalhador Rural': Sprout,
+        'Trambiqueiro': Dice5,
+        'Universitário': GraduationCap,
+        'Vítima': HeartCrack,
+    };
+
+    return map[name] || User;
+};

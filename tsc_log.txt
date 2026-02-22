@@ -1,0 +1,14 @@
+﻿layout.tsx(1,41): error TS2307: Cannot find module 'next' or its corresponding type declarations.
+layout.tsx(2,35): error TS2307: Cannot find module 'next/font/google' or its corresponding type declarations.
+layout.tsx(3,27): error TS2307: Cannot find module '@vercel/analytics/next' or its corresponding type declarations.
+layout.tsx(6,7): error TS6133: '_geist' is declared but its value is never read.
+layout.tsx(7,7): error TS6133: '_geistMono' is declared but its value is never read.
+layout.tsx(21,13): error TS2503: Cannot find namespace 'React'.
+layout.tsx(24,5): error TS7026: JSX element implicitly has type 'any' because no interface 'JSX.IntrinsicElements' exists.
+layout.tsx(24,5): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+layout.tsx(25,7): error TS7026: JSX element implicitly has type 'any' because no interface 'JSX.IntrinsicElements' exists.
+layout.tsx(25,7): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+layout.tsx(27,9): error TS17004: Cannot use JSX unless the '--jsx' flag is provided.
+layout.tsx(28,7): error TS7026: JSX element implicitly has type 'any' because no interface 'JSX.IntrinsicElements' exists.
+layout.tsx(29,5): error TS7026: JSX element implicitly has type 'any' because no interface 'JSX.IntrinsicElements' exists.
+verify_schema.ts(31,9): error TS2353: Object literal may only specify known properties, and 'data' does not exist in type 'Partial<{ name: string; id: number; createdAt: DateTime<boolean>; updatedAt: DateTime<boolean> | null; classId: number; nex: number; userId: number; originId: number; trailId: number | null; xp: number; lore: string | null; appearance: string | null; }>'.

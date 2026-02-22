@@ -1,0 +1,14 @@
+{
+  "extends": "@adonisjs/tsconfig/tsconfig.app.json",
+  "compilerOptions": {
+    "rootDir": "./",
+    "outDir": "./build"
+  },
+  "exclude": [
+    "./inertia/**/*",
+    "./temp_rollhub/**/*",
+    "./b_UMCIsrBKqJf-1771627924949/**/*",
+    "node_modules",
+    "build"
+  ]
+}

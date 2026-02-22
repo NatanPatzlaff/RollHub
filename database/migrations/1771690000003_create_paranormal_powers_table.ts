@@ -1,0 +1,24 @@
+import { BaseSchema } from '@adonisjs/lucid/schema'
+
+export default class extends BaseSchema {
+  protected tableName = 'paranormal_powers'
+
+  async up() {
+    this.schema.createTable(this.tableName, (table) => {
+      table.increments('id')
+      table.string('name').notNullable()
+      table.text('description').nullable()
+      table.string('element').nullable() // Energia, Morte, Sangue, Conhecimento, Medo
+      table.integer('pe_cost').nullable()
+      table.text('requirements').nullable()
+      table.json('effects').nullable()
+
+      table.timestamp('created_at', { useTz: true }).notNullable()
+      table.timestamp('updated_at', { useTz: true }).nullable()
+    })
+  }
+
+  async down() {
+    this.schema.dropTable(this.tableName)
+  }
+}

@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+    @keyframes rainbow {
+        0% {
+            color: #ef4444;
+            text-shadow: 0 0 10px #ef4444;
+        }
+
+        /* Red */
+        14% {
+            color: #f97316;
+            text-shadow: 0 0 10px #f97316;
+        }
+
+        /* Orange */
+        28% {
+            color: #eab308;
+            text-shadow: 0 0 10px #eab308;
+        }
+
+        /* Yellow */
+        42% {
+            color: #22c55e;
+            text-shadow: 0 0 10px #22c55e;
+        }
+
+        /* Green */
+        57% {
+            color: #3b82f6;
+            text-shadow: 0 0 10px #3b82f6;
+        }
+
+        /* Blue */
+        71% {
+            color: #6366f1;
+            text-shadow: 0 0 10px #6366f1;
+        }
+
+        /* Indigo */
+        85% {
+            color: #a855f7;
+            text-shadow: 0 0 10px #a855f7;
+        }
+
+        /* Violet */
+        100% {
+            color: #ef4444;
+            text-shadow: 0 0 10px #ef4444;
+        }
+
+        /* Red */
+    }
+
+    .animate-rainbow {
+        animation: rainbow 0.5s linear infinite;
+    }
+}
+
+@layer base {
+    [data-slot="input"] {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    [data-slot="input"]:focus,
+    [data-slot="input"]:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Scrollbar customizado - Invisível */
+    .custom-scrollbar {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+        display: none;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        display: none;
+    }
+}
