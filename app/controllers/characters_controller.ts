@@ -1,4 +1,5 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import db from '@adonisjs/lucid/services/db'
 import Character from '#models/character'
 import Class from '#models/class'
 import Origin from '#models/origin'
@@ -188,6 +189,39 @@ export default class CharactersController {
         .orderBy('name', 'asc')
         .preload('progression', (query) => query.orderBy('nex', 'asc'))
 
+      // Get all available class abilities (not already acquired)
+      const allClassAbilities = await ClassAbility.query().where('classId', character.classId)
+
+      const acquiredAbilityIds = character.classAbilities?.map((ca) => ca.classAbilityId) || []
+
+      const availableAbilities = allClassAbilities.filter((ability) => {
+        // Exclude already acquired abilities
+        if (acquiredAbilityIds.includes(ability.id)) {
+          return false
+        }
+
+        // Exclude mandatory abilities (already handled in store)
+        const effects =
+          typeof ability.effects === 'string'
+            ? JSON.parse(ability.effects || '{}')
+            : ability.effects || {}
+
+        if (effects.mandatory === true) {
+          return false
+        }
+
+        // Check if ability is available at current NEX
+        if (effects.nex) {
+          // Parse NEX requirement (e.g., "15%" -> 15)
+          const requiredNex = parseInt(effects.nex)
+          if (character.nex < requiredNex) {
+            return false
+          }
+        }
+
+        return true
+      })
+
       // Get all classes and origins for edit modal
       const classes = await Class.all()
       const origins = await Origin.all()
@@ -229,14 +263,6 @@ export default class CharactersController {
         calculatedMaxSanity += classData.sanityPerLevel * (level - 1)
       }
 
-      // Transcender: reduce max sanity by sanityPerLevel for each instance
-      const transcenderCount = (character.classAbilities || []).filter(
-        (ca) => ca.classAbility?.name === 'Transcender'
-      ).length
-      if (transcenderCount > 0) {
-        calculatedMaxSanity -= classData.sanityPerLevel * transcenderCount
-      }
-
       // Calculate defense (10 + AGI + armor)
       const baseDefense = 10 + (attributes?.agility || 0)
       const baseDodge = attributes?.agility || 0
@@ -249,45 +275,128 @@ export default class CharactersController {
       if (nex >= 80) attributeBonusFromNex += 1
       if (nex >= 95) attributeBonusFromNex += 1
 
-      // Get all non-mandatory class abilities for the ability selection modal
-      const allAbilitiesForClass = await ClassAbility.query().where('classId', character.classId)
+      // Catalogos de itens para o modal "Adicionar Item" (por tipo)
+      const [
+        weaponsRows,
+        protectionsRows,
+        generalItemsRows,
+        cursedItemsRows,
+        ammunitionRows,
+        characterWeaponsRows,
+      ] = await Promise.all([
+        db.from('weapons').select('*').orderBy('name', 'asc'),
+        db.from('protections').select('*').orderBy('name', 'asc'),
+        db.from('general_items').select('*').orderBy('name', 'asc'),
+        db.from('cursed_items').select('*').orderBy('name', 'asc'),
+        db.from('weapon_modifications').where('type', 'Munição').select('*').orderBy('name', 'asc'), // Munições
+        db
+          .from('character_weapons')
+          .where('character_id', character.id)
+          .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
+          .select(
+            'character_weapons.*',
+            'weapons.name',
+            'weapons.type',
+            'weapons.damage',
+            'weapons.range',
+            'weapons.critical',
+            'weapons.critical_multiplier',
+            'weapons.damage_type',
+            'weapons.description'
+          ),
+      ])
+      const catalogWeapons = weaponsRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        category: [null, 'I', 'II', 'III', 'IV'][r.category] || '—',
+        type: r.type,
+        weaponType: r.weapon_type,
+        damage: r.damage,
+        damageType: r.damage_type,
+        critical: r.critical,
+        criticalMultiplier: r.critical_multiplier,
+        range: r.range,
+        ammoCapacity: r.ammo_capacity,
+        ammoType: r.ammo_type,
+        spaces: r.spaces,
+        description: r.description,
+        special:
+          typeof r.special === 'string' ? (r.special ? JSON.parse(r.special) : null) : r.special,
+      }))
+      const catalogProtections = protectionsRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        type: r.type,
+        defenseBonus: r.defense_bonus,
+        dodgePenalty: r.dodge_penalty,
+        spaces: r.spaces,
+        description: r.description,
+        special:
+          typeof r.special === 'string' ? (r.special ? JSON.parse(r.special) : null) : r.special,
+      }))
+      const catalogGeneralItems = generalItemsRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        type: r.type,
+        spaces: r.spaces,
+        description: r.description,
+        effects:
+          typeof r.effects === 'string' ? (r.effects ? JSON.parse(r.effects) : null) : r.effects,
+      }))
+      const catalogCursedItems = cursedItemsRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        element: r.element,
+        itemType: r.item_type,
+        spaces: r.spaces,
+        description: r.description,
+        benefits:
+          typeof r.benefits === 'string'
+            ? r.benefits
+              ? JSON.parse(r.benefits)
+              : null
+            : r.benefits,
+        curses: typeof r.curses === 'string' ? (r.curses ? JSON.parse(r.curses) : null) : r.curses,
+      }))
 
-      const availableClassAbilities = allAbilitiesForClass.filter((ability) => {
-        const effects =
-          typeof ability.effects === 'string'
-            ? JSON.parse(ability.effects || '{}')
-            : ability.effects || {}
-        return !effects.mandatory
-      })
+      // Catálogo de munições (tipo especial de modificação de arma)
+      const catalogAmmunitions = ammunitionRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        type: r.type,
+        description: r.description,
+        damageBonus: r.damage_bonus,
+        damageTypeOverride: r.damage_type_override,
+        criticalBonus: r.critical_bonus,
+        criticalMultiplierBonus: r.critical_multiplier_bonus,
+        weaponTypeRestriction: r.weapon_type_restriction,
+      }))
 
-      // Calculate power slots based on NEX
-      // All classes get a power slot at NEX 15%, 30%, 45%, 60%, 75%, 90%
-      const powerSlotNexLevels = [15, 30, 45, 60, 75, 90]
-      const totalPowerSlots = powerSlotNexLevels.filter((n) => nex >= n).length
-
-      // Count already acquired (non-mandatory) abilities
-      const acquiredAbilityIds = (character.classAbilities || []).map((ca) => ca.classAbilityId)
-      const mandatoryAbilityIds = new Set(
-        allAbilitiesForClass
-          .filter((a) => {
-            const eff =
-              typeof a.effects === 'string' ? JSON.parse(a.effects || '{}') : a.effects || {}
-            return eff.mandatory === true
-          })
-          .map((a) => a.id)
-      )
-      const acquiredNonMandatoryCount = acquiredAbilityIds.filter(
-        (id) => !mandatoryAbilityIds.has(id)
-      ).length
+      // Itens do inventário do personagem (armas)
+      const inventoryWeapons = characterWeaponsRows.map((r: any) => ({
+        id: r.weapon_id,
+        name: r.name,
+        type: 'Weapon',
+        damage: r.damage,
+        range: r.range,
+        critical: r.critical,
+        criticalMultiplier: r.critical_multiplier,
+        damageType: r.damage_type,
+        description: r.description,
+        equipped: r.is_equipped,
+        quantity: 1,
+        weight: 1,
+      }))
 
       return inertia.render('characters/show', {
         character,
         classes,
         origins,
         classTrails,
-        availableClassAbilities,
-        totalPowerSlots,
-        usedPowerSlots: acquiredNonMandatoryCount,
+        availableAbilities,
         calculatedStats: {
           maxHp: calculatedMaxHp,
           maxPe: calculatedMaxPe,
@@ -307,6 +416,12 @@ export default class CharactersController {
         },
         attributeBonusFromNex,
         trailProgressions,
+        catalogWeapons,
+        catalogProtections,
+        catalogGeneralItems,
+        catalogCursedItems,
+        catalogAmmunitions,
+        inventoryWeapons,
       })
     } catch (error) {
       console.error('[CHARACTER SHOW] Error loading character:', error)
@@ -405,17 +520,6 @@ export default class CharactersController {
       maxSanity += classData.sanityPerLevel * (level - 1)
     }
 
-    // Transcender: reduce max sanity by sanityPerLevel for each instance
-    const charAbilities = await CharacterClassAbility.query()
-      .where('characterId', character.id)
-      .preload('classAbility')
-    const transcenderCount = charAbilities.filter(
-      (ca) => ca.classAbility?.name === 'Transcender'
-    ).length
-    if (transcenderCount > 0) {
-      maxSanity -= classData.sanityPerLevel * transcenderCount
-    }
-
     // Update stats
     if (character.stats) {
       character.stats.maxHp = maxHp
@@ -440,6 +544,9 @@ export default class CharactersController {
       .firstOrFail()
 
     const { name, classId, originId, nex } = request.only(['name', 'classId', 'originId', 'nex'])
+
+    // Store old classId to detect if class changed
+    const oldClassId = character.classId
 
     // Update basic info
     if (name) character.name = name
@@ -497,6 +604,51 @@ export default class CharactersController {
       }
 
       character.originId = originId
+    }
+
+    // If class changed, reset chosen abilities and update mandatory ones
+    if (classId && classId !== oldClassId) {
+      // Delete all chosen abilities (non-mandatory) from old class
+      const oldAbilities = await CharacterClassAbility.query()
+        .where('characterId', character.id)
+        .preload('classAbility')
+
+      for (const charAbility of oldAbilities) {
+        const effects =
+          typeof charAbility.classAbility.effects === 'string'
+            ? JSON.parse(charAbility.classAbility.effects || '{}')
+            : charAbility.classAbility.effects || {}
+
+        // Delete if it's not mandatory (chosen ability) or if it belongs to old class
+        if (effects.mandatory !== true || charAbility.classAbility.classId === oldClassId) {
+          await charAbility.delete()
+        }
+      }
+
+      // Add mandatory abilities from new class
+      const newClassAbilities = await ClassAbility.query().where('classId', classId)
+
+      for (const ability of newClassAbilities) {
+        const effects =
+          typeof ability.effects === 'string'
+            ? JSON.parse(ability.effects || '{}')
+            : ability.effects || {}
+
+        if (effects.mandatory === true) {
+          // Check if it already exists to avoid duplicates
+          const exists = await CharacterClassAbility.query()
+            .where('characterId', character.id)
+            .where('classAbilityId', ability.id)
+            .first()
+
+          if (!exists) {
+            await CharacterClassAbility.create({
+              characterId: character.id,
+              classAbilityId: ability.id,
+            })
+          }
+        }
+      }
     }
 
     await character.save()
@@ -612,6 +764,75 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
+  async addAbility({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { abilityId } = request.only(['abilityId'])
+
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Fetch the ability
+    const ability = await ClassAbility.findOrFail(abilityId)
+
+    // Validate ability belongs to character's class
+    if (ability.classId !== character.classId) {
+      return response.status(400).send({ error: 'Habilidade não pertence à classe do personagem' })
+    }
+
+    // Check if ability is already acquired
+    const existing = await CharacterClassAbility.query()
+      .where('characterId', character.id)
+      .where('classAbilityId', ability.id)
+      .first()
+
+    if (existing) {
+      return response.status(400).send({ error: 'Habilidade já foi adquirida' })
+    }
+
+    // Check NEX requirement
+    const effects =
+      typeof ability.effects === 'string'
+        ? JSON.parse(ability.effects || '{}')
+        : ability.effects || {}
+
+    if (effects.nex) {
+      const requiredNex = parseInt(effects.nex)
+      if (character.nex < requiredNex) {
+        return response.status(400).send({ error: `Requer NEX ${effects.nex}` })
+      }
+    }
+
+    // Add ability
+    await CharacterClassAbility.create({
+      characterId: character.id,
+      classAbilityId: ability.id,
+    })
+
+    return response.redirect().back()
+  }
+
+  async removeAbility({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { abilityId } = params
+
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Find and delete the ability
+    const characterAbility = await CharacterClassAbility.query()
+      .where('characterId', character.id)
+      .where('classAbilityId', abilityId)
+      .firstOrFail()
+
+    await characterAbility.delete()
+
+    return response.redirect().back()
+  }
+
   async selectTrail({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
@@ -633,157 +854,283 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
-  async addAbilities({ params, request, response, auth }: HttpContext) {
+  async addItem({ params, request, response, auth, inertia }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
       .where('id', params.id)
       .where('userId', user.id)
-      .preload('classAbilities')
-      .firstOrFail()
-
-    const { abilityIds } = request.only(['abilityIds'])
-
-    if (!abilityIds || !Array.isArray(abilityIds) || abilityIds.length === 0) {
-      return response.badRequest({ error: 'Nenhuma habilidade selecionada' })
-    }
-
-    // Get all class abilities to check mandatory ones
-    const allClassAbilities = await ClassAbility.query().where('classId', character.classId)
-
-    const mandatoryIds = new Set(
-      allClassAbilities
-        .filter((a) => {
-          const eff =
-            typeof a.effects === 'string' ? JSON.parse(a.effects || '{}') : a.effects || {}
-          return eff.mandatory === true
-        })
-        .map((a) => a.id)
-    )
-
-    // Calculate power slots
-    const nex = character.nex
-    const powerSlotNexLevels = [15, 30, 45, 60, 75, 90]
-    const totalPowerSlots = powerSlotNexLevels.filter((n) => nex >= n).length
-
-    // Count current non-mandatory abilities
-    const currentNonMandatory = character.classAbilities.filter(
-      (ca) => !mandatoryIds.has(ca.classAbilityId)
-    )
-    const currentCount = currentNonMandatory.length
-
-    // Check slot limits
-    if (currentCount + abilityIds.length > totalPowerSlots) {
-      return response.badRequest({
-        error: `Slots insuficientes. Disponíveis: ${totalPowerSlots - currentCount}`,
-      })
-    }
-
-    // Verify all abilities belong to this class and are not mandatory
-    const validAbilityIds = new Set(
-      allClassAbilities.filter((a) => !mandatoryIds.has(a.id)).map((a) => a.id)
-    )
-
-    for (const abilityId of abilityIds) {
-      if (!validAbilityIds.has(abilityId)) {
-        return response.badRequest({
-          error: `Habilidade ${abilityId} não é válida para esta classe`,
-        })
-      }
-      // Check not already acquired (unless repeatable)
-      const abilityData = allClassAbilities.find((a) => a.id === abilityId)
-      const abilityEffects =
-        typeof abilityData?.effects === 'string'
-          ? JSON.parse(abilityData.effects || '{}')
-          : abilityData?.effects || {}
-      if (!abilityEffects.repeatable) {
-        const alreadyHas = character.classAbilities.find((ca) => ca.classAbilityId === abilityId)
-        if (alreadyHas) {
-          return response.badRequest({ error: `Habilidade já adquirida` })
-        }
-      }
-    }
-
-    // Add abilities
-    let hasTranscender = false
-    for (const abilityId of abilityIds) {
-      await CharacterClassAbility.create({
-        characterId: character.id,
-        classAbilityId: abilityId,
-      })
-      const abilityData = allClassAbilities.find((a) => a.id === abilityId)
-      if (abilityData?.name === 'Transcender') hasTranscender = true
-    }
-
-    // If Transcender was added, recalculate max sanity
-    if (hasTranscender) {
-      await this.recalculateSanity(character.id)
-    }
-
-    return response.redirect().back()
-  }
-
-  async removeAbility({ params, response, auth }: HttpContext) {
-    const user = auth.user!
-    const character = await Character.query()
-      .where('id', params.id)
-      .where('userId', user.id)
-      .firstOrFail()
-
-    const ability = await CharacterClassAbility.query()
-      .where('characterId', character.id)
-      .where('id', params.abilityId)
-      .preload('classAbility')
-      .firstOrFail()
-
-    // Don't allow removing mandatory abilities
-    const effects =
-      typeof ability.classAbility?.effects === 'string'
-        ? JSON.parse(ability.classAbility.effects || '{}')
-        : ability.classAbility?.effects || {}
-
-    if (effects.mandatory === true) {
-      return response.badRequest({ error: 'Não é possível remover habilidades obrigatórias' })
-    }
-
-    await ability.delete()
-
-    // If Transcender was removed, recalculate max sanity
-    if (ability.classAbility?.name === 'Transcender') {
-      await this.recalculateSanity(character.id)
-    }
-
-    return response.redirect().back()
-  }
-
-  private async recalculateSanity(characterId: number) {
-    const char = await Character.query()
-      .where('id', characterId)
-      .preload('class')
+      .preload('attributes')
       .preload('stats')
-      .preload('classAbilities', (q) => q.preload('classAbility'))
+      .preload('class')
+      .preload('origin')
+      .preload('skills', (query) => query.preload('skill'))
+      .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
 
-    const classData = char.class
-    const nex = char.nex
-    const level = Math.floor(nex / 5)
-
-    let maxSanity = classData.baseSanity
-    if (level > 1) {
-      maxSanity += classData.sanityPerLevel * (level - 1)
+    const { type, itemId, quantity } = request.only(['type', 'itemId', 'quantity'])
+    if (!type || !itemId) {
+      return response.badRequest({ error: 'type e itemId são obrigatórios' })
     }
 
-    const transcenderCount = char.classAbilities.filter(
-      (ca) => ca.classAbility?.name === 'Transcender'
-    ).length
-    if (transcenderCount > 0) {
-      maxSanity -= classData.sanityPerLevel * transcenderCount
+    const qty = Math.max(1, parseInt(quantity, 10) || 1)
+
+    if (type === 'weapon') {
+      const weapon = await db.from('weapons').where('id', itemId).first()
+      if (!weapon) return response.notFound({ error: 'Arma não encontrada' })
+      const now = new Date().toISOString()
+      await db.table('character_weapons').insert({
+        character_id: character.id,
+        weapon_id: itemId,
+        is_equipped: false,
+        created_at: now,
+        updated_at: now,
+      })
+    } else if (type === 'protection') {
+      const protection = await db.from('protections').where('id', itemId).first()
+      if (!protection) return response.notFound({ error: 'Proteção não encontrada' })
+      await db.table('character_protections').insert({
+        character_id: character.id,
+        protection_id: itemId,
+        is_equipped: false,
+      })
+    } else if (type === 'general') {
+      const item = await db.from('general_items').where('id', itemId).first()
+      if (!item) return response.notFound({ error: 'Item não encontrado' })
+      await db.table('character_general_items').insert({
+        character_id: character.id,
+        general_item_id: itemId,
+        quantity: qty,
+      })
+    } else if (type === 'cursed') {
+      const item = await db.from('cursed_items').where('id', itemId).first()
+      if (!item) return response.notFound({ error: 'Item amaldiçoado não encontrado' })
+      await db.table('character_cursed_items').insert({
+        character_id: character.id,
+        cursed_item_id: itemId,
+        quantity: qty,
+      })
+    } else if (type === 'ammunition') {
+      const item = await db.from('weapon_modifications').where('id', itemId).first()
+      if (!item) return response.notFound({ error: 'Munição não encontrada' })
+      await db.table('character_general_items').insert({
+        character_id: character.id,
+        general_item_id: itemId,
+        quantity: qty,
+      })
+    } else {
+      return response.badRequest({
+        error: 'Tipo de item inválido. Use: weapon, protection, general, cursed, ammunition',
+      })
     }
 
-    if (char.stats) {
-      char.stats.maxSanity = maxSanity
-      char.stats.currentSanity = Math.min(char.stats.currentSanity, maxSanity)
-      await char.stats.save()
+    // Recarregar personagem com dados atualizados
+    await character.refresh()
+
+    // Buscar dados completos do personagem (mesma lógica do método show)
+    const classData = character.class
+      ? await db.from('classes').where('id', character.class.id).first()
+      : null
+    if (!classData) {
+      return response.badRequest({ error: 'Classe não encontrada' })
     }
+
+    const nex = character.nex
+    const attributes = character.attributes
+    const defaultVigor = attributes?.vigor || 0
+    const defaultPresence = attributes?.presence || 0
+
+    let calculatedMaxHp = classData.baseHp
+    if (classData.hpAttribute === 'vigor') {
+      calculatedMaxHp += defaultVigor
+      if (nex > 1) {
+        calculatedMaxHp += (classData.hpPerLevel + defaultVigor) * (nex - 1)
+      }
+    } else {
+      if (nex > 1) {
+        calculatedMaxHp += classData.hpPerLevel * (nex - 1)
+      }
+    }
+
+    let calculatedMaxPe = classData.basePe
+    if (classData.peAttribute === 'presence') {
+      calculatedMaxPe += defaultPresence
+      if (nex > 1) {
+        calculatedMaxPe += (classData.pePerLevel + defaultPresence) * (nex - 1)
+      }
+    } else {
+      if (nex > 1) {
+        calculatedMaxPe += classData.pePerLevel * (nex - 1)
+      }
+    }
+
+    let calculatedMaxSanity = classData.baseSanity
+    if (nex > 1) {
+      calculatedMaxSanity += classData.sanityPerLevel * (nex - 1)
+    }
+
+    // Buscar itens do inventário (armas)
+    const characterWeaponsRows = await db
+      .from('character_weapons')
+      .where('character_id', character.id)
+      .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
+      .select(
+        'character_weapons.id as character_weapon_id',
+        'character_weapons.character_id',
+        'character_weapons.weapon_id',
+        'character_weapons.is_equipped',
+        'character_weapons.custom_name',
+        'character_weapons.current_ammo',
+        'character_weapons.notes',
+        'weapons.name',
+        'weapons.type',
+        'weapons.damage',
+        'weapons.range',
+        'weapons.critical',
+        'weapons.critical_multiplier',
+        'weapons.damage_type',
+        'weapons.description',
+        'weapons.category',
+        'weapons.weapon_type'
+      )
+
+    console.log('[addItem] characterWeaponsRows:', JSON.stringify(characterWeaponsRows, null, 2))
+
+    const inventoryWeapons = characterWeaponsRows.map((r: any) => ({
+      id: r.character_weapon_id,
+      weaponId: r.weapon_id,
+      name: r.name,
+      type: 'Weapon',
+      damage: r.damage,
+      range: r.range,
+      critical: r.critical,
+      criticalMultiplier: r.critical_multiplier,
+      damageType: r.damage_type,
+      description: r.description,
+      equipped: r.is_equipped,
+      quantity: 1,
+      weight: 1,
+      category: r.category,
+      weaponType: r.weapon_type,
+    }))
+
+    return inertia.render('characters/show', {
+      character,
+      classes: [],
+      origins: [],
+      classTrails: [],
+      availableAbilities: [],
+      calculatedStats: {
+        maxHp: calculatedMaxHp,
+        maxPe: calculatedMaxPe,
+        maxSanity: calculatedMaxSanity,
+        currentHp: character.stats?.currentHp || calculatedMaxHp,
+        currentPe: character.stats?.currentPe || calculatedMaxPe,
+        currentSanity: character.stats?.currentSanity || calculatedMaxSanity,
+        defense: 10,
+        dodge: 10,
+      },
+      classInfo: {
+        hpFormula: `${classData.baseHp} + ${classData.hpAttribute?.toUpperCase() || ''} | +${classData.hpPerLevel} PV (+${classData.hpAttribute?.substring(0, 3).toUpperCase() || ''}) por NEX`,
+        peFormula: `${classData.basePe} + ${classData.peAttribute?.toUpperCase() || ''} | +${classData.pePerLevel} PE (+${classData.peAttribute?.substring(0, 3).toUpperCase() || ''}) por NEX`,
+        sanityFormula: `${classData.baseSanity} | +${classData.sanityPerLevel} SAN por NEX`,
+        proficiencies: classData.proficiencies,
+      },
+      attributeBonusFromNex: 0,
+      trailProgressions: [],
+      catalogWeapons: [],
+      catalogProtections: [],
+      catalogGeneralItems: [],
+      catalogCursedItems: [],
+      inventoryWeapons,
+    })
+  }
+
+  async removeItem({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    const itemId = params.itemId
+    console.log(`[removeItem] Tentando remover item ${itemId} do personagem ${character.id}`)
+
+    // Tenta remover de cada tabela possível
+    let removed = false
+
+    try {
+      // Verifica em character_weapons
+      const weapon = await db
+        .from('character_weapons')
+        .where('weapon_id', itemId)
+        .where('character_id', character.id)
+        .first()
+      console.log('[removeItem] weapon:', weapon)
+      if (weapon) {
+        await db
+          .from('character_weapons')
+          .where('weapon_id', itemId)
+          .where('character_id', character.id)
+          .delete()
+        console.log('[removeItem] Arma removida com sucesso')
+        removed = true
+      }
+    } catch (error: any) {
+      console.error('[removeItem] Erro ao verificar character_weapons:', error.message)
+    }
+
+    // Verifica em character_protections
+    if (!removed) {
+      try {
+        const protection = await db
+          .from('character_protections')
+          .where('protection_id', itemId)
+          .where('character_id', character.id)
+          .first()
+        console.log('[removeItem] protection:', protection)
+        if (protection) {
+          await db
+            .from('character_protections')
+            .where('protection_id', itemId)
+            .where('character_id', character.id)
+            .delete()
+          console.log('[removeItem] Proteção removida com sucesso')
+          removed = true
+        }
+      } catch (error: any) {
+        console.error('[removeItem] Erro ao verificar character_protections:', error.message)
+      }
+    }
+
+    // Verifica em character_general_items
+    if (!removed) {
+      try {
+        const generalItem = await db
+          .from('character_general_items')
+          .where('general_item_id', itemId)
+          .where('character_id', character.id)
+          .first()
+        console.log('[removeItem] generalItem:', generalItem)
+        if (generalItem) {
+          await db
+            .from('character_general_items')
+            .where('general_item_id', itemId)
+            .where('character_id', character.id)
+            .delete()
+          console.log('[removeItem] Item geral removido com sucesso')
+          removed = true
+        }
+      } catch (error: any) {
+        console.error('[removeItem] Erro ao verificar character_general_items:', error.message)
+      }
+    }
+
+    if (!removed) {
+      console.error('[removeItem] Item não encontrado em nenhuma tabela')
+      return response.notFound({ error: 'Item não encontrado' })
+    }
+
+    return response.ok({ success: true })
   }
 
   async destroy({ params, response, auth }: HttpContext) {

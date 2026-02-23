@@ -58,8 +58,8 @@ const defaultItems: InventoryItem[] = [
 
 const maxWeight = 80
 
-export function Inventory() {
-  const [items, setItems] = useState<InventoryItem[]>(defaultItems)
+export function Inventory({ items: propItems }: { items?: InventoryItem[] }) {
+  const [items, setItems] = useState<InventoryItem[]>(propItems || defaultItems)
   const [showAdd, setShowAdd] = useState(false)
   const [sortAsc, setSortAsc] = useState(true)
   const [filterType, setFilterType] = useState("All")
@@ -244,8 +244,12 @@ export function Inventory() {
 
       <div className="flex flex-col gap-1.5">
         {filteredItems.map((item) => {
-          const Icon = iconMap[item.type] || Package
-          const color = typeColors[item.type] || "#6b7280"
+          const Icon = iconMap[item.type] || Package;
+          const color = typeColors[item.type] || "#6b7280";
+          // Exemplo: para armas, mostrar card detalhado
+          const isWeapon = item.type === "Weapon" || item.type === "Arma";
+          // Suporte a campos extras (arma): dano, alcance, margem de crítico, multiplicador de crítico
+          // Espera-se que esses campos estejam em item.damage, item.range, item.critical, item.criticalMultiplier
           return (
             <div
               key={item.id}
@@ -273,9 +277,18 @@ export function Inventory() {
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] text-muted-foreground truncate">
-                  {item.description}
-                </p>
+                {isWeapon ? (
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span><b>Dano:</b> {item.damage || '-'}</span>
+                    <span><b>Alcance:</b> {item.range || '-'}</span>
+                    <span><b>Crítico:</b> {item.critical || '-'}</span>
+                    <span><b>Multiplicador:</b> {item.criticalMultiplier || '-'}</span>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {item.description}
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
                 <span>x{item.quantity}</span>
@@ -299,7 +312,7 @@ export function Inventory() {
                 </button>
               </div>
             </div>
-          )
+          );
         })}
       </div>
 

@@ -100,7 +100,7 @@ export default function CharacterSheetPage() {
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {activeTab === "inventory" && <Inventory />}
+              {activeTab === "inventory" && <Inventory items={(window as any).inventoryWeapons || []} />}
               {activeTab === "rituals" && (
                 <div className="flex h-full items-center justify-center p-6">
                   <div className="text-center">

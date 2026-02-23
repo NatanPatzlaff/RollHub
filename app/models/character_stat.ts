@@ -54,4 +54,5 @@ export default class CharacterStat extends BaseModel {
 
   @belongsTo(() => Character)
   declare character: BelongsTo<typeof Character>
+
 }

@@ -16,17 +16,17 @@ function run() {
   console.log('=' .repeat(60))
 
   // 1. Contar registros nas tabelas principais
-  db.all("SELECT COUNT(*) as count FROM abilities", (err: any, results: any) => {
+  db.all("SELECT COUNT(*) as count FROM abilities", (_err: any, results: any) => {
     console.log(`\n📊 Estatísticas do Banco:`)
     console.log(`   Abilities: ${results?.[0]?.count || 0}`)
 
-    db.all("SELECT COUNT(*) as count FROM class_progressions", (err: any, results2: any) => {
+    db.all("SELECT COUNT(*) as count FROM class_progressions", (_err: any, results2: any) => {
       console.log(`   Class Progressions: ${results2?.[0]?.count || 0}`)
 
       // 2. Mostrar class_progressions agrupadas por tipo
       db.all(
         "SELECT type, COUNT(*) as count FROM class_progressions GROUP BY type ORDER BY type",
-        (err: any, progressionTypes: any) => {
+        (_err: any, progressionTypes: any) => {
           console.log('\n📈 Tipos de Progressões de Classe:')
           if (progressionTypes && progressionTypes.length > 0) {
             console.table(progressionTypes)
@@ -36,11 +36,11 @@ function run() {
 
           // 3. Mostrar todas as progressões de classe com detalhes
           db.all(
-            `SELECT cp.id, cp.class_id, c.name as class_name, cp.nex, cp.title, cp.type, cp.description, cp.reference_id 
-             FROM class_progressions cp 
-             LEFT JOIN classes c ON cp.class_id = c.id 
+            `SELECT cp.id, cp.class_id, c.name as class_name, cp.nex, cp.title, cp.type, cp.description, cp.reference_id
+             FROM class_progressions cp
+             LEFT JOIN classes c ON cp.class_id = c.id
              ORDER BY c.name, cp.nex`,
-            (err: any, progressions: any) => {
+            (_err: any, progressions: any) => {
               console.log('\n⚡ Todas as Progressões de Classe (Detalhado):\n')
               if (progressions && progressions.length > 0) {
                 for (const p of progressions) {
@@ -58,7 +58,7 @@ function run() {
               // 4. Procurar se há abilities em outras tabelas
               db.all(
                 `SELECT type, COUNT(*) as count FROM abilities GROUP BY type`,
-                (err: any, abilityTypes: any) => {
+                (_err: any, abilityTypes: any) => {
                   console.log('\n🎯 Types de Abilities Cadastrados:')
                   if (abilityTypes && abilityTypes.length > 0) {
                     console.table(abilityTypes)
@@ -66,7 +66,7 @@ function run() {
                     // 5. Se houver abilities, mostrar
                     db.all(
                       `SELECT id, name, type, description FROM abilities ORDER BY type, name`,
-                      (err: any, abilities: any) => {
+                      (_err: any, abilities: any) => {
                         console.log('\n📋 Todas as Abilities:')
                         if (abilities && abilities.length > 0) {
                           console.table(abilities)

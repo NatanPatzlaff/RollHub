@@ -21,10 +21,12 @@ import {
   Slider,
   Input,
 } from '@heroui/react'
-import { Head, Link, router } from '@inertiajs/react'
+import { Head, Link, router, usePage } from '@inertiajs/react'
+import axios from 'axios'
 import { useState, useMemo, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getOriginIcon } from '../../utils/originIcons'
+import { skillDescriptions } from '../../utils/skillDescriptions'
 import {
   Shield,
   Zap,
@@ -45,6 +47,8 @@ import {
   Check,
   Edit3,
   ChevronDown,
+  Sparkles,
+  Sword,
 } from 'lucide-react'
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts'
 
@@ -78,6 +82,78 @@ interface Trail {
   }>
 }
 
+interface ClassAbility {
+  id: number
+  classId: number
+  name: string
+  description: string | null
+  effects: any
+}
+
+interface CatalogWeapon {
+  id: number
+  name: string
+  category: number
+  type: string
+  weaponType: string | null
+  damage: string
+  damageType: string | null
+  critical: string | null
+  criticalMultiplier: string | null
+  range: string | null
+  ammoCapacity: number | null
+  ammoType: string | null
+  spaces: number
+  description: string | null
+  special: any
+}
+
+interface CatalogProtection {
+  id: number
+  name: string
+  category: number
+  type: string
+  defenseBonus: number
+  dodgePenalty: number
+  spaces: number
+  description: string | null
+  special: any
+}
+
+interface CatalogGeneralItem {
+  id: number
+  name: string
+  category: number
+  type: string | null
+  spaces: number
+  description: string | null
+  effects: any
+}
+
+interface CatalogCursedItem {
+  id: number
+  name: string
+  element: number | null
+  itemType: string | null
+  spaces: number
+  description: string | null
+  benefits: any
+  curses: any
+}
+
+interface CatalogAmmunition {
+  id: number
+  name: string
+  category: number
+  type: string
+  description: string | null
+  damageBonus?: string | null
+  damageTypeOverride?: string | null
+  criticalBonus?: number | null
+  criticalMultiplierBonus?: string | null
+  weaponTypeRestriction?: string | null
+}
+
 interface CharacterProps {
   character: {
     id: number
@@ -88,13 +164,7 @@ interface CharacterProps {
     trailId?: number
     trail?: { id: number; name: string }
     class?: { id: number; name: string }
-    origin?: {
-      id: number
-      name: string
-      trainedSkills?: string[] | string | null
-      abilityName?: string | null
-      abilityDescription?: string | null
-    }
+    origin?: { id: number; name: string; trainedSkills?: string[] | string | null }
     attributes?: {
       strength: number
       agility: number
@@ -157,34 +227,54 @@ interface CharacterProps {
     description: string | null
     type: string
   }>
-  availableClassAbilities?: Array<{
-    id: number
-    classId: number
-    name: string
-    description: string | null
-    effects: any
-  }>
-  totalPowerSlots?: number
-  usedPowerSlots?: number
+  availableAbilities?: ClassAbility[]
+  catalogWeapons?: CatalogWeapon[]
+  catalogProtections?: CatalogProtection[]
+  catalogGeneralItems?: CatalogGeneralItem[]
+  catalogCursedItems?: CatalogCursedItem[]
+  inventoryWeapons?: any[]
+  catalogAmmunitions?: CatalogAmmunition[]
 }
 
-export default function CharacterShow({
-  character,
-  classes,
-  origins,
-  classTrails = [],
-  calculatedStats,
-  classInfo,
-  attributeBonusFromNex = 0,
-  trailProgressions = [],
-  availableClassAbilities = [],
-  totalPowerSlots = 0,
-  usedPowerSlots = 0,
-}: CharacterProps) {
+export default function CharacterShow(initialProps: CharacterProps) {
+  const pageProps = usePage().props as unknown as CharacterProps & { class_trails?: Trail[] }
+  const {
+    character,
+    classes,
+    origins,
+    calculatedStats,
+    classInfo,
+    attributeBonusFromNex = 0,
+    availableAbilities = [],
+  } = { ...initialProps, ...pageProps }
+
+  // Normalize classTrails: backend may send camelCase (classTrails) or snake_case (class_trails)
+  const classTrails: Trail[] =
+    initialProps.classTrails ?? pageProps.classTrails ?? pageProps.class_trails ?? []
+
+  const trailProgressions = initialProps.trailProgressions ?? pageProps.trailProgressions ?? []
+
+  const catalogWeapons: CatalogWeapon[] =
+    initialProps.catalogWeapons ?? pageProps.catalogWeapons ?? []
+  const catalogProtections: CatalogProtection[] =
+    initialProps.catalogProtections ?? pageProps.catalogProtections ?? []
+  const catalogGeneralItems: CatalogGeneralItem[] =
+    initialProps.catalogGeneralItems ?? pageProps.catalogGeneralItems ?? []
+  const catalogCursedItems: CatalogCursedItem[] =
+    initialProps.catalogCursedItems ?? pageProps.catalogCursedItems ?? []
+  const inventoryWeapons: any[] = initialProps.inventoryWeapons ?? pageProps.inventoryWeapons ?? []
+  const catalogAmmunitions: CatalogAmmunition[] =
+    initialProps.catalogAmmunitions ?? pageProps.catalogAmmunitions ?? []
+  console.log('inventoryWeapons RAW:', JSON.stringify(inventoryWeapons, null, 2))
+
+  // Personagem sem trilha: considerar trailId ou trail_id (serialização pode vir em snake_case)
+  const characterTrailId = character.trailId ?? (character as { trail_id?: number | null }).trail_id
+  const hasNoTrail = characterTrailId == null || characterTrailId === undefined
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState({
-    originAbilities: true,
     classAbilities: true,
+    chosenAbilities: true,
     trailAbilities: true,
     acquiredAbilities: true,
   })
@@ -197,14 +287,37 @@ export default function CharacterShow({
   }
 
   // Use calculated stats from server or fallback to defaults
+  const characterId = character.id
+
   const [hp, setHp] = useState(calculatedStats?.currentHp || 21)
   const [pe, setPe] = useState(calculatedStats?.currentPe || 3)
   const [san, setSan] = useState(calculatedStats?.currentSanity || 12)
 
+  // Persistir HP no backend
+  useEffect(() => {
+    if (characterId && hp !== undefined) {
+      axios.put(`/characters/${characterId}/stats`, { currentHp: hp })
+    }
+  }, [hp])
+
+  // Persistir PE no backend
+  useEffect(() => {
+    if (characterId && pe !== undefined) {
+      axios.put(`/characters/${characterId}/stats`, { currentPe: pe })
+    }
+  }, [pe])
+
+  // Persistir Sanidade no backend
+  useEffect(() => {
+    if (characterId && san !== undefined) {
+      axios.put(`/characters/${characterId}/stats`, { currentSanity: san })
+    }
+  }, [san])
+
   // Damage taken inputs
-  const [damageToHp, setDamageToHp] = useState(0)
-  const [damageToPe, setDamageToPe] = useState(0)
-  const [damageToSan, setDamageToSan] = useState(0)
+  const [damageToHp, setDamageToHp] = useState('')
+  const [damageToPe, setDamageToPe] = useState('')
+  const [damageToSan, setDamageToSan] = useState('')
 
   // Defense and Dodge bonuses
   const [defenseEquipBonus, setDefenseEquipBonus] = useState(0)
@@ -242,76 +355,35 @@ export default function CharacterShow({
     onOpenChange: onTrailModalOpenChange,
   } = useDisclosure()
 
-  // Add ability modal state
+  // Trail powers dropdown state
+  const { isOpen: isTrailPowersOpen, onOpenChange: onTrailPowersOpenChange } = useDisclosure()
+
+  // Ability selection modal state
   const {
-    isOpen: isAddAbilityOpen,
-    onOpen: onAddAbilityOpen,
-    onOpenChange: onAddAbilityOpenChange,
+    isOpen: isAbilitySelectOpen,
+    onOpen: onAbilitySelectOpen,
+    onOpenChange: onAbilitySelectOpenChange,
   } = useDisclosure()
-  const [selectedAbilityIds, setSelectedAbilityIds] = useState<number[]>([])
-  const [isAddingAbilities, setIsAddingAbilities] = useState(false)
-  const [abilitySearch, setAbilitySearch] = useState('')
 
-  const remainingPowerSlots = totalPowerSlots - usedPowerSlots
-
-  const filteredAvailableAbilities = useMemo(() => {
-    // Filter out already acquired abilities (except repeatable ones like Transcender)
-    const acquiredIds = (character.classAbilities || []).map((ca) => ca.classAbilityId)
-    let abilities = availableClassAbilities.filter((a) => {
-      const effects =
-        typeof a.effects === 'string' ? JSON.parse(a.effects || '{}') : a.effects || {}
-      if (effects.repeatable) return true // Always show repeatable abilities
-      return !acquiredIds.includes(a.id)
-    })
-    if (abilitySearch.trim()) {
-      const search = abilitySearch.trim().toLowerCase()
-      abilities = abilities.filter(
-        (a) =>
-          a.name.toLowerCase().includes(search) ||
-          (a.description && a.description.toLowerCase().includes(search))
-      )
-    }
-    return abilities
-  }, [availableClassAbilities, character.classAbilities, abilitySearch])
-
-  const toggleAbilitySelection = (abilityId: number) => {
-    if (selectedAbilityIds.includes(abilityId)) {
-      setSelectedAbilityIds(selectedAbilityIds.filter((id) => id !== abilityId))
-    } else {
-      if (selectedAbilityIds.length < remainingPowerSlots) {
-        setSelectedAbilityIds([...selectedAbilityIds, abilityId])
-      }
-    }
+  // Add Item modal state
+  const {
+    isOpen: isAddItemModalOpen,
+    onOpen: onAddItemModalOpen,
+    onOpenChange: onAddItemModalOpenChange,
+  } = useDisclosure()
+  const [expandedItemKey, setExpandedItemKey] = useState<string | null>(null)
+  const toggleItemExpanded = (key: string) => {
+    setExpandedItemKey((prev) => (prev === key ? null : key))
   }
+  const categoryLabels: Record<number, string> = { 0: 'I', 1: 'II', 2: 'III', 3: 'IV', 4: 'V' }
 
-  const submitAddAbilities = () => {
-    if (selectedAbilityIds.length === 0) return
-    setIsAddingAbilities(true)
-    router.post(
-      `/characters/${character.id}/abilities`,
-      { abilityIds: selectedAbilityIds },
-      {
-        onSuccess: () => {
-          setIsAddingAbilities(false)
-          setSelectedAbilityIds([])
-          setAbilitySearch('')
-          onAddAbilityOpenChange()
-        },
-        onError: (errors) => {
-          setIsAddingAbilities(false)
-          console.error('Add abilities failed:', errors)
-        },
-      }
-    )
-  }
-
-  const removeAcquiredAbility = (characterAbilityId: number) => {
-    router.delete(`/characters/${character.id}/abilities/${characterAbilityId}`, {
-      onError: (errors) => {
-        console.error('Remove ability failed:', errors)
-      },
-    })
-  }
+  // Skill context menu state
+  const {
+    isOpen: isSkillMenuOpen,
+    onOpen: onSkillMenuOpen,
+    onOpenChange: onSkillMenuOpenChange,
+  } = useDisclosure()
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
 
   // Calculate max PE that can be spent for Perito based on NEX
   const getMaxPeritoPe = () => {
@@ -447,6 +519,26 @@ export default function CharacterShow({
     }
   }
 
+  const addItemToCharacter = (
+    type: 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition',
+    itemId: number,
+    quantity?: number
+  ) => {
+    router.post(
+      `/characters/${character.id}/items`,
+      { type, itemId, quantity: quantity ?? 1 },
+      {
+        onSuccess: () => {
+          onAddItemModalOpenChange()
+        },
+        onError: (errors) => {
+          console.error('Erro ao adicionar item:', errors)
+          alert('Erro ao adicionar item. Verifique se o item existe e tente novamente.')
+        },
+      }
+    )
+  }
+
   const selectTrail = (trailId: number) => {
     router.put(
       `/characters/${character.id}/trail`,
@@ -460,6 +552,31 @@ export default function CharacterShow({
         },
       }
     )
+  }
+
+  const addClassAbility = (abilityId: number) => {
+    setIsAddingAbility(true)
+    router.post(
+      `/characters/${character.id}/abilities`,
+      { abilityId },
+      {
+        onSuccess: () => {
+          setIsAddingAbility(false)
+          onAbilitySelectOpenChange()
+        },
+        onError: (errors) => {
+          setIsAddingAbility(false)
+          console.error('Ability addition failed:', errors)
+        },
+      }
+    )
+  }
+
+  const handleSkillContextMenu = (skillName: string, event: React.MouseEvent) => {
+    event.preventDefault()
+    setSelectedSkillName(skillName)
+    setSkillMenuPosition({ x: event.clientX, y: event.clientY })
+    onSkillMenuOpen()
   }
 
   // Editable attributes state
@@ -519,22 +636,44 @@ export default function CharacterShow({
     // Sanity calculation: baseSanity + (level - 1) * sanityPerLevel
     const baseSanity = classInfo?.baseSanity || 12
     const sanityPerLevel = classInfo?.sanityPerLevel || 3
-    let calculatedMaxSan = baseSanity + (level - 1) * sanityPerLevel
-
-    // Transcender: reduce max sanity by sanityPerLevel for each instance
-    const transcenderCount = (character.classAbilities || []).filter(
-      (ca) => ca.classAbility?.name === 'Transcender'
-    ).length
-    if (transcenderCount > 0) {
-      calculatedMaxSan -= sanityPerLevel * transcenderCount
-    }
+    const calculatedMaxSan = baseSanity + (level - 1) * sanityPerLevel
 
     return {
       maxHp: calculatedMaxHp,
       maxPe: calculatedMaxPe,
       maxSan: calculatedMaxSan,
     }
-  }, [character.nex, vigor, presence, classInfo, character.classAbilities])
+  }, [character.nex, vigor, presence, classInfo])
+
+  // Filter trail progressions by current NEX
+  const { currentTrailAbilities, futureTrailAbilities } = useMemo(() => {
+    const current = trailProgressions.filter((prog) => prog.nex <= character.nex)
+    const future = trailProgressions.filter((prog) => prog.nex > character.nex)
+    return { currentTrailAbilities: current, futureTrailAbilities: future }
+  }, [trailProgressions, character.nex])
+
+  // Calculate how many class abilities can be chosen (1 per 15% NEX) and how many are already chosen
+  const { maxClassAbilities, chosenClassAbilities, canChooseMore } = useMemo(() => {
+    // Count how many non-mandatory abilities are already chosen
+    const nonMandatory =
+      character.classAbilities?.filter((ability) => {
+        const effects =
+          typeof ability.classAbility?.effects === 'string'
+            ? JSON.parse(ability.classAbility?.effects || '{}')
+            : ability.classAbility?.effects || {}
+        return effects.mandatory !== true
+      }) || []
+
+    // Calculate max based on NEX (1 per 15%)
+    const max = Math.floor(character.nex / 15)
+    const canChoose = max > nonMandatory.length
+
+    return {
+      maxClassAbilities: max,
+      chosenClassAbilities: nonMandatory.length,
+      canChooseMore: canChoose,
+    }
+  }, [character.classAbilities, character.nex])
 
   // Track if HP/PE/San was at max, so when max increases, current also increases
   const [prevMaxHp, setPrevMaxHp] = useState(maxHp)
@@ -570,6 +709,10 @@ export default function CharacterShow({
     if (san === prevMaxSan && maxSan > prevMaxSan) {
       setSan(maxSan)
     }
+    // If Sanity was at max and max decreased, reduce current accordingly
+    else if (san === prevMaxSan && maxSan < prevMaxSan) {
+      setSan(maxSan)
+    }
     // If max decreased and Sanity is above new max, cap it
     else if (san > maxSan) {
       setSan(maxSan)
@@ -579,10 +722,8 @@ export default function CharacterShow({
 
   // Apply damage to HP based on damage input
   useEffect(() => {
-    const baseHp = calculatedStats?.currentHp || 21
-    const appliedDamage = Math.max(0, damageToHp)
-    const newHp = Math.max(0, baseHp - appliedDamage)
-    setHp(newHp)
+    const appliedDamage = Math.max(0, Number(damageToHp) || 0)
+    setHp((prevHp) => Math.max(0, prevHp - appliedDamage))
   }, [damageToHp])
 
   // Apply damage to PE based on damage input
@@ -603,7 +744,7 @@ export default function CharacterShow({
 
   // Calculate available points: 4 base + NEX bonus + 1 for each attribute at 0
   // All attributes start at 1 (base). Points spent = value above 1. Reducing to 0 gives +1 bonus.
-  const { totalPoints, usedPoints, availablePoints } = useMemo(() => {
+  const { usedPoints, availablePoints } = useMemo(() => {
     const attrs = [strength, agility, intellect, vigor, presence]
     const base = 4 + attributeBonusFromNex
     const zeroBonus = attrs.filter((v) => v === 0).length
@@ -641,7 +782,6 @@ export default function CharacterShow({
   }
 
   // Combined attrs object for display
-  const attrs = { strength, agility, intellect, vigor, presence }
 
   // Calculate available skills based on class and intellect
   // Especialista: 7 + intelecto escolhidas livremente + perícias da origem
@@ -947,9 +1087,63 @@ export default function CharacterShow({
   ]
 
   // Mock Data (will be replaced by real data later)
-  const skills: any[] = []
 
-  const inventory: { name: string; desc: string; qty: number; weight: string; type: string }[] = []
+  const [expandedItemId, setExpandedItemId] = useState<string | number | null>(null)
+
+  const inventory: {
+    id: number
+    weaponId?: number
+    name: string
+    desc: string
+    qty: number
+    weight: string
+    type: string
+    damage?: string
+    damageType?: string | null
+    category?: number | null
+    critical?: string | null
+    criticalMultiplier?: string | null
+    range?: string | null
+    weaponType?: string | null
+    uniqueId: string // Adiciona um ID único para evitar conflitos
+  }[] = useMemo(() => {
+    const items = inventoryWeapons.map((w, index) => ({
+      id: w.id,
+      weaponId: w.weaponId,
+      name: w.name,
+      desc: w.description || '',
+      qty: w.quantity ?? 1,
+      weight: `${w.weight} kg`,
+      type: 'Arma',
+      damage: w.damage,
+      damageType: w.damageType,
+      category: w.category,
+      critical: w.critical,
+      criticalMultiplier: w.criticalMultiplier,
+      range: w.range,
+      weaponType: w.weaponType,
+      uniqueId: `${w.id}-${index}`, // ID único combinando ID e índice
+    }))
+    console.log('Inventory weapons do backend:', JSON.stringify(inventoryWeapons, null, 2))
+    console.log('Inventory mapeado:', JSON.stringify(items, null, 2))
+    return items
+  }, [inventoryWeapons])
+
+  const removeItem = (itemId: number) => {
+    if (!confirm('Tem certeza que deseja remover este item?')) return
+    console.log('Removendo item:', itemId, 'do personagem:', character.id)
+    axios
+      .delete(`/characters/${character.id}/items/${itemId}`)
+      .then(() => {
+        setExpandedItemId(null)
+        router.reload({ preserveScroll: true })
+      })
+      .catch((error) => {
+        console.error('Erro ao remover item:', error)
+        console.error('Resposta do servidor:', error.response?.data)
+        alert('Erro ao remover item. Tente novamente.')
+      })
+  }
 
   const attributesData = [
     { subject: 'FOR', A: strength, fullMark: 10 },
@@ -1209,6 +1403,7 @@ export default function CharacterShow({
                         onPress={() =>
                           isLearningSkills && !isLocked ? toggleSkillTraining(skill.name) : null
                         }
+                        onContextMenu={(e) => handleSkillContextMenu(skill.name, e)}
                         className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all ${
                           isLearningSkills && !isLocked
                             ? 'cursor-pointer hover:scale-105'
@@ -1294,6 +1489,7 @@ export default function CharacterShow({
                     <Button
                       size="sm"
                       className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
+                      onPress={onAddItemModalOpen}
                     >
                       <Plus size={14} className="mr-2" /> Adicionar Item
                     </Button>
@@ -1327,40 +1523,150 @@ export default function CharacterShow({
 
                   {/* Items List */}
                   <div className="space-y-2 overflow-y-auto custom-scrollbar">
-                    {inventory.map((item, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-zinc-800 hover:border-zinc-700 transition-all"
-                      >
-                        <div className="flex items-center gap-3">
+                    {inventory.map((item, i) => {
+                      const isExpanded = expandedItemId === item.uniqueId
+                      const getIconForItem = () => {
+                        if (item.type === 'Arma') {
+                          return <Sword size={18} />
+                        }
+                        if (item.type === 'Armadura') {
+                          return <Shield size={18} />
+                        }
+                        if (item.type === 'Consumível') {
+                          return <Zap size={18} />
+                        }
+                        return <Activity size={18} />
+                      }
+                      const getIconColors = () => {
+                        if (item.type === 'Arma') {
+                          return 'bg-orange-500/10 border-orange-500/20 text-orange-400'
+                        }
+                        if (item.type === 'Armadura') {
+                          return 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                        }
+                        if (item.type === 'Consumível') {
+                          return 'bg-purple-500/10 border-purple-500/20 text-purple-400'
+                        }
+                        return 'bg-orange-500/10 border-orange-500/20 text-orange-400'
+                      }
+                      const categoryLabels: Record<number, string> = {
+                        0: 'I',
+                        1: 'II',
+                        2: 'III',
+                        3: 'IV',
+                        4: 'V',
+                      }
+                      return (
+                        <div
+                          key={item.uniqueId}
+                          className="rounded-lg border border-zinc-800 bg-zinc-950/50 hover:bg-zinc-950 transition-all overflow-hidden"
+                        >
                           <div
-                            className={`p-2.5 rounded-lg border ${i === 0 ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : i === 2 ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' : 'bg-orange-500/10 border-orange-500/20 text-orange-400'}`}
+                            onClick={() => setExpandedItemId(isExpanded ? null : item.uniqueId)}
+                            className="flex items-center justify-between p-3 cursor-pointer"
                           >
-                            {i === 0 ? (
-                              <Activity size={18} />
-                            ) : i === 2 ? (
-                              <Zap size={18} />
-                            ) : (
-                              <Zap size={18} />
-                            )}
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2.5 rounded-lg border ${getIconColors()}`}>
+                                {getIconForItem()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-zinc-200 text-sm">
+                                  {item.name}
+                                </div>
+                                <div className="text-[11px] text-zinc-500">{item.desc}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-zinc-500">x{item.qty}</span>
+                              <span className="text-xs text-zinc-500">{item.weight}</span>
+                              <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800 text-zinc-400 text-xs">
+                                {item.type === 'Equipamento' ? 'Equip' : item.type}
+                              </span>
+                              {!isExpanded && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    removeItem(item.id)
+                                  }}
+                                  className="text-zinc-600 hover:text-red-400 transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                              <ChevronDown
+                                size={14}
+                                className={`text-zinc-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                              />
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-semibold text-zinc-200 text-sm">{item.name}</div>
-                            <div className="text-[11px] text-zinc-500">{item.desc}</div>
-                          </div>
+                          {isExpanded && item.type === 'Arma' && (
+                            <div className="px-3 pb-3 pt-0 border-t border-zinc-800/50 mt-1">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
+                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                    Dano
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                    {item.damage ?? '—'}
+                                    {item.damageType ? (
+                                      <span className="text-xs font-normal text-orange-200/90">
+                                        {' '}
+                                        ({item.damageType})
+                                      </span>
+                                    ) : null}
+                                  </p>
+                                </div>
+                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
+                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                    Categoria
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                    {item.category != null
+                                      ? (categoryLabels[item.category] ?? item.category)
+                                      : '—'}
+                                  </p>
+                                </div>
+                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
+                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                    Alcance
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                    {item.range ?? '—'}
+                                  </p>
+                                </div>
+                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
+                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                    Margem de Crítico
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                    {item.critical ?? '—'}
+                                  </p>
+                                </div>
+                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
+                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                    Multiplicador
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                    {item.criticalMultiplier ?? '—'}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex justify-end mt-2 mb-2">
+                                <button
+                                  className="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    removeItem(item.id)
+                                  }}
+                                >
+                                  <Trash2 size={12} /> Remover item
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-4 text-xs text-zinc-400">
-                          <span className="text-zinc-500">x{item.qty}</span>
-                          <span className="text-zinc-500">{item.weight}</span>
-                          <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800 text-zinc-400">
-                            {item.type === 'Equipamento' ? 'Equip' : item.type}
-                          </span>
-                          <button className="text-zinc-600 hover:text-red-400 transition-colors">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               </Tab>
@@ -1535,123 +1841,115 @@ export default function CharacterShow({
                         <div className="w-4 h-4 border-2 border-amber-500 rounded-sm"></div>
                       </div>
                       <h3 className="text-lg font-bold text-zinc-100">Habilidades</h3>
+                      <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 rounded text-amber-300 text-xs font-bold">
+                        {chosenClassAbilities}/{maxClassAbilities}
+                      </span>
                     </div>
-                    <Button
-                      size="sm"
-                      className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                      onPress={() => {
-                        setSelectedAbilityIds([])
-                        setAbilitySearch('')
-                        onAddAbilityOpen()
-                      }}
-                      isDisabled={remainingPowerSlots <= 0}
-                    >
-                      <Plus size={14} className="mr-2" /> Adicionar Habilidade
-                      {totalPowerSlots > 0 && (
-                        <span className="ml-1 text-xs text-zinc-400">
-                          ({usedPowerSlots}/{totalPowerSlots})
-                        </span>
+                    <div className="flex items-center gap-2">
+                      {character.trailId && futureTrailAbilities.length > 0 && (
+                        <Dropdown isOpen={isTrailPowersOpen} onOpenChange={onTrailPowersOpenChange}>
+                          <DropdownTrigger>
+                            <Button
+                              size="sm"
+                              className="bg-purple-800 hover:bg-purple-700 text-white border border-purple-700"
+                            >
+                              <Sparkles size={14} className="mr-2" /> Poderes de Trilha
+                            </Button>
+                          </DropdownTrigger>
+                          <DropdownMenu
+                            aria-label="Trail powers"
+                            className="max-h-96 overflow-y-auto"
+                            classNames={{
+                              base: 'bg-zinc-900 border border-zinc-800',
+                              list: 'bg-zinc-900',
+                            }}
+                          >
+                            {futureTrailAbilities.map((prog) => (
+                              <DropdownItem
+                                key={prog.id}
+                                textValue={prog.title}
+                                className="px-3 py-2 data-[hover=true]:bg-zinc-800"
+                              >
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <h5 className="font-semibold text-purple-300">{prog.title}</h5>
+                                    <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
+                                      NEX {prog.nex}%
+                                    </span>
+                                  </div>
+                                  {prog.description && (
+                                    <p className="text-zinc-400 text-xs leading-relaxed">
+                                      {prog.description}
+                                    </p>
+                                  )}
+                                </div>
+                              </DropdownItem>
+                            ))}
+                          </DropdownMenu>
+                        </Dropdown>
                       )}
-                    </Button>
+
+                      {/* Trail selection button for characters with no trail and eligible class trails */}
+                      {hasNoTrail && classTrails.length > 0 && (
+                        <Button
+                          size="sm"
+                          className="bg-purple-700 hover:bg-purple-800 text-white border border-purple-700"
+                          onPress={onTrailModalOpen}
+                        >
+                          <Sparkles size={14} className="mr-2" /> Escolher Trilha
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
+                        onPress={onAbilitySelectOpen}
+                        isDisabled={!canChooseMore || availableAbilities.length === 0}
+                      >
+                        <Plus size={14} className="mr-2" /> Adicionar Habilidade
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Skills List */}
                   <div className="space-y-6 overflow-y-auto custom-scrollbar">
-                    {/* HABILIDADE DE ORIGEM */}
-                    {character.origin?.abilityName && (
-                      <div>
-                        <button
-                          onClick={() => toggleSection('originAbilities')}
-                          className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                        >
-                          <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                          <h4 className="font-bold text-blue-400 text-sm uppercase tracking-wider flex-1 text-left">
-                            Habilidade de Origem
-                          </h4>
-                          <motion.div
-                            animate={{ rotate: expandedSections.originAbilities ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <ChevronDown size={16} className="text-blue-400" />
-                          </motion.div>
-                        </button>
-                        <AnimatePresence>
-                          {expandedSections.originAbilities && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="space-y-2"
-                            >
-                              <div className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-blue-500/30 hover:border-blue-500/50 transition-all">
-                                <div className="flex items-start">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <h5 className="font-semibold text-blue-300">
-                                        {character.origin.abilityName}
-                                      </h5>
-                                      <span className="px-1.5 py-0.5 bg-blue-500/20 border border-blue-500/40 rounded text-blue-300 text-xs font-bold">
-                                        {character.origin.name}
-                                      </span>
-                                    </div>
-                                    {character.origin.abilityDescription && (
-                                      <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                        {character.origin.abilityDescription}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-
                     {/* HABILIDADES OBRIGATÓRIAS DA CLASSE */}
-                    <div>
-                      <button
-                        onClick={() => toggleSection('classAbilities')}
-                        className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                      >
-                        <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                        <h4 className="font-bold text-amber-400 text-sm uppercase tracking-wider flex-1 text-left">
-                          Obrigatórias da Classe
-                        </h4>
-                        <motion.div
-                          animate={{ rotate: expandedSections.classAbilities ? 180 : 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <ChevronDown size={16} className="text-amber-400" />
-                        </motion.div>
-                      </button>
-                      <AnimatePresence>
-                        {expandedSections.classAbilities && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="space-y-2"
+                    {(() => {
+                      const mandatoryAbilities =
+                        character.classAbilities?.filter((ability) => {
+                          const effects =
+                            typeof ability.classAbility?.effects === 'string'
+                              ? JSON.parse(ability.classAbility?.effects || '{}')
+                              : ability.classAbility?.effects || {}
+                          return effects.mandatory === true
+                        }) || []
+
+                      return mandatoryAbilities.length > 0 ? (
+                        <div>
+                          <button
+                            onClick={() => toggleSection('classAbilities')}
+                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
                           >
-                            {character.classAbilities &&
-                            character.classAbilities.filter((ca) => {
-                              const eff =
-                                typeof ca.classAbility?.effects === 'string'
-                                  ? JSON.parse(ca.classAbility.effects || '{}')
-                                  : ca.classAbility?.effects || {}
-                              return eff.mandatory === true
-                            }).length > 0 ? (
-                              character.classAbilities
-                                .filter((ca) => {
-                                  const eff =
-                                    typeof ca.classAbility?.effects === 'string'
-                                      ? JSON.parse(ca.classAbility.effects || '{}')
-                                      : ca.classAbility?.effects || {}
-                                  return eff.mandatory === true
-                                })
-                                .map((ability, idx) => (
+                            <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                            <h4 className="font-bold text-amber-400 text-sm uppercase tracking-wider flex-1 text-left">
+                              Obrigatórias da Classe
+                            </h4>
+                            <motion.div
+                              animate={{ rotate: expandedSections.classAbilities ? 180 : 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <ChevronDown size={16} className="text-amber-400" />
+                            </motion.div>
+                          </button>
+                          <AnimatePresence>
+                            {expandedSections.classAbilities && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-2"
+                              >
+                                {mandatoryAbilities.map((ability, idx) => (
                                   <div
                                     key={idx}
                                     className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-amber-500/30 hover:border-amber-500/50 transition-all"
@@ -1692,163 +1990,251 @@ export default function CharacterShow({
                                       )}
                                     </div>
                                   </div>
-                                ))
-                            ) : (
-                              <div className="p-3 bg-zinc-950/30 rounded-lg border border-zinc-700/30 text-zinc-500 text-xs italic text-center">
-                                Nenhuma habilidade obrigatória
-                              </div>
+                                ))}
+                              </motion.div>
                             )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+                          </AnimatePresence>
+                        </div>
+                      ) : null
+                    })()}
+
+                    {/* HABILIDADES ESCOLHIDAS */}
+                    {(() => {
+                      const chosenAbilities =
+                        character.classAbilities?.filter((ability) => {
+                          const effects =
+                            typeof ability.classAbility?.effects === 'string'
+                              ? JSON.parse(ability.classAbility?.effects || '{}')
+                              : ability.classAbility?.effects || {}
+                          return effects.mandatory !== true
+                        }) || []
+
+                      return (
+                        <div>
+                          <button
+                            onClick={() => toggleSection('chosenAbilities')}
+                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
+                          >
+                            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                            <h4 className="font-bold text-blue-400 text-sm uppercase tracking-wider flex-1 text-left">
+                              Habilidades Escolhidas
+                            </h4>
+                            <motion.div
+                              animate={{ rotate: expandedSections.chosenAbilities ? 180 : 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <ChevronDown size={16} className="text-blue-400" />
+                            </motion.div>
+                          </button>
+                          <AnimatePresence>
+                            {expandedSections.chosenAbilities && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-2"
+                              >
+                                {chosenAbilities.length > 0 ? (
+                                  chosenAbilities.map((ability, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-blue-500/30 hover:border-blue-500/50 transition-all"
+                                    >
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <h5 className="font-semibold text-blue-300">
+                                              {ability.classAbility?.name}
+                                            </h5>
+                                            {ability.classAbility?.effects?.nex && (
+                                              <span className="px-1.5 py-0.5 bg-blue-500/20 border border-blue-500/40 rounded text-blue-300 text-xs font-bold">
+                                                NEX {ability.classAbility.effects.nex}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-zinc-400 text-xs leading-relaxed mt-1">
+                                            {ability.classAbility?.description}
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center gap-2 ml-2">
+                                          {ability.classAbility?.name === 'Perito' && (
+                                            <Button
+                                              isIconOnly
+                                              size="sm"
+                                              className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/40"
+                                              onPress={() => openAbilityConfig(ability)}
+                                            >
+                                              <Edit3 size={14} />
+                                            </Button>
+                                          )}
+                                          <Button
+                                            isIconOnly
+                                            size="sm"
+                                            className="bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40"
+                                            onPress={() => {
+                                              router.delete(
+                                                `/characters/${character.id}/abilities/${ability.classAbilityId}`
+                                              )
+                                            }}
+                                          >
+                                            <Trash2 size={14} />
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="p-3 bg-zinc-950/30 rounded-lg border border-zinc-700/30 text-zinc-500 text-xs italic text-center">
+                                    Nenhuma habilidade escolhida. Use o botão "Adicionar Habilidade"
+                                    acima.
+                                  </div>
+                                )}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )
+                    })()}
 
                     {/* HABILIDADES DE TRILHA */}
-                    {character.trail && trailProgressions && trailProgressions.length > 0 && (
-                      <div>
-                        <button
-                          onClick={() => toggleSection('trailAbilities')}
-                          className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                        >
-                          <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                          <h4 className="font-bold text-purple-400 text-sm uppercase tracking-wider flex-1 text-left">
-                            Trilha: {character.trail.name}
-                          </h4>
-                          <motion.div
-                            animate={{ rotate: expandedSections.trailAbilities ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
+                    {character.trail &&
+                      currentTrailAbilities &&
+                      currentTrailAbilities.length > 0 && (
+                        <div>
+                          <button
+                            onClick={() => toggleSection('trailAbilities')}
+                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
                           >
-                            <ChevronDown size={16} className="text-purple-400" />
-                          </motion.div>
-                        </button>
-                        <AnimatePresence>
-                          {expandedSections.trailAbilities && (
+                            <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                            <h4 className="font-bold text-purple-400 text-sm uppercase tracking-wider flex-1 text-left">
+                              Trilha: {character.trail.name}
+                            </h4>
                             <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
+                              animate={{ rotate: expandedSections.trailAbilities ? 180 : 0 }}
                               transition={{ duration: 0.2 }}
-                              className="space-y-2"
                             >
-                              {trailProgressions.map((progression, idx) => (
-                                <div
-                                  key={idx}
-                                  className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-purple-500/30 hover:border-purple-500/50 transition-all"
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2">
-                                        <h5 className="font-semibold text-purple-300">
-                                          {progression.title}
-                                        </h5>
-                                        <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
-                                          NEX {progression.nex}%
-                                        </span>
-                                      </div>
-                                      {progression.description && (
-                                        <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                          {progression.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
+                              <ChevronDown size={16} className="text-purple-400" />
                             </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-
-                    {/* HABILIDADES ADQUIRIDAS */}
-                    <div>
-                      <button
-                        onClick={() => toggleSection('acquiredAbilities')}
-                        className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                      >
-                        <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                        <h4 className="font-bold text-emerald-400 text-sm uppercase tracking-wider flex-1 text-left">
-                          Adquiridas
-                        </h4>
-                        <motion.div
-                          animate={{ rotate: expandedSections.acquiredAbilities ? 180 : 0 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          <ChevronDown size={16} className="text-emerald-400" />
-                        </motion.div>
-                      </button>
-                      <AnimatePresence>
-                        {expandedSections.acquiredAbilities && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="space-y-3"
-                          >
-                            {!character.trail ? (
-                              <Button
-                                fullWidth
-                                color="primary"
-                                className="font-bold"
-                                onPress={onTrailModalOpen}
+                          </button>
+                          <AnimatePresence>
+                            {expandedSections.trailAbilities && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-2"
                               >
-                                Escolher una Trilha
-                              </Button>
-                            ) : (
-                              (() => {
-                                // Get acquired non-mandatory abilities
-                                const mandatoryIds = availableClassAbilities.length > 0 ? [] : [] // availableClassAbilities already excludes mandatory
-                                const acquiredNonMandatory = (
-                                  character.classAbilities || []
-                                ).filter((ca) => {
-                                  const eff =
-                                    typeof ca.classAbility?.effects === 'string'
-                                      ? JSON.parse(ca.classAbility.effects || '{}')
-                                      : ca.classAbility?.effects || {}
-                                  return !eff.mandatory
-                                })
-                                if (acquiredNonMandatory.length === 0) {
-                                  return (
-                                    <div className="p-3 bg-zinc-950/30 rounded-lg border border-zinc-700/30 text-zinc-500 text-xs italic text-center">
-                                      Nenhuma habilidade adquirida ainda. Use o botão "Adicionar
-                                      Habilidade" acima.
-                                    </div>
-                                  )
-                                }
-                                return acquiredNonMandatory.map((ability, idx) => (
+                                {currentTrailAbilities.map((progression, idx) => (
                                   <div
                                     key={idx}
-                                    className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-emerald-500/30 hover:border-emerald-500/50 transition-all"
+                                    className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-purple-500/30 hover:border-purple-500/50 transition-all"
                                   >
                                     <div className="flex items-start justify-between">
                                       <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <h5 className="font-semibold text-emerald-300">
-                                            {ability.classAbility?.name}
+                                        <div className="flex items-center gap-2">
+                                          <h5 className="font-semibold text-purple-300">
+                                            {progression.title}
                                           </h5>
+                                          <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
+                                            NEX {progression.nex}%
+                                          </span>
                                         </div>
-                                        <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                          {ability.classAbility?.description}
-                                        </p>
+                                        {progression.description && (
+                                          <p className="text-zinc-400 text-xs leading-relaxed mt-1">
+                                            {progression.description}
+                                          </p>
+                                        )}
                                       </div>
-                                      <Button
-                                        isIconOnly
-                                        size="sm"
-                                        className="ml-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40"
-                                        onPress={() => removeAcquiredAbility(ability.id)}
-                                      >
-                                        <Trash2 size={14} />
-                                      </Button>
                                     </div>
                                   </div>
-                                ))
-                              })()
+                                ))}
+                              </motion.div>
                             )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+                          </AnimatePresence>
+                        </div>
+                      )}
+
+                    {/* PODERES PARANORMAIS */}
+                    {(() => {
+                      const paranormalPowers =
+                        character.classAbilities?.filter(
+                          (ability) => ability.classAbility?.name === 'Transcender'
+                        ) || []
+
+                      return (
+                        <div>
+                          <button
+                            onClick={() => toggleSection('acquiredAbilities')}
+                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
+                          >
+                            <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                            <h4 className="font-bold text-red-400 text-sm uppercase tracking-wider flex-1 text-left">
+                              Poderes Paranormais ({paranormalPowers.length})
+                            </h4>
+                            <motion.div
+                              animate={{ rotate: expandedSections.acquiredAbilities ? 180 : 0 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <ChevronDown size={16} className="text-red-400" />
+                            </motion.div>
+                          </button>
+                          <AnimatePresence>
+                            {expandedSections.acquiredAbilities && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="space-y-3"
+                              >
+                                {paranormalPowers.length > 0 ? (
+                                  paranormalPowers.map((ability, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-red-500/30 hover:border-red-500/50 transition-all"
+                                    >
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <h5 className="font-semibold text-red-300">
+                                              {ability.classAbility?.name}
+                                            </h5>
+                                            {ability.classAbility?.effects?.nex && (
+                                              <span className="px-1.5 py-0.5 bg-red-500/20 border border-red-500/40 rounded text-red-300 text-xs font-bold">
+                                                NEX {ability.classAbility.effects.nex}
+                                              </span>
+                                            )}
+                                            {(() => {
+                                              const count = paranormalPowers.filter(
+                                                (p) => p.classAbility?.name === 'Transcender'
+                                              ).length
+                                              return count > 1 ? (
+                                                <span className="px-1.5 py-0.5 bg-red-500/20 border border-red-500/40 rounded text-red-300 text-xs font-bold">
+                                                  x{count}
+                                                </span>
+                                              ) : null
+                                            })()}
+                                          </div>
+                                          <p className="text-zinc-400 text-xs leading-relaxed mt-1">
+                                            {ability.classAbility?.description}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="p-3 bg-zinc-950/30 rounded-lg border border-zinc-700/30 text-zinc-500 text-xs italic text-center">
+                                    Nenhum poder paranormal adquirido ainda
+                                  </div>
+                                )}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
               </Tab>
@@ -1931,9 +2317,7 @@ export default function CharacterShow({
                       <div className={`p-1.5 rounded bg-zinc-950 ${attr.color}`}>
                         <attr.icon size={12} />
                       </div>
-                      <span className="text-xs font-bold text-zinc-400 w-8 whitespace-nowrap">
-                        {attr.label}
-                      </span>
+                      <span className="text-xs font-bold text-zinc-400 w-6">{attr.label}</span>
                       <div className="flex items-center bg-zinc-950 rounded border border-zinc-800">
                         <button
                           onClick={() => attr.set(Math.max(0, attr.val - 1))}
@@ -2051,7 +2435,7 @@ export default function CharacterShow({
                   <input
                     type="number"
                     value={damageToHp}
-                    onChange={(e) => setDamageToHp(Math.max(0, Number(e.target.value)))}
+                    onChange={(e) => setDamageToHp(e.target.value)}
                     className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 font-bold text-white w-20"
                     min="0"
                   />
@@ -2438,7 +2822,7 @@ export default function CharacterShow({
                                     <div className="shrink-0 rounded-xl overflow-hidden">
                                       <Button
                                         color="primary"
-                                        radius="xl"
+                                        radius="lg"
                                         size="sm"
                                         className="shadow-lg shadow-blue-500/20 font-bold text-xs min-w-0 px-2 h-7"
                                         startContent={<Check size={12} />}
@@ -2695,6 +3079,112 @@ export default function CharacterShow({
         </ModalContent>
       </Modal>
 
+      {/* Class Ability Selection Modal */}
+      <Modal
+        isOpen={isSkillMenuOpen}
+        onOpenChange={onSkillMenuOpenChange}
+        size="2xl"
+        classNames={{
+          base: 'bg-zinc-900 border border-zinc-800',
+          header: 'border-b border-zinc-800',
+          body: 'py-6 max-h-[60vh] overflow-y-auto custom-scrollbar',
+        }}
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-white">{selectedSkillName}</h2>
+                <p className="text-xs text-zinc-400">Ações disponíveis para esta perícia</p>
+              </ModalHeader>
+              <ModalBody>
+                {selectedSkillName && skillDescriptions[selectedSkillName] ? (
+                  <div className="space-y-4">
+                    {skillDescriptions[selectedSkillName].map((action, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 bg-zinc-950/50 rounded-lg border border-cyan-500/30 hover:border-cyan-500/50 transition-all"
+                      >
+                        <h3 className="font-bold text-cyan-300 mb-2">{action.title}</h3>
+                        <p className="text-sm text-zinc-300 leading-relaxed">
+                          {action.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 text-center text-zinc-400">
+                    Nenhuma ação disponível para esta perícia
+                  </div>
+                )}
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Class Ability Selection Modal */}
+      <Modal
+        isOpen={isAbilitySelectOpen}
+        onOpenChange={onAbilitySelectOpenChange}
+        size="2xl"
+        classNames={{
+          base: 'bg-zinc-900 border border-zinc-800',
+          header: 'border-b border-zinc-800',
+          body: 'py-6',
+        }}
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-white">Escolher Habilidade de Classe</h2>
+                <p className="text-xs text-zinc-400">
+                  Escolhidas: {chosenClassAbilities}/{maxClassAbilities}
+                </p>
+              </ModalHeader>
+              <ModalBody>
+                {availableAbilities.length > 0 ? (
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {availableAbilities.map((ability) => (
+                      <Card
+                        key={ability.id}
+                        isPressable
+                        onPress={() => addClassAbility(ability.id)}
+                        className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
+                      >
+                        <CardBody className="space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h3 className="text-lg font-bold text-amber-400">{ability.name}</h3>
+                              {ability.effects?.nex && (
+                                <p className="text-xs text-zinc-400 mt-1">
+                                  Requer: NEX {ability.effects.nex}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {ability.description && (
+                            <p className="text-sm text-zinc-300">{ability.description}</p>
+                          )}
+                        </CardBody>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-zinc-400">
+                    <p className="text-sm">
+                      Nenhuma habilidade disponível para escolher no momento
+                    </p>
+                  </div>
+                )}
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
       {/* Trail Selection Modal */}
       <Modal
         isOpen={isTrailModalOpen}
@@ -2759,128 +3249,588 @@ export default function CharacterShow({
         </ModalContent>
       </Modal>
 
-      {/* Add Ability Modal */}
+      {/* Add Item Modal - abas por tipo */}
       <Modal
-        isOpen={isAddAbilityOpen}
-        onOpenChange={onAddAbilityOpenChange}
+        isOpen={isAddItemModalOpen}
+        onOpenChange={onAddItemModalOpenChange}
         size="3xl"
         scrollBehavior="inside"
         classNames={{
           base: 'bg-zinc-900 border border-zinc-800',
           header: 'border-b border-zinc-800',
-          body: 'py-4',
-          footer: 'border-t border-zinc-800',
+          body: 'py-0 overflow-hidden flex flex-col max-h-[70vh]',
         }}
       >
         <ModalContent>
-          {(onClose) => (
+          {() => (
             <>
               <ModalHeader className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white">Adicionar Habilidade de Classe</h2>
-                  <Chip
-                    size="sm"
-                    className={`border ${
-                      remainingPowerSlots - selectedAbilityIds.length > 0
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                    }`}
-                  >
-                    {selectedAbilityIds.length} / {remainingPowerSlots} slots disponíveis
-                  </Chip>
-                </div>
+                <h2 className="text-xl font-bold text-white">Adicionar Item ao Inventário</h2>
                 <p className="text-xs text-zinc-400">
-                  Selecione as habilidades de {character.class?.name || 'classe'} que deseja
-                  adquirir. Você ganha 1 slot de poder nos NEX 15%, 30%, 45%, 60%, 75% e 90%.
+                  Escolha um item por tipo e adicione ao personagem
                 </p>
               </ModalHeader>
               <ModalBody>
-                {/* Search */}
-                <Input
-                  placeholder="Buscar habilidade..."
-                  value={abilitySearch}
-                  onValueChange={setAbilitySearch}
-                  size="sm"
+                <Tabs
+                  aria-label="Tipos de item"
+                  variant="underlined"
                   classNames={{
-                    inputWrapper: 'bg-zinc-950 border border-zinc-700 hover:border-zinc-600',
-                    input: 'text-zinc-200',
+                    base: 'w-full flex flex-col flex-1 min-h-0',
+                    tabList: 'gap-2 border-b border-zinc-800 px-0',
+                    cursor: 'bg-orange-500',
+                    tab: 'text-zinc-400 data-[selected=true]:text-orange-500',
+                    panel: 'flex-1 overflow-y-auto py-4 min-h-0',
                   }}
-                  startContent={<Filter size={14} className="text-zinc-500" />}
-                />
-
-                {/* Available abilities */}
-                <div className="space-y-2 mt-2">
-                  {filteredAvailableAbilities.length > 0 ? (
-                    filteredAvailableAbilities.map((ability) => {
-                      const isSelected = selectedAbilityIds.includes(ability.id)
-                      const isDisabled =
-                        !isSelected && selectedAbilityIds.length >= remainingPowerSlots
-                      return (
-                        <div
-                          key={ability.id}
-                          onClick={() => !isDisabled && toggleAbilitySelection(ability.id)}
-                          className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-500/10 border-emerald-500/50 hover:border-emerald-500/70'
-                              : isDisabled
-                                ? 'bg-zinc-950/30 border-zinc-700/30 opacity-50 cursor-not-allowed'
-                                : 'bg-zinc-950/50 border-zinc-700/30 hover:border-zinc-600/50 hover:bg-zinc-950'
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
+                >
+                  <Tab
+                    key="weapons"
+                    title={<span className="flex items-center gap-2">⚔️ Armas</span>}
+                  >
+                    <div className="space-y-3 pr-2">
+                      {catalogWeapons.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhuma arma cadastrada.</p>
+                      ) : (
+                        catalogWeapons.map((item) => {
+                          const key = `weapon-${item.id}`
+                          const isExpanded = expandedItemKey === key
+                          return (
                             <div
-                              className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                isSelected
-                                  ? 'border-emerald-500 bg-emerald-500'
-                                  : 'border-zinc-600 bg-transparent'
-                              }`}
+                              key={key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleItemExpanded(key)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  toggleItemExpanded(key)
+                                }
+                              }}
+                              className="cursor-pointer outline-none"
                             >
-                              {isSelected && <Check size={12} className="text-white" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h5
-                                className={`font-semibold text-sm ${isSelected ? 'text-emerald-300' : 'text-zinc-200'}`}
+                              <Card
+                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
                               >
-                                {ability.name}
-                              </h5>
-                              {ability.description && (
-                                <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                  {ability.description}
-                                </p>
-                              )}
+                                <CardBody className="py-3 px-4">
+                                  <div className="flex flex-row items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {item.type} · {item.weaponType ?? ''}
+                                        {!isExpanded && (
+                                          <>
+                                            {' '}
+                                            · Dano {item.damage}
+                                            {item.damageType ? ` (${item.damageType})` : ''}
+                                          </>
+                                        )}
+                                      </p>
+                                      {item.description && (
+                                        <p
+                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                        >
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span onClick={(e) => e.stopPropagation()}>
+                                      <Button
+                                        size="sm"
+                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                        onPress={() => addItemToCharacter('weapon', item.id)}
+                                      >
+                                        <Plus size={14} className="mr-1" /> Adicionar
+                                      </Button>
+                                    </span>
+                                  </div>
+                                  {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Dano
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.damage}
+                                          {item.damageType ? (
+                                            <span className="text-sm font-normal text-orange-200/90">
+                                              {' '}
+                                              ({item.damageType})
+                                            </span>
+                                          ) : null}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Categoria
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {categoryLabels[item.category as number] ?? item.category}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Alcance
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.range ?? '—'}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Margem de crítico
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.critical ?? '—'}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Multiplicador de crítico
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.criticalMultiplier ?? '—'}
+                                        </p>
+                                      </div>
+                                      {(item.ammoCapacity != null || item.ammoType) && (
+                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                            Munição
+                                          </p>
+                                          <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                            {item.ammoCapacity != null
+                                              ? `${item.ammoCapacity}`
+                                              : '—'}
+                                            {item.ammoType ? ` · ${item.ammoType}` : ''}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </CardBody>
+                              </Card>
                             </div>
-                          </div>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="p-6 text-center text-zinc-500 text-sm italic">
-                      {abilitySearch.trim()
-                        ? 'Nenhuma habilidade encontrada com esse termo.'
-                        : 'Todas as habilidades disponíveis já foram adquiridas.'}
+                          )
+                        })
+                      )}
                     </div>
-                  )}
-                </div>
+                  </Tab>
+                  <Tab
+                    key="protections"
+                    title={<span className="flex items-center gap-2">🛡️ Proteções</span>}
+                  >
+                    <div className="space-y-3 pr-2">
+                      {catalogProtections.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhuma proteção cadastrada.</p>
+                      ) : (
+                        catalogProtections.map((item) => {
+                          const key = `protection-${item.id}`
+                          const isExpanded = expandedItemKey === key
+                          return (
+                            <div
+                              key={key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleItemExpanded(key)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  toggleItemExpanded(key)
+                                }
+                              }}
+                              className="cursor-pointer outline-none"
+                            >
+                              <Card
+                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                              >
+                                <CardBody className="py-3 px-4">
+                                  <div className="flex flex-row items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {item.type}
+                                        {!isExpanded && (
+                                          <>
+                                            {' '}
+                                            · Def +{item.defenseBonus}
+                                            {item.dodgePenalty !== 0
+                                              ? ` · Esquiva ${item.dodgePenalty}`
+                                              : ''}
+                                          </>
+                                        )}
+                                      </p>
+                                      {item.description && (
+                                        <p
+                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                        >
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span onClick={(e) => e.stopPropagation()}>
+                                      <Button
+                                        size="sm"
+                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                        onPress={() => addItemToCharacter('protection', item.id)}
+                                      >
+                                        <Plus size={14} className="mr-1" /> Adicionar
+                                      </Button>
+                                    </span>
+                                  </div>
+                                  {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Bônus de defesa
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          +{item.defenseBonus}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Penalidade de esquiva
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.dodgePenalty}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Categoria
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {categoryLabels[item.category as number] ?? item.category}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Tipo
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.type}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Espaços
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.spaces}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </CardBody>
+                              </Card>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </Tab>
+                  <Tab
+                    key="general"
+                    title={<span className="flex items-center gap-2">🎒 Itens Gerais</span>}
+                  >
+                    <div className="space-y-3 pr-2">
+                      {catalogGeneralItems.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhum item geral cadastrado.</p>
+                      ) : (
+                        catalogGeneralItems.map((item) => {
+                          const key = `general-${item.id}`
+                          const isExpanded = expandedItemKey === key
+                          return (
+                            <div
+                              key={key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleItemExpanded(key)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  toggleItemExpanded(key)
+                                }
+                              }}
+                              className="cursor-pointer outline-none"
+                            >
+                              <Card
+                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                              >
+                                <CardBody className="py-3 px-4">
+                                  <div className="flex flex-row items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {item.type ?? 'Diversos'}
+                                        {!isExpanded && <> · {item.spaces} espaço(s)</>}
+                                      </p>
+                                      {item.description && (
+                                        <p
+                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                        >
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span onClick={(e) => e.stopPropagation()}>
+                                      <Button
+                                        size="sm"
+                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                        onPress={() => addItemToCharacter('general', item.id)}
+                                      >
+                                        <Plus size={14} className="mr-1" /> Adicionar
+                                      </Button>
+                                    </span>
+                                  </div>
+                                  {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Categoria
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {categoryLabels[item.category as number] ?? item.category}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Tipo
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.type ?? 'Diversos'}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Espaços
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.spaces}
+                                        </p>
+                                      </div>
+                                      {item.effects &&
+                                        typeof item.effects === 'object' &&
+                                        Object.keys(item.effects).length > 0 && (
+                                          <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3 col-span-2 sm:col-span-3">
+                                            <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                              Efeitos
+                                            </p>
+                                            <p className="text-sm text-orange-200/90 mt-0.5">
+                                              {JSON.stringify(item.effects)}
+                                            </p>
+                                          </div>
+                                        )}
+                                    </div>
+                                  )}
+                                </CardBody>
+                              </Card>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </Tab>
+                  <Tab
+                    key="cursed"
+                    title={<span className="flex items-center gap-2">👁️ Itens Amaldiçoados</span>}
+                  >
+                    <div className="space-y-3 pr-2">
+                      {catalogCursedItems.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhum item amaldiçoado cadastrado.</p>
+                      ) : (
+                        catalogCursedItems.map((item) => {
+                          const key = `cursed-${item.id}`
+                          const isExpanded = expandedItemKey === key
+                          return (
+                            <div
+                              key={key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleItemExpanded(key)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  toggleItemExpanded(key)
+                                }
+                              }}
+                              className="cursor-pointer outline-none"
+                            >
+                              <Card
+                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                              >
+                                <CardBody className="py-3 px-4">
+                                  <div className="flex flex-row items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {item.itemType ?? 'Item'}
+                                        {!isExpanded && <> · {item.spaces} espaço(s)</>}
+                                      </p>
+                                      {item.description && (
+                                        <p
+                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                        >
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <span onClick={(e) => e.stopPropagation()}>
+                                      <Button
+                                        size="sm"
+                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                        isDisabled
+                                        title="Em breve"
+                                      >
+                                        <Plus size={14} className="mr-1" /> Em breve
+                                      </Button>
+                                    </span>
+                                  </div>
+                                  {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Tipo
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.itemType ?? '—'}
+                                        </p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                          Espaços
+                                        </p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                          {item.spaces}
+                                        </p>
+                                      </div>
+                                      {item.benefits && (
+                                        <div className="bg-emerald-500/15 border border-emerald-500/40 rounded-lg p-3 sm:col-span-2">
+                                          <p className="text-[10px] uppercase tracking-wider text-emerald-400/90 font-bold">
+                                            Benefícios
+                                          </p>
+                                          <p className="text-sm text-zinc-300 mt-0.5">
+                                            {typeof item.benefits === 'object'
+                                              ? JSON.stringify(item.benefits)
+                                              : String(item.benefits)}
+                                          </p>
+                                        </div>
+                                      )}
+                                      {item.curses && (
+                                        <div className="bg-red-500/15 border border-red-500/40 rounded-lg p-3 sm:col-span-2">
+                                          <p className="text-[10px] uppercase tracking-wider text-red-400/90 font-bold">
+                                            Maldições
+                                          </p>
+                                          <p className="text-sm text-zinc-300 mt-0.5">
+                                            {typeof item.curses === 'object'
+                                              ? JSON.stringify(item.curses)
+                                              : String(item.curses)}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </CardBody>
+                              </Card>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </Tab>
+                  <Tab
+                    key="ammunitions"
+                    title={<span className="flex items-center gap-2">🔫 Munições</span>}
+                  >
+                    <div className="space-y-3 pr-2">
+                      {catalogAmmunitions.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhuma munição cadastrada.</p>
+                      ) : (
+                        catalogAmmunitions.map((item) => {
+                          const key = `ammunition-${item.id}`
+                          const isExpanded = expandedItemKey === key
+                          return (
+                            <div
+                              key={key}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleItemExpanded(key)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItemExpanded(key) } }}
+                              className="cursor-pointer outline-none"
+                            >
+                            <Card
+                              className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                            >
+                              <CardBody className="py-3 px-4">
+                                <div className="flex flex-row items-start justify-between gap-4">
+                                  <div className="min-w-0 flex-1">
+                                    <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                    <p className="text-xs text-zinc-500 mt-0.5">
+                                      {item.type} · Categoria {item.category}
+                                      {!isExpanded && (
+                                        <> · {item.description || 'Sem descrição'}</>
+                                      )}
+                                    </p>
+                                    {item.description && (
+                                      <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                        {item.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span onClick={(e) => e.stopPropagation()}>
+                                    <Button
+                                      size="sm"
+                                      className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                      onPress={() => addItemToCharacter('ammunition', item.id)}
+                                    >
+                                      <Plus size={14} className="mr-1" /> Adicionar
+                                    </Button>
+                                  </span>
+                                </div>
+                                {isExpanded && (
+                                  <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                      <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Categoria</p>
+                                      <p className="text-lg font-bold text-orange-300 mt-0.5">{item.category}</p>
+                                    </div>
+                                    <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                      <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo</p>
+                                      <p className="text-lg font-bold text-orange-300 mt-0.5">{item.type}</p>
+                                    </div>
+                                    {item.damageBonus && (
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de dano</p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageBonus}</p>
+                                      </div>
+                                    )}
+                                    {item.damageTypeOverride && (
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo de dano</p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageTypeOverride}</p>
+                                      </div>
+                                    )}
+                                    {item.criticalBonus && (
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de crítico</p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalBonus}</p>
+                                      </div>
+                                    )}
+                                    {item.criticalMultiplierBonus && (
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Mult. de crítico</p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalMultiplierBonus}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </CardBody>
+                            </Card>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  </Tab>
+                </Tabs>
               </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="flat"
-                  onPress={onClose}
-                  className="bg-zinc-800 text-zinc-300 border border-zinc-700"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  color="primary"
-                  onPress={submitAddAbilities}
-                  isDisabled={selectedAbilityIds.length === 0}
-                  isLoading={isAddingAbilities}
-                  className="font-bold"
-                >
-                  <Plus size={14} className="mr-1" />
-                  Adicionar {selectedAbilityIds.length > 0 ? `(${selectedAbilityIds.length})` : ''}
-                </Button>
-              </ModalFooter>
             </>
           )}
         </ModalContent>
