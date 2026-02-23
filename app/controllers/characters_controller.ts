@@ -283,6 +283,8 @@ export default class CharactersController {
         cursedItemsRows,
         ammunitionRows,
         characterWeaponsRows,
+        characterProtectionsRows,
+        characterGeneralItemsRows,
       ] = await Promise.all([
         db.from('weapons').select('*').orderBy('name', 'asc'),
         db.from('protections').select('*').orderBy('name', 'asc'),
@@ -302,8 +304,19 @@ export default class CharactersController {
             'weapons.critical',
             'weapons.critical_multiplier',
             'weapons.damage_type',
-            'weapons.description'
+            'weapons.description',
+            'weapons.spaces'
           ),
+        db
+          .from('character_protections')
+          .where('character_id', character.id)
+          .leftJoin('protections', 'character_protections.protection_id', 'protections.id')
+          .select('character_protections.*', 'protections.name', 'protections.spaces', 'protections.description'),
+        db
+          .from('character_general_items')
+          .where('character_id', character.id)
+          .leftJoin('general_items', 'character_general_items.general_item_id', 'general_items.id')
+          .select('character_general_items.*', 'general_items.name', 'general_items.spaces', 'general_items.description'),
       ])
       const catalogWeapons = weaponsRows.map((r: any) => ({
         id: r.id,
@@ -377,7 +390,8 @@ export default class CharactersController {
 
       // Itens do inventário do personagem (armas)
       const inventoryWeapons = characterWeaponsRows.map((r: any) => ({
-        id: r.weapon_id,
+        id: r.id, // Usar o ID da tabela pivot (character_weapons.id)
+        weaponId: r.weapon_id,
         name: r.name,
         type: 'Weapon',
         damage: r.damage,
@@ -388,7 +402,28 @@ export default class CharactersController {
         description: r.description,
         equipped: r.is_equipped,
         quantity: 1,
-        weight: 1,
+        spaces: r.spaces || 0,
+      }))
+
+      const inventoryProtections = characterProtectionsRows.map((r: any) => ({
+        id: r.id,
+        protectionId: r.protection_id,
+        name: r.name,
+        type: 'Protection',
+        description: r.description,
+        equipped: r.is_equipped,
+        quantity: 1,
+        spaces: r.spaces || 0,
+      }))
+
+      const inventoryGeneralItems = characterGeneralItemsRows.map((r: any) => ({
+        id: r.id,
+        generalItemId: r.general_item_id,
+        name: r.name,
+        type: 'General',
+        description: r.description,
+        quantity: r.quantity || 1,
+        spaces: r.spaces || 0,
       }))
 
       return inertia.render('characters/show', {
@@ -422,6 +457,8 @@ export default class CharactersController {
         catalogCursedItems,
         catalogAmmunitions,
         inventoryWeapons,
+        inventoryProtections,
+        inventoryGeneralItems,
       })
     } catch (error) {
       console.error('[CHARACTER SHOW] Error loading character:', error)
@@ -854,7 +891,7 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
-  async addItem({ params, request, response, auth, inertia }: HttpContext) {
+  async addItem({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
       .where('id', params.id)
@@ -863,6 +900,7 @@ export default class CharactersController {
       .preload('stats')
       .preload('class')
       .preload('origin')
+      .preload('trail')
       .preload('skills', (query) => query.preload('skill'))
       .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
@@ -874,9 +912,58 @@ export default class CharactersController {
 
     const qty = Math.max(1, parseInt(quantity, 10) || 1)
 
+    // CÁLCULO DE CAPACIDADE (BACKEND)
+    const strength = character.attributes?.strength || 0
+    const intellect = character.attributes?.intellect || 0
+
+    const hasInventarioOtimizado =
+      character.trail?.name === 'Técnico' && (character as any).nex >= 10
+    const hasInventarioOrganizado = character.classAbilities?.some(
+      (a) => a.classAbility?.name === 'Inventário Organizado'
+    )
+
+    let baseStrengthForCapacity = strength
+    if (hasInventarioOtimizado) baseStrengthForCapacity += intellect
+
+    let limit = baseStrengthForCapacity > 0 ? baseStrengthForCapacity * 5 : 2
+    if (hasInventarioOrganizado) limit += intellect
+
+    const maxCapacity = limit * 2
+
+    // Calcular espaços atuais usados
+    const [weaponsUsed, protectionsUsed, generalItemsUsed] = await Promise.all([
+      db
+        .from('character_weapons')
+        .where('character_id', character.id)
+        .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
+        .sum('weapons.spaces as total'),
+      db
+        .from('character_protections')
+        .where('character_id', character.id)
+        .leftJoin('protections', 'character_protections.protection_id', 'protections.id')
+        .sum('protections.spaces as total'),
+      db
+        .from('character_general_items')
+        .where('character_id', character.id)
+        .leftJoin('general_items', 'character_general_items.general_item_id', 'general_items.id')
+        .select(db.raw('sum(general_items.spaces * character_general_items.quantity) as total')),
+    ])
+
+    const totalUsed =
+      Number(weaponsUsed[0]?.total || 0) +
+      Number(protectionsUsed[0]?.total || 0) +
+      Number(generalItemsUsed[0]?.total || 0)
+
     if (type === 'weapon') {
       const weapon = await db.from('weapons').where('id', itemId).first()
       if (!weapon) return response.notFound({ error: 'Arma não encontrada' })
+
+      if (totalUsed + (weapon.spaces || 0) > maxCapacity) {
+        return response.badRequest({
+          error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
       const now = new Date().toISOString()
       await db.table('character_weapons').insert({
         character_id: character.id,
@@ -888,6 +975,13 @@ export default class CharactersController {
     } else if (type === 'protection') {
       const protection = await db.from('protections').where('id', itemId).first()
       if (!protection) return response.notFound({ error: 'Proteção não encontrada' })
+
+      if (totalUsed + (protection.spaces || 0) > maxCapacity) {
+        return response.badRequest({
+          error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
       await db.table('character_protections').insert({
         character_id: character.id,
         protection_id: itemId,
@@ -896,6 +990,14 @@ export default class CharactersController {
     } else if (type === 'general') {
       const item = await db.from('general_items').where('id', itemId).first()
       if (!item) return response.notFound({ error: 'Item não encontrado' })
+
+      const itemTotalSpaces = (item.spaces || 0) * qty
+      if (totalUsed + itemTotalSpaces > maxCapacity) {
+        return response.badRequest({
+          error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
       await db.table('character_general_items').insert({
         character_id: character.id,
         general_item_id: itemId,
@@ -904,6 +1006,14 @@ export default class CharactersController {
     } else if (type === 'cursed') {
       const item = await db.from('cursed_items').where('id', itemId).first()
       if (!item) return response.notFound({ error: 'Item amaldiçoado não encontrado' })
+
+      const itemTotalSpaces = (item.spaces || 0) * qty
+      if (totalUsed + itemTotalSpaces > maxCapacity) {
+        return response.badRequest({
+          error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
       await db.table('character_cursed_items').insert({
         character_id: character.id,
         cursed_item_id: itemId,
@@ -912,6 +1022,14 @@ export default class CharactersController {
     } else if (type === 'ammunition') {
       const item = await db.from('weapon_modifications').where('id', itemId).first()
       if (!item) return response.notFound({ error: 'Munição não encontrada' })
+
+      const itemTotalSpaces = (item.spaces || 0) * qty
+      if (totalUsed + itemTotalSpaces > maxCapacity) {
+        return response.badRequest({
+          error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
       await db.table('character_general_items').insert({
         character_id: character.id,
         general_item_id: itemId,
@@ -923,126 +1041,10 @@ export default class CharactersController {
       })
     }
 
-    // Recarregar personagem com dados atualizados
+    // Recarregar personagem com dados atualizados e redirecionar de volta
+    // Isso garante que a lógica do método show() seja executada, mantendo a consistência dos dados
     await character.refresh()
-
-    // Buscar dados completos do personagem (mesma lógica do método show)
-    const classData = character.class
-      ? await db.from('classes').where('id', character.class.id).first()
-      : null
-    if (!classData) {
-      return response.badRequest({ error: 'Classe não encontrada' })
-    }
-
-    const nex = character.nex
-    const attributes = character.attributes
-    const defaultVigor = attributes?.vigor || 0
-    const defaultPresence = attributes?.presence || 0
-
-    let calculatedMaxHp = classData.baseHp
-    if (classData.hpAttribute === 'vigor') {
-      calculatedMaxHp += defaultVigor
-      if (nex > 1) {
-        calculatedMaxHp += (classData.hpPerLevel + defaultVigor) * (nex - 1)
-      }
-    } else {
-      if (nex > 1) {
-        calculatedMaxHp += classData.hpPerLevel * (nex - 1)
-      }
-    }
-
-    let calculatedMaxPe = classData.basePe
-    if (classData.peAttribute === 'presence') {
-      calculatedMaxPe += defaultPresence
-      if (nex > 1) {
-        calculatedMaxPe += (classData.pePerLevel + defaultPresence) * (nex - 1)
-      }
-    } else {
-      if (nex > 1) {
-        calculatedMaxPe += classData.pePerLevel * (nex - 1)
-      }
-    }
-
-    let calculatedMaxSanity = classData.baseSanity
-    if (nex > 1) {
-      calculatedMaxSanity += classData.sanityPerLevel * (nex - 1)
-    }
-
-    // Buscar itens do inventário (armas)
-    const characterWeaponsRows = await db
-      .from('character_weapons')
-      .where('character_id', character.id)
-      .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
-      .select(
-        'character_weapons.id as character_weapon_id',
-        'character_weapons.character_id',
-        'character_weapons.weapon_id',
-        'character_weapons.is_equipped',
-        'character_weapons.custom_name',
-        'character_weapons.current_ammo',
-        'character_weapons.notes',
-        'weapons.name',
-        'weapons.type',
-        'weapons.damage',
-        'weapons.range',
-        'weapons.critical',
-        'weapons.critical_multiplier',
-        'weapons.damage_type',
-        'weapons.description',
-        'weapons.category',
-        'weapons.weapon_type'
-      )
-
-    console.log('[addItem] characterWeaponsRows:', JSON.stringify(characterWeaponsRows, null, 2))
-
-    const inventoryWeapons = characterWeaponsRows.map((r: any) => ({
-      id: r.character_weapon_id,
-      weaponId: r.weapon_id,
-      name: r.name,
-      type: 'Weapon',
-      damage: r.damage,
-      range: r.range,
-      critical: r.critical,
-      criticalMultiplier: r.critical_multiplier,
-      damageType: r.damage_type,
-      description: r.description,
-      equipped: r.is_equipped,
-      quantity: 1,
-      weight: 1,
-      category: r.category,
-      weaponType: r.weapon_type,
-    }))
-
-    return inertia.render('characters/show', {
-      character,
-      classes: [],
-      origins: [],
-      classTrails: [],
-      availableAbilities: [],
-      calculatedStats: {
-        maxHp: calculatedMaxHp,
-        maxPe: calculatedMaxPe,
-        maxSanity: calculatedMaxSanity,
-        currentHp: character.stats?.currentHp || calculatedMaxHp,
-        currentPe: character.stats?.currentPe || calculatedMaxPe,
-        currentSanity: character.stats?.currentSanity || calculatedMaxSanity,
-        defense: 10,
-        dodge: 10,
-      },
-      classInfo: {
-        hpFormula: `${classData.baseHp} + ${classData.hpAttribute?.toUpperCase() || ''} | +${classData.hpPerLevel} PV (+${classData.hpAttribute?.substring(0, 3).toUpperCase() || ''}) por NEX`,
-        peFormula: `${classData.basePe} + ${classData.peAttribute?.toUpperCase() || ''} | +${classData.pePerLevel} PE (+${classData.peAttribute?.substring(0, 3).toUpperCase() || ''}) por NEX`,
-        sanityFormula: `${classData.baseSanity} | +${classData.sanityPerLevel} SAN por NEX`,
-        proficiencies: classData.proficiencies,
-      },
-      attributeBonusFromNex: 0,
-      trailProgressions: [],
-      catalogWeapons: [],
-      catalogProtections: [],
-      catalogGeneralItems: [],
-      catalogCursedItems: [],
-      inventoryWeapons,
-    })
+    return response.redirect().back()
   }
 
   async removeItem({ params, response, auth }: HttpContext) {
@@ -1062,14 +1064,14 @@ export default class CharactersController {
       // Verifica em character_weapons
       const weapon = await db
         .from('character_weapons')
-        .where('weapon_id', itemId)
+        .where('id', itemId)
         .where('character_id', character.id)
         .first()
       console.log('[removeItem] weapon:', weapon)
       if (weapon) {
         await db
           .from('character_weapons')
-          .where('weapon_id', itemId)
+          .where('id', itemId)
           .where('character_id', character.id)
           .delete()
         console.log('[removeItem] Arma removida com sucesso')
@@ -1084,14 +1086,14 @@ export default class CharactersController {
       try {
         const protection = await db
           .from('character_protections')
-          .where('protection_id', itemId)
+          .where('id', itemId)
           .where('character_id', character.id)
           .first()
         console.log('[removeItem] protection:', protection)
         if (protection) {
           await db
             .from('character_protections')
-            .where('protection_id', itemId)
+            .where('id', itemId)
             .where('character_id', character.id)
             .delete()
           console.log('[removeItem] Proteção removida com sucesso')
@@ -1107,14 +1109,14 @@ export default class CharactersController {
       try {
         const generalItem = await db
           .from('character_general_items')
-          .where('general_item_id', itemId)
+          .where('id', itemId)
           .where('character_id', character.id)
           .first()
         console.log('[removeItem] generalItem:', generalItem)
         if (generalItem) {
           await db
             .from('character_general_items')
-            .where('general_item_id', itemId)
+            .where('id', itemId)
             .where('character_id', character.id)
             .delete()
           console.log('[removeItem] Item geral removido com sucesso')

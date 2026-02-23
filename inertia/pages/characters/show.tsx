@@ -148,6 +148,7 @@ interface CatalogAmmunition {
   type: string
   description: string | null
   damageBonus?: string | null
+  spaces: number
   damageTypeOverride?: string | null
   criticalBonus?: number | null
   criticalMultiplierBonus?: string | null
@@ -233,6 +234,8 @@ interface CharacterProps {
   catalogGeneralItems?: CatalogGeneralItem[]
   catalogCursedItems?: CatalogCursedItem[]
   inventoryWeapons?: any[]
+  inventoryProtections?: any[]
+  inventoryGeneralItems?: any[]
   catalogAmmunitions?: CatalogAmmunition[]
 }
 
@@ -246,25 +249,21 @@ export default function CharacterShow(initialProps: CharacterProps) {
     classInfo,
     attributeBonusFromNex = 0,
     availableAbilities = [],
+    catalogWeapons = [],
+    catalogProtections = [],
+    catalogGeneralItems = [],
+    catalogCursedItems = [],
+    inventoryWeapons = [],
+    inventoryProtections = [],
+    inventoryGeneralItems = [],
+    catalogAmmunitions = [],
+    trailProgressions = [],
   } = { ...initialProps, ...pageProps }
 
   // Normalize classTrails: backend may send camelCase (classTrails) or snake_case (class_trails)
   const classTrails: Trail[] =
     initialProps.classTrails ?? pageProps.classTrails ?? pageProps.class_trails ?? []
 
-  const trailProgressions = initialProps.trailProgressions ?? pageProps.trailProgressions ?? []
-
-  const catalogWeapons: CatalogWeapon[] =
-    initialProps.catalogWeapons ?? pageProps.catalogWeapons ?? []
-  const catalogProtections: CatalogProtection[] =
-    initialProps.catalogProtections ?? pageProps.catalogProtections ?? []
-  const catalogGeneralItems: CatalogGeneralItem[] =
-    initialProps.catalogGeneralItems ?? pageProps.catalogGeneralItems ?? []
-  const catalogCursedItems: CatalogCursedItem[] =
-    initialProps.catalogCursedItems ?? pageProps.catalogCursedItems ?? []
-  const inventoryWeapons: any[] = initialProps.inventoryWeapons ?? pageProps.inventoryWeapons ?? []
-  const catalogAmmunitions: CatalogAmmunition[] =
-    initialProps.catalogAmmunitions ?? pageProps.catalogAmmunitions ?? []
   console.log('inventoryWeapons RAW:', JSON.stringify(inventoryWeapons, null, 2))
 
   // Personagem sem trilha: considerar trailId ou trail_id (serialização pode vir em snake_case)
@@ -333,6 +332,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [focusedOrigin, setFocusedOrigin] = useState<Origin | null>(null)
   const [originSearch, setOriginSearch] = useState('')
   const [isUpdating, setIsUpdating] = useState(false)
+  const [isAddingAbility, setIsAddingAbility] = useState(false)
 
   // Ability configuration modal state
   const {
@@ -384,6 +384,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     onOpenChange: onSkillMenuOpenChange,
   } = useDisclosure()
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
+  const [skillMenuPosition, setSkillMenuPosition] = useState({ x: 0, y: 0 })
 
   // Calculate max PE that can be spent for Perito based on NEX
   const getMaxPeritoPe = () => {
@@ -524,9 +525,40 @@ export default function CharacterShow(initialProps: CharacterProps) {
     itemId: number,
     quantity?: number
   ) => {
+    // Buscar os espaços que o item ocupa
+    let itemSpaces = 0
+    const qty = quantity ?? 1
+
+    if (type === 'weapon') {
+      const w = catalogWeapons.find((i) => i.id === itemId)
+      if (w) itemSpaces = w.spaces || 0
+    } else if (type === 'protection') {
+      const p = catalogProtections.find((i) => i.id === itemId)
+      if (p) itemSpaces = p.spaces || 0
+    } else if (type === 'general') {
+      const g = catalogGeneralItems.find((i) => i.id === itemId)
+      if (g) itemSpaces = g.spaces || 0
+    } else if (type === 'cursed') {
+      const c = catalogCursedItems.find((i) => i.id === itemId)
+      if (c) itemSpaces = c.spaces || 0
+    } else if (type === 'ammunition') {
+      const a = catalogAmmunitions.find((i) => i.id === itemId)
+      if (a) itemSpaces = a.spaces || 0
+    }
+
+    const totalAddedSpaces = itemSpaces * qty
+
+    // Validar limite máximo (não pode passar do dobro do limite)
+    if (inventoryCapacity.used + totalAddedSpaces > inventoryCapacity.maxCapacity) {
+      alert(
+        `Limite de carga excedido! Você só pode carregar até ${inventoryCapacity.maxCapacity} espaços (o dobro do seu limite de ${inventoryCapacity.limit}).`
+      )
+      return
+    }
+
     router.post(
       `/characters/${character.id}/items`,
-      { type, itemId, quantity: quantity ?? 1 },
+      { type, itemId, quantity: qty },
       {
         onSuccess: () => {
           onAddItemModalOpenChange()
@@ -1105,15 +1137,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
     criticalMultiplier?: string | null
     range?: string | null
     weaponType?: string | null
-    uniqueId: string // Adiciona um ID único para evitar conflitos
+    uniqueId: string
+    spaces: number
   }[] = useMemo(() => {
-    const items = inventoryWeapons.map((w, index) => ({
+    const weapons = inventoryWeapons.map((w, index) => ({
       id: w.id,
       weaponId: w.weaponId,
       name: w.name,
       desc: w.description || '',
       qty: w.quantity ?? 1,
-      weight: `${w.weight} kg`,
+      weight: `${w.spaces} Espaços`,
+      spaces: w.spaces || 0,
       type: 'Arma',
       damage: w.damage,
       damageType: w.damageType,
@@ -1122,12 +1156,78 @@ export default function CharacterShow(initialProps: CharacterProps) {
       criticalMultiplier: w.criticalMultiplier,
       range: w.range,
       weaponType: w.weaponType,
-      uniqueId: `${w.id}-${index}`, // ID único combinando ID e índice
+      uniqueId: `weapon-${w.id}-${index}`,
     }))
-    console.log('Inventory weapons do backend:', JSON.stringify(inventoryWeapons, null, 2))
-    console.log('Inventory mapeado:', JSON.stringify(items, null, 2))
-    return items
-  }, [inventoryWeapons])
+
+    const protections = inventoryProtections.map((p, index) => ({
+      id: p.id,
+      protectionId: p.protectionId,
+      name: p.name,
+      desc: p.description || '',
+      qty: p.quantity ?? 1,
+      weight: `${p.spaces} Espaços`,
+      spaces: p.spaces || 0,
+      type: 'Armadura',
+      uniqueId: `protection-${p.id}-${index}`,
+    }))
+
+    const generalItems = inventoryGeneralItems.map((g, index) => ({
+      id: g.id,
+      generalItemId: g.generalItemId,
+      name: g.name,
+      desc: g.description || '',
+      qty: g.quantity ?? 1,
+      weight: `${g.spaces} Espaços`,
+      spaces: g.spaces || 0,
+      type: 'Consumível',
+      uniqueId: `general-${g.id}-${index}`,
+    }))
+
+    const allItems = [...weapons, ...protections, ...generalItems]
+    console.log('Todos os itens do inventário:', allItems)
+    return allItems
+  }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems])
+
+  // Lógica de Capacidade de Carga (Ordem Paranormal)
+  const inventoryCapacity = useMemo(() => {
+    const strength = character.attributes?.strength || 0
+    const intellect = character.attributes?.intellect || 0
+
+    // Inventário Otimizado (Técnico)
+    const hasInventarioOtimizado =
+      character.trail?.name === 'Técnico' && (character as any).nex >= 10
+
+    // Inventário Organizado (Poder Geral - assumindo que pode estar em classAbilities)
+    const hasInventarioOrganizado = character.classAbilities?.some(
+      (a) => a.classAbility?.name === 'Inventário Organizado'
+    )
+
+    let baseStrength = strength
+    if (hasInventarioOtimizado) {
+      baseStrength += intellect
+    }
+
+    // Limite base: Força * 5. Se Força 0 ou menor, limite é 2.
+    let limit = baseStrength > 0 ? baseStrength * 5 : 2
+
+    // Bônus de Inventário Organizado (soma Intelecto ao limite final)
+    if (hasInventarioOrganizado) {
+      limit += intellect
+    }
+
+    const totalUsed = inventory.reduce((acc, item) => acc + (item.spaces || 0) * item.qty, 0)
+    const maxCapacity = limit * 2
+    const isOverloaded = totalUsed > limit
+
+    return {
+      used: totalUsed,
+      limit,
+      maxCapacity,
+      isOverloaded,
+      percentage: Math.min((totalUsed / limit) * 100, 100),
+      overloadPercentage: totalUsed > limit ? Math.min(((totalUsed - limit) / limit) * 100, 100) : 0,
+    }
+  }, [character, inventory])
 
   const removeItem = (itemId: number) => {
     if (!confirm('Tem certeza que deseja remover este item?')) return
@@ -1499,14 +1599,32 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-zinc-500">⚖️</span>
-                      <span className="text-xs text-zinc-400">19.2 / 80 kg</span>
+                      <span
+                        className={`text-xs ${inventoryCapacity.isOverloaded ? 'font-bold text-amber-500' : 'text-zinc-400'}`}
+                      >
+                        {inventoryCapacity.used} / {inventoryCapacity.limit} Espaços
+                      </span>
                       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-800">
                         <div
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{ width: '24%' }}
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            inventoryCapacity.used > inventoryCapacity.maxCapacity
+                              ? 'bg-red-500'
+                              : inventoryCapacity.isOverloaded
+                                ? 'bg-amber-500'
+                                : 'bg-emerald-500'
+                          }`}
+                          style={{
+                            width: `${Math.min((inventoryCapacity.used / inventoryCapacity.limit) * 100, 100)}%`,
+                          }}
                         />
                       </div>
                     </div>
+                    {inventoryCapacity.isOverloaded && (
+                      <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-500 border border-amber-500/20">
+                        <span className="animate-pulse font-bold">⚠️ SOBRECARGA:</span>
+                        <span>–5 em Defesa e Testes (Deslocamento Reduzido)</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <select className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
                         <option>Todos os Tipos</option>
@@ -3258,7 +3376,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         classNames={{
           base: 'bg-zinc-900 border border-zinc-800',
           header: 'border-b border-zinc-800',
-          body: 'py-0 overflow-hidden flex flex-col max-h-[70vh]',
+          body: 'flex-1 flex flex-col max-h-[70vh] min-h-0',
         }}
       >
         <ModalContent>
@@ -3275,11 +3393,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   aria-label="Tipos de item"
                   variant="underlined"
                   classNames={{
-                    base: 'w-full flex flex-col flex-1 min-h-0',
-                    tabList: 'gap-2 border-b border-zinc-800 px-0',
+                    base: 'w-full',
+                    tabList: 'gap-2 border-b border-zinc-800 px-0 sticky top-0 bg-zinc-900 z-10',
                     cursor: 'bg-orange-500',
                     tab: 'text-zinc-400 data-[selected=true]:text-orange-500',
-                    panel: 'flex-1 overflow-y-auto py-4 min-h-0',
+                    panel: 'py-4',
                   }}
                 >
                   <Tab
