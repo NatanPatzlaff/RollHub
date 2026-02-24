@@ -11,6 +11,10 @@ import CharacterSkill from '#models/character_skill'
 import CharacterClassAbility from '#models/character_class_ability'
 import ClassAbility from '#models/class_ability'
 import TrailProgression from '#models/trail_progression'
+import Ritual from '#models/ritual'
+import CharacterRitual from '#models/character_ritual'
+import ParanormalPower from '#models/paranormal_power'
+import CharacterParanormalPower from '#models/character_paranormal_power'
 
 export default class CharactersController {
   async store({ request, response, auth }: HttpContext) {
@@ -169,6 +173,8 @@ export default class CharactersController {
         .preload('stats')
         .preload('skills', (query) => query.preload('skill'))
         .preload('classAbilities', (query) => query.preload('classAbility'))
+        .preload('paranormalPowers', (query) => query.preload('paranormalPower'))
+        .preload('rituals', (query) => query.preload('ritual'))
         .first()
 
       if (!character) {
@@ -222,9 +228,15 @@ export default class CharactersController {
         return true
       })
 
-      // Get all classes and origins for edit modal
+      // Get all available classes and origins for edit modal
       const classes = await Class.all()
       const origins = await Origin.all()
+
+      // Get all paranormal powers
+      const paranormalPowers = await ParanormalPower.all()
+
+      // Get all rituals
+      const catalogRituals = await Ritual.all()
 
       // Calculate derived stats
       const attributes = character.attributes
@@ -262,6 +274,11 @@ export default class CharactersController {
       if (level > 1) {
         calculatedMaxSanity += classData.sanityPerLevel * (level - 1)
       }
+
+      // Each Transcend ability acquired subtracts the level bonus
+      const transcendCount =
+        character.classAbilities?.filter((ca) => ca.classAbility?.name === 'Transcender').length || 0
+      calculatedMaxSanity -= transcendCount * classData.sanityPerLevel
 
       // Calculate defense (10 + AGI + armor)
       const baseDefense = 10 + (attributes?.agility || 0)
@@ -305,18 +322,31 @@ export default class CharactersController {
             'weapons.critical_multiplier',
             'weapons.damage_type',
             'weapons.description',
-            'weapons.spaces'
+            'weapons.spaces',
+            'weapons.category'
           ),
         db
           .from('character_protections')
           .where('character_id', character.id)
           .leftJoin('protections', 'character_protections.protection_id', 'protections.id')
-          .select('character_protections.*', 'protections.name', 'protections.spaces', 'protections.description'),
+          .select(
+            'character_protections.*',
+            'protections.name',
+            'protections.spaces',
+            'protections.description',
+            'protections.category'
+          ),
         db
           .from('character_general_items')
           .where('character_id', character.id)
           .leftJoin('general_items', 'character_general_items.general_item_id', 'general_items.id')
-          .select('character_general_items.*', 'general_items.name', 'general_items.spaces', 'general_items.description'),
+          .select(
+            'character_general_items.*',
+            'general_items.name',
+            'general_items.spaces',
+            'general_items.description',
+            'general_items.category'
+          ),
       ])
       const catalogWeapons = weaponsRows.map((r: any) => ({
         id: r.id,
@@ -403,6 +433,7 @@ export default class CharactersController {
         equipped: r.is_equipped,
         quantity: 1,
         spaces: r.spaces || 0,
+        category: r.category,
       }))
 
       const inventoryProtections = characterProtectionsRows.map((r: any) => ({
@@ -414,6 +445,7 @@ export default class CharactersController {
         equipped: r.is_equipped,
         quantity: 1,
         spaces: r.spaces || 0,
+        category: r.category,
       }))
 
       const inventoryGeneralItems = characterGeneralItemsRows.map((r: any) => ({
@@ -424,6 +456,7 @@ export default class CharactersController {
         description: r.description,
         quantity: r.quantity || 1,
         spaces: r.spaces || 0,
+        category: r.category,
       }))
 
       return inertia.render('characters/show', {
@@ -432,6 +465,8 @@ export default class CharactersController {
         origins,
         classTrails,
         availableAbilities,
+        paranormalPowers,
+        catalogRituals,
         calculatedStats: {
           maxHp: calculatedMaxHp,
           maxPe: calculatedMaxPe,
@@ -474,6 +509,7 @@ export default class CharactersController {
       .preload('attributes')
       .preload('stats')
       .preload('class')
+      .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
 
     const { strength, agility, intellect, vigor, presence } = request.only([
@@ -557,6 +593,11 @@ export default class CharactersController {
       maxSanity += classData.sanityPerLevel * (level - 1)
     }
 
+    // Each Transcend ability acquired subtracts the level bonus
+    const transcendCount =
+      character.classAbilities?.filter((ca) => ca.classAbility?.name === 'Transcender').length || 0
+    maxSanity -= transcendCount * classData.sanityPerLevel
+
     // Update stats
     if (character.stats) {
       character.stats.maxHp = maxHp
@@ -580,7 +621,13 @@ export default class CharactersController {
       .preload('skills')
       .firstOrFail()
 
-    const { name, classId, originId, nex } = request.only(['name', 'classId', 'originId', 'nex'])
+    const { name, classId, originId, nex, rank } = request.only([
+      'name',
+      'classId',
+      'originId',
+      'nex',
+      'rank',
+    ])
 
     // Store old classId to detect if class changed
     const oldClassId = character.classId
@@ -588,6 +635,7 @@ export default class CharactersController {
     // Update basic info
     if (name) character.name = name
     if (nex !== undefined) character.nex = nex
+    if (rank) character.rank = rank
     if (classId) character.classId = classId
 
     // If origin changed, we need to update skills
@@ -870,6 +918,122 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
+  async addParanormalPower({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { powerId, transcendAbilityId } = request.only(['powerId', 'transcendAbilityId'])
+
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Fetch the power
+    const power = await ParanormalPower.findOrFail(powerId)
+
+    // Check if power is already acquired
+    const existing = await CharacterParanormalPower.query()
+      .where('characterId', character.id)
+      .where('paranormalPowerId', power.id)
+      .first()
+
+    if (existing) {
+      return response.status(400).send({ error: 'Poder já foi adquirido' })
+    }
+
+    // Add power
+    await CharacterParanormalPower.create({
+      characterId: character.id,
+      paranormalPowerId: power.id,
+    })
+
+    // If acquired via Transcend, register the ability too
+    if (transcendAbilityId) {
+      await CharacterClassAbility.create({
+        characterId: character.id,
+        classAbilityId: transcendAbilityId,
+      })
+    }
+
+    return response.redirect().back()
+  }
+
+  async removeParanormalPower({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, powerId } = params
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    const power = await CharacterParanormalPower.query()
+      .where('characterId', character.id)
+      .where('paranormalPowerId', powerId)
+      .firstOrFail()
+
+    await power.delete()
+
+    return response.redirect().back()
+  }
+
+  async addRitual({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { ritualId, transcendAbilityId } = request.only(['ritualId', 'transcendAbilityId'])
+
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Fetch the ritual
+    const ritual = await Ritual.findOrFail(ritualId)
+
+    // Check if ritual is already acquired
+    const existing = await CharacterRitual.query()
+      .where('characterId', character.id)
+      .where('ritualId', ritual.id)
+      .first()
+
+    if (existing) {
+      return response.status(400).send({ error: 'Ritual já foi aprendido' })
+    }
+
+    // Add ritual
+    await CharacterRitual.create({
+      characterId: character.id,
+      ritualId: ritual.id,
+    })
+
+    // If acquired via Transcend, register the ability too
+    if (transcendAbilityId) {
+      await CharacterClassAbility.create({
+        characterId: character.id,
+        classAbilityId: transcendAbilityId,
+      })
+    }
+
+    return response.redirect().back()
+  }
+
+  async removeRitual({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, ritualId } = params
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    const ritualRelation = await CharacterRitual.query()
+      .where('characterId', character.id)
+      .where('ritualId', ritualId)
+      .firstOrFail()
+
+    await ritualRelation.delete()
+
+    return response.redirect().back()
+  }
+
   async selectTrail({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
@@ -954,6 +1118,49 @@ export default class CharactersController {
       Number(protectionsUsed[0]?.total || 0) +
       Number(generalItemsUsed[0]?.total || 0)
 
+    // CÁLCULO DE CONSUMO DE CATEGORIA (BACKEND)
+    const RANK_LIMITS: Record<string, Record<number, number>> = {
+      Recruta: { 1: 2, 2: 0, 3: 0, 4: 0 },
+      Operador: { 1: 3, 2: 1, 3: 0, 4: 0 },
+      'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
+      'Oficial de Operações': { 1: 5, 2: 3, 3: 2, 4: 1 },
+      'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
+    }
+
+    const [weaponsCats, protectionsCats, generalCats] = await Promise.all([
+      db
+        .from('character_weapons')
+        .where('character_id', character.id)
+        .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
+        .select('weapons.category')
+        .then((rows) => rows.map((r) => r.category)),
+      db
+        .from('character_protections')
+        .where('character_id', character.id)
+        .leftJoin('protections', 'character_protections.protection_id', 'protections.id')
+        .select('protections.category')
+        .then((rows) => rows.map((r) => r.category)),
+      db
+        .from('character_general_items')
+        .where('character_id', character.id)
+        .leftJoin('general_items', 'character_general_items.general_item_id', 'general_items.id')
+        .select('general_items.category', 'character_general_items.quantity')
+        .then((rows) => rows.flatMap((r) => Array(r.quantity || 1).fill(r.category))),
+    ])
+
+    const allCategoriesUsed = [...weaponsCats, ...protectionsCats, ...generalCats]
+    const categoryCounts: Record<number, number> = {}
+    allCategoriesUsed.forEach((cat) => {
+      if (cat > 0) categoryCounts[cat] = (categoryCounts[cat] || 0) + 1
+    })
+
+    const checkCategoryLimit = (cat: number, addedQty: number = 1) => {
+      if (cat <= 0) return true
+      const current = categoryCounts[cat] || 0
+      const limit = RANK_LIMITS[character.rank || 'Recruta']?.[cat] ?? 0
+      return current + addedQty <= limit
+    }
+
     if (type === 'weapon') {
       const weapon = await db.from('weapons').where('id', itemId).first()
       if (!weapon) return response.notFound({ error: 'Arma não encontrada' })
@@ -961,6 +1168,12 @@ export default class CharactersController {
       if (totalUsed + (weapon.spaces || 0) > maxCapacity) {
         return response.badRequest({
           error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
+      if (!checkCategoryLimit(weapon.category)) {
+        return response.badRequest({
+          error: `Limite de itens de Categoria ${weapon.category} atingido para a patente ${character.rank || 'Recruta'}.`,
         })
       }
 
@@ -982,6 +1195,12 @@ export default class CharactersController {
         })
       }
 
+      if (!checkCategoryLimit(protection.category)) {
+        return response.badRequest({
+          error: `Limite de itens de Categoria ${protection.category} atingido para a patente ${character.rank || 'Recruta'}.`,
+        })
+      }
+
       await db.table('character_protections').insert({
         character_id: character.id,
         protection_id: itemId,
@@ -995,6 +1214,12 @@ export default class CharactersController {
       if (totalUsed + itemTotalSpaces > maxCapacity) {
         return response.badRequest({
           error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
+        })
+      }
+
+      if (!checkCategoryLimit(item.category, qty)) {
+        return response.badRequest({
+          error: `Limite de itens de Categoria ${item.category} atingido para a patente ${character.rank || 'Recruta'}.`,
         })
       }
 

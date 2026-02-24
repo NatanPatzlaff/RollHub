@@ -90,6 +90,32 @@ interface ClassAbility {
   effects: any
 }
 
+interface ParanormalPower {
+  id: number
+  name: string
+  description: string | null
+  element: string | null
+  peCost: number | null
+  requirements: string | null
+  effects: any
+  category: number
+}
+
+interface Ritual {
+  id: number
+  name: string
+  element: string
+  circle: number
+  execution: string
+  range: string
+  target: string
+  duration: string
+  resistance: string | null
+  description: string | null
+  discente: string | null
+  verdadeiro: string | null
+}
+
 interface CatalogWeapon {
   id: number
   name: string
@@ -160,6 +186,7 @@ interface CharacterProps {
     id: number
     name: string
     nex: number
+    rank?: string
     classId?: number
     originId?: number
     trailId?: number
@@ -192,6 +219,23 @@ interface CharacterProps {
         description: string | null
         effects: any
       }
+    }>
+    paranormalPowers?: Array<{
+      id: number
+      paranormalPowerId: number
+      paranormalPower?: {
+        id: number
+        name: string
+        description: string | null
+        element: string | null
+        effects: any
+        requirements: string | null
+      }
+    }>
+    rituals?: Array<{
+      id: number
+      ritualId: number
+      ritual?: Ritual
     }>
   }
   classes: CharacterClass[]
@@ -229,6 +273,8 @@ interface CharacterProps {
     type: string
   }>
   availableAbilities?: ClassAbility[]
+  paranormalPowers?: ParanormalPower[]
+  catalogRituals?: Ritual[]
   catalogWeapons?: CatalogWeapon[]
   catalogProtections?: CatalogProtection[]
   catalogGeneralItems?: CatalogGeneralItem[]
@@ -245,10 +291,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
     character,
     classes,
     origins,
+    availableAbilities = [],
+    paranormalPowers: catalogParanormalPowersProp = [],
     calculatedStats,
     classInfo,
     attributeBonusFromNex = 0,
-    availableAbilities = [],
     catalogWeapons = [],
     catalogProtections = [],
     catalogGeneralItems = [],
@@ -258,11 +305,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
     inventoryGeneralItems = [],
     catalogAmmunitions = [],
     trailProgressions = [],
-  } = { ...initialProps, ...pageProps }
+    catalogRituals = [],
+  } = ({ ...initialProps, ...pageProps } as CharacterProps)
 
   // Normalize classTrails: backend may send camelCase (classTrails) or snake_case (class_trails)
   const classTrails: Trail[] =
     initialProps.classTrails ?? pageProps.classTrails ?? pageProps.class_trails ?? []
+
+  const catalogParanormalPowers: ParanormalPower[] = catalogParanormalPowersProp || []
 
   console.log('inventoryWeapons RAW:', JSON.stringify(inventoryWeapons, null, 2))
 
@@ -276,6 +326,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
     chosenAbilities: true,
     trailAbilities: true,
     acquiredAbilities: true,
+    paranormalPowers: true,
+    rituals: true,
   })
 
   const toggleSection = (section: keyof typeof expandedSections) => {
@@ -333,6 +385,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [originSearch, setOriginSearch] = useState('')
   const [isUpdating, setIsUpdating] = useState(false)
   const [isAddingAbility, setIsAddingAbility] = useState(false)
+  const [isTranscendChoiceOpen, setIsTranscendChoiceOpen] = useState(false)
+  const [isParanormalSelectOpen, setIsParanormalSelectOpen] = useState(false)
+  const [isRitualSelectOpen, setIsRitualSelectOpen] = useState(false)
+  const [lastTranscendAbilityId, setLastTranscendAbilityId] = useState<number | null>(null)
+
+  // Ritual filters state
+  const [ritualSearch, setRitualSearch] = useState('')
+  const [elementFilter, setElementFilter] = useState('Todos')
+  const [circleFilter, setCircleFilter] = useState('Todos')
+
+
 
   // Ability configuration modal state
   const {
@@ -375,7 +438,68 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const toggleItemExpanded = (key: string) => {
     setExpandedItemKey((prev) => (prev === key ? null : key))
   }
-  const categoryLabels: Record<number, string> = { 0: 'I', 1: 'II', 2: 'III', 3: 'IV', 4: 'V' }
+
+  // Filtered and sorted rituals
+  const filteredRituals = useMemo(() => {
+    if (!catalogRituals) return []
+
+    return catalogRituals
+      .filter((ritual) => {
+        const matchesSearch = ritual.name.toLowerCase().includes(ritualSearch.toLowerCase())
+        const matchesElement =
+          elementFilter === 'Todos' ||
+          (ritual.element && ritual.element.toUpperCase().includes(elementFilter.toUpperCase()))
+        const matchesCircle = circleFilter === 'Todos' || ritual.circle.toString() === circleFilter
+
+        return matchesSearch && matchesElement && matchesCircle
+      })
+      .sort((a, b) => a.circle - b.circle) // Order by circle (ascending)
+  }, [catalogRituals, ritualSearch, elementFilter, circleFilter])
+
+  // RANK AND CATEGORY LIMITS
+  const [rank, setRank] = useState(character.rank || 'Recruta')
+  const [isUpdatingRank, setIsUpdatingRank] = useState(false)
+
+  const RANK_OPTIONS = [
+    'Recruta',
+    'Operador',
+    'Agente Especial',
+    'Oficial de Operações',
+    'Agente de Elite',
+  ]
+
+  const RANK_LIMITS: Record<string, Record<number, number>> = {
+    Recruta: { 1: 2, 2: 0, 3: 0, 4: 0 },
+    Operador: { 1: 3, 2: 1, 3: 0, 4: 0 },
+    'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
+    'Oficial de Operações': { 1: 5, 2: 3, 3: 2, 4: 1 },
+    'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
+  }
+
+  const categoryLabels: Record<number, string> = { 0: '0', 1: 'I', 2: 'II', 3: 'III', 4: 'IV' }
+
+  // Persistir Patente no backend
+  useEffect(() => {
+    if (characterId && rank && rank !== character.rank) {
+      setIsUpdatingRank(true)
+      router.put(
+        `/characters/${characterId}`,
+        { rank },
+        {
+          preserveUrl: true,
+          preserveState: true,
+          // @ts-ignore
+          preserveScroll: true,
+          onFinish: () => setIsUpdatingRank(false),
+        }
+      )
+    }
+  }, [rank])
+
+  // @ts-ignore
+  if (isAddingAbility) {
+    /* unused state but kept for now */
+  }
 
   // Skill context menu state
   const {
@@ -384,7 +508,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
     onOpenChange: onSkillMenuOpenChange,
   } = useDisclosure()
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
-  const [skillMenuPosition, setSkillMenuPosition] = useState({ x: 0, y: 0 })
+
+
 
   // Calculate max PE that can be spent for Perito based on NEX
   const getMaxPeritoPe = () => {
@@ -548,6 +673,38 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     const totalAddedSpaces = itemSpaces * qty
 
+    // Validar limites de Categoria
+    let itemCategory = 0
+    if (type === 'weapon') {
+      const w = catalogWeapons.find((i) => i.id === itemId)
+      if (w) itemCategory = w.category
+    } else if (type === 'protection') {
+      const p = catalogProtections.find((i) => i.id === itemId)
+      if (p) itemCategory = p.category
+    } else if (type === 'general') {
+      const g = catalogGeneralItems.find((i) => i.id === itemId)
+      if (g) itemCategory = g.category
+    } else if (type === 'cursed') {
+      const c = catalogCursedItems.find((i) => i.id === itemId)
+      if (c) itemCategory = 0 // Maldições geralmente não têm categoria de patente, ou têm? 
+      // Padronizaremos como cat 0 se não especificado
+    } else if (type === 'ammunition') {
+      const a = catalogAmmunitions.find((i) => i.id === itemId)
+      if (a) itemCategory = a.category
+    }
+
+    if (itemCategory > 0) {
+      const currentConsumption = categoryConsumption[itemCategory] || 0
+      const limit = RANK_LIMITS[rank]?.[itemCategory] ?? 0
+
+      if (currentConsumption + qty > limit) {
+        alert(
+          `Limite de Categoria ${categoryLabels[itemCategory]} atingido para a patente ${rank}!\nLimite: ${limit} | Atual: ${currentConsumption}`
+        )
+        return
+      }
+    }
+
     // Validar limite máximo (não pode passar do dobro do limite)
     if (inventoryCapacity.used + totalAddedSpaces > inventoryCapacity.maxCapacity) {
       alert(
@@ -587,6 +744,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }
 
   const addClassAbility = (abilityId: number) => {
+    // Check if the ability is "Transcender"
+    const ability = availableAbilities?.find((a) => a.id === abilityId)
+    if (ability?.name === 'Transcender') {
+      setLastTranscendAbilityId(abilityId)
+      setIsTranscendChoiceOpen(true)
+      onAbilitySelectOpenChange() // Close the current modal
+      return
+    }
+
     setIsAddingAbility(true)
     router.post(
       `/characters/${character.id}/abilities`,
@@ -604,10 +770,51 @@ export default function CharacterShow(initialProps: CharacterProps) {
     )
   }
 
+  const addParanormalPower = (powerId: number) => {
+    setIsAddingAbility(true)
+    router.post(
+      `/characters/${character.id}/paranormal-powers`,
+      { powerId, transcendAbilityId: lastTranscendAbilityId },
+      {
+        onSuccess: () => {
+          setIsAddingAbility(false)
+          setIsParanormalSelectOpen(false) // Close the specific modal
+          setLastTranscendAbilityId(null)
+        },
+        onError: () => setIsAddingAbility(false),
+      }
+    )
+  }
+
+  const removeParanormalPower = (powerId: number) => {
+    if (!confirm('Tem certeza que deseja remover este poder paranormal?')) return
+    router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`)
+  }
+
+  const addRitual = (ritualId: number) => {
+    setIsAddingAbility(true)
+    router.post(
+      `/characters/${character.id}/rituals`,
+      { ritualId, transcendAbilityId: lastTranscendAbilityId },
+      {
+        onSuccess: () => {
+          setIsAddingAbility(false)
+          setIsRitualSelectOpen(false) // Close the specific modal
+          setLastTranscendAbilityId(null)
+        },
+        onError: () => setIsAddingAbility(false),
+      }
+    )
+  }
+
+  const removeRitual = (ritualId: number) => {
+    if (!confirm('Tem certeza que deseja remover este ritual?')) return
+    router.delete(`/characters/${character.id}/rituals/${ritualId}`)
+  }
+
   const handleSkillContextMenu = (skillName: string, event: React.MouseEvent) => {
     event.preventDefault()
     setSelectedSkillName(skillName)
-    setSkillMenuPosition({ x: event.clientX, y: event.clientY })
     onSkillMenuOpen()
   }
 
@@ -753,26 +960,25 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }, [maxSan])
 
   // Apply damage to HP based on damage input
-  useEffect(() => {
+  const applyDamageHp = () => {
     const appliedDamage = Math.max(0, Number(damageToHp) || 0)
     setHp((prevHp) => Math.max(0, prevHp - appliedDamage))
-  }, [damageToHp])
+    setDamageToHp('')
+  }
 
   // Apply damage to PE based on damage input
-  useEffect(() => {
-    const basePe = calculatedStats?.currentPe || 3
-    const appliedDamage = Math.max(0, damageToPe)
-    const newPe = Math.max(0, basePe - appliedDamage)
-    setPe(newPe)
-  }, [damageToPe])
+  const applyDamagePe = () => {
+    const appliedDamage = Math.max(0, Number(damageToPe) || 0)
+    setPe((prevPe) => Math.max(0, prevPe - appliedDamage))
+    setDamageToPe('')
+  }
 
   // Apply damage to Sanity based on damage input
-  useEffect(() => {
-    const baseSan = calculatedStats?.currentSanity || 12
-    const appliedDamage = Math.max(0, damageToSan)
-    const newSan = Math.max(0, baseSan - appliedDamage)
-    setSan(newSan)
-  }, [damageToSan])
+  const applyDamageSan = () => {
+    const appliedDamage = Math.max(0, Number(damageToSan) || 0)
+    setSan((prevSan) => Math.max(0, prevSan - appliedDamage))
+    setDamageToSan('')
+  }
 
   // Calculate available points: 4 base + NEX bonus + 1 for each attribute at 0
   // All attributes start at 1 (base). Points spent = value above 1. Reducing to 0 gives +1 bonus.
@@ -1188,6 +1394,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
     return allItems
   }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems])
 
+  // Calcular consumo por categoria (moved here after inventory declaration)
+  const categoryConsumption = useMemo(() => {
+    const consumption: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 }
+
+    inventory.forEach((item) => {
+      if (item.category && item.category > 0) {
+        // Na Regra de Ordem Paranormal, cada item de categoria I ocupa 1 slot de Categoria I.
+        consumption[item.category] = (consumption[item.category] || 0) + (item.qty || 1)
+      }
+    })
+
+    return consumption
+  }, [inventory])
+
   // Lógica de Capacidade de Carga (Ordem Paranormal)
   const inventoryCapacity = useMemo(() => {
     const strength = character.attributes?.strength || 0
@@ -1236,6 +1456,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       .delete(`/characters/${character.id}/items/${itemId}`)
       .then(() => {
         setExpandedItemId(null)
+        // @ts-ignore
         router.reload({ preserveScroll: true })
       })
       .catch((error) => {
@@ -1504,14 +1725,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           isLearningSkills && !isLocked ? toggleSkillTraining(skill.name) : null
                         }
                         onContextMenu={(e) => handleSkillContextMenu(skill.name, e)}
-                        className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all ${
-                          isLearningSkills && !isLocked
-                            ? 'cursor-pointer hover:scale-105'
-                            : isLocked && isTrained
-                              ? 'cursor-not-allowed opacity-75'
-                              : ''
-                        } ${
-                          !isTrained
+                        className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all ${isLearningSkills && !isLocked
+                          ? 'cursor-pointer hover:scale-105'
+                          : isLocked && isTrained
+                            ? 'cursor-not-allowed opacity-75'
+                            : ''
+                          } ${!isTrained
                             ? showPoolHighlight
                               ? 'bg-cyan-900/30 border border-cyan-700/50 text-cyan-400 hover:text-white hover:bg-cyan-900/50 hover:border-cyan-600'
                               : 'bg-zinc-800/50 border border-zinc-700/50 text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-600'
@@ -1522,7 +1741,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                 : isClassPool && !isPoolExtra
                                   ? 'border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)] bg-cyan-500/10'
                                   : 'border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                        }`}
+                          }`}
                         title={
                           isFromOrigin && isTrained
                             ? 'Perícia fornecida pela origem (não pode remover)'
@@ -1595,53 +1814,116 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     </Button>
                   </div>
 
-                  {/* Weight Bar + Filters */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-zinc-500">⚖️</span>
-                      <span
-                        className={`text-xs ${inventoryCapacity.isOverloaded ? 'font-bold text-amber-500' : 'text-zinc-400'}`}
-                      >
-                        {inventoryCapacity.used} / {inventoryCapacity.limit} Espaços
-                      </span>
-                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-800">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            inventoryCapacity.used > inventoryCapacity.maxCapacity
+                  {/* Weight Bar + Rank Selection */}
+                  <div className="flex flex-col gap-4 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-500">⚖️</span>
+                        <span
+                          className={`text-xs ${inventoryCapacity.isOverloaded ? 'font-bold text-amber-500' : 'text-zinc-400'}`}
+                        >
+                          {inventoryCapacity.used} / {inventoryCapacity.limit} Espaços
+                        </span>
+                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-800">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${inventoryCapacity.used > inventoryCapacity.maxCapacity
                               ? 'bg-red-500'
                               : inventoryCapacity.isOverloaded
                                 ? 'bg-amber-500'
                                 : 'bg-emerald-500'
-                          }`}
-                          style={{
-                            width: `${Math.min((inventoryCapacity.used / inventoryCapacity.limit) * 100, 100)}%`,
-                          }}
-                        />
+                              }`}
+                            style={{
+                              width: `${Math.min((inventoryCapacity.used / inventoryCapacity.limit) * 100, 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-bold text-zinc-500">
+                          Patente:
+                        </span>
+                        <Dropdown>
+                          <DropdownTrigger>
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              className="bg-zinc-800 text-orange-400 font-bold border border-zinc-700 h-7 px-2"
+                              isLoading={isUpdatingRank}
+                            >
+                              {rank} <ChevronDown size={14} className="ml-1" />
+                            </Button>
+                          </DropdownTrigger>
+                          <DropdownMenu
+                            aria-label="Selecionar Patente"
+                            onAction={(key) => setRank(key as string)}
+                            selectedKeys={[rank]}
+                            selectionMode="single"
+                            className="bg-zinc-900 border border-zinc-800"
+                          >
+                            {RANK_OPTIONS.map((opt) => (
+                              <DropdownItem
+                                key={opt}
+                                className={rank === opt ? 'text-orange-400 font-bold' : ''}
+                              >
+                                {opt}
+                              </DropdownItem>
+                            ))}
+                          </DropdownMenu>
+                        </Dropdown>
                       </div>
                     </div>
+
+                    {/* Category Limits Display */}
+                    <div className="flex items-center flex-wrap gap-2">
+                      {[1, 2, 3, 4].map((cat) => {
+                        const used = categoryConsumption[cat] || 0
+                        const limit = RANK_LIMITS[rank]?.[cat] ?? 0
+                        const isFull = used >= limit && limit > 0
+                        const isEmpty = limit === 0
+
+                        return (
+                          <Chip
+                            key={cat}
+                            size="sm"
+                            variant="dot"
+                            color={isEmpty ? 'default' : isFull ? 'danger' : 'primary'}
+                            className={`bg-zinc-800/50 border-zinc-700 ${isEmpty ? 'opacity-40' : ''}`}
+                            classNames={{
+                              content: 'font-bold text-[10px]',
+                            }}
+                          >
+                            CAT {categoryLabels[cat]}: {used}/{limit}
+                          </Chip>
+                        )
+                      })}
+                    </div>
+
                     {inventoryCapacity.isOverloaded && (
                       <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-500 border border-amber-500/20">
                         <span className="animate-pulse font-bold">⚠️ SOBRECARGA:</span>
                         <span>–5 em Defesa e Testes (Deslocamento Reduzido)</span>
                       </div>
                     )}
-                    <div className="flex items-center gap-2">
-                      <select className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
-                        <option>Todos os Tipos</option>
-                        <option>Arma</option>
-                        <option>Armadura</option>
-                        <option>Consumível</option>
-                        <option>Diversos</option>
-                      </select>
-                      <button className="flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:text-white">
-                        ↑ Nome
-                      </button>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <select className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
+                          <option>Todos os Tipos</option>
+                          <option>Arma</option>
+                          <option>Armadura</option>
+                          <option>Consumível</option>
+                          <option>Diversos</option>
+                        </select>
+                        <button className="flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:text-white">
+                          ↑ Nome
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Items List */}
                   <div className="space-y-2 overflow-y-auto custom-scrollbar">
-                    {inventory.map((item, i) => {
+                    {inventory.map((item) => {
                       const isExpanded = expandedItemId === item.uniqueId
                       const getIconForItem = () => {
                         if (item.type === 'Arma') {
@@ -1668,11 +1950,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         return 'bg-orange-500/10 border-orange-500/20 text-orange-400'
                       }
                       const categoryLabels: Record<number, string> = {
-                        0: 'I',
-                        1: 'II',
-                        2: 'III',
-                        3: 'IV',
-                        4: 'V',
+                        0: '0',
+                        1: 'I',
+                        2: 'II',
+                        3: 'III',
+                        4: 'IV',
                       }
                       return (
                         <div
@@ -1739,9 +2021,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                     Categoria
                                   </p>
                                   <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {item.category != null
+                                    {(item.category != null && item.category > 0)
                                       ? (categoryLabels[item.category] ?? item.category)
-                                      : '—'}
+                                      : '0'}
                                   </p>
                                 </div>
                                 <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
@@ -1808,16 +2090,105 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     <Button
                       size="sm"
                       className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
+                      onPress={() => setIsRitualSelectOpen(true)}
                     >
                       <Plus size={14} className="mr-2" /> Aprender Ritual
                     </Button>
                   </div>
 
                   {/* Rituals List */}
-                  <div className="space-y-2 overflow-y-auto custom-scrollbar">
-                    <div className="text-zinc-500 text-center italic py-8">
-                      Nenhum ritual aprendido.
-                    </div>
+                  <div className="space-y-4 overflow-y-auto custom-scrollbar">
+                    {character.rituals && character.rituals.length > 0 ? (
+                      character.rituals.map((charRitual: any) => {
+                        const ritual = charRitual.ritual
+                        if (!ritual) return null
+
+                        const elementColor = (({
+                          CONHECIMENTO: 'text-amber-400',
+                          ENERGIA: 'text-purple-400',
+                          MORTE: 'text-zinc-400',
+                          SANGUE: 'text-red-400',
+                          MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
+                        } as Record<string, string>)[(ritual.element || '').toUpperCase()]) || 'text-zinc-400'
+
+                        return (
+                          <Card
+                            key={charRitual.id}
+                            className="bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 transition-all"
+                          >
+                            <CardBody className="space-y-3">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
+                                    <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
+                                      {ritual.circle}º Círculo
+                                    </Chip>
+                                  </div>
+                                  <p className={`text-xs font-bold uppercase ${elementColor} mt-1`}>
+                                    {ritual.element}
+                                  </p>
+                                </div>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  color="danger"
+                                  className="opacity-50 hover:opacity-100"
+                                  onPress={() => removeRitual(ritual.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-zinc-500 uppercase font-bold bg-zinc-900/50 p-2 rounded">
+                                <div>
+                                  <span className="text-zinc-600 block">Execução</span> {ritual.execution}
+                                </div>
+                                <div>
+                                  <span className="text-zinc-600 block">Alcance</span> {ritual.range}
+                                </div>
+                                <div>
+                                  <span className="text-zinc-600 block">Duração</span> {ritual.duration}
+                                </div>
+                                {ritual.resistance && (
+                                  <div>
+                                    <span className="text-zinc-600 block">Resistência</span> {ritual.resistance}
+                                  </div>
+                                )}
+                              </div>
+
+                              {ritual.description && (
+                                <p className="text-sm text-zinc-300 italic leading-relaxed">
+                                  {ritual.description}
+                                </p>
+                              )}
+
+                              {(ritual.discente || ritual.verdadeiro) && (
+                                <div className="space-y-2 mt-2 pt-2 border-t border-zinc-800/50 text-xs text-zinc-400">
+                                  {ritual.discente && (
+                                    <div>
+                                      <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
+                                      {ritual.discente}
+                                    </div>
+                                  )}
+                                  {ritual.verdadeiro && (
+                                    <div>
+                                      <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
+                                      {ritual.verdadeiro}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </CardBody>
+                          </Card>
+                        )
+                      })
+                    ) : (
+                      <div className="text-zinc-500 text-center italic py-12 bg-zinc-950/20 rounded-xl border border-dashed border-zinc-800">
+                        Nenhum ritual aprendido. Use o botão acima para adicionar.
+                      </div>
+                    )}
                   </div>
                 </div>
               </Tab>
@@ -1859,7 +2230,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             <div key={idx}>
                               {/* Perito: Show configured skills for rolling */}
                               {ability.classAbility?.name === 'Perito' &&
-                              ability.config?.selectedSkills ? (
+                                ability.config?.selectedSkills ? (
                                 <div className="space-y-3">
                                   {ability.config.selectedSkills.map((skillName: string) => {
                                     const currentPe = peritoPeSpending[skillName] || 2
@@ -2191,9 +2562,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                             size="sm"
                                             className="bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40"
                                             onPress={() => {
-                                              router.delete(
-                                                `/characters/${character.id}/abilities/${ability.classAbilityId}`
-                                              )
+                                              if (
+                                                confirm(
+                                                  'Tem certeza que deseja remover esta habilidade?'
+                                                )
+                                              ) {
+                                                router.delete(
+                                                  `/characters/${character.id}/abilities/${ability.classAbilityId}`
+                                                )
+                                              }
                                             }}
                                           >
                                             <Trash2 size={14} />
@@ -2214,6 +2591,205 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         </div>
                       )
                     })()}
+
+                    {character.paranormalPowers && character.paranormalPowers.length > 0 && (
+                      <div className="mt-6 pt-6 border-t border-zinc-800">
+                        <button
+                          onClick={() => toggleSection('paranormalPowers')}
+                          className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
+                        >
+                          <div className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></div>
+                          <h4 className="font-bold text-purple-400 text-sm uppercase tracking-wider flex-1 text-left">
+                            Poderes Paranormais
+                          </h4>
+                          <motion.div
+                            animate={{ rotate: expandedSections.paranormalPowers ? 180 : 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <ChevronDown size={16} className="text-purple-400" />
+                          </motion.div>
+                        </button>
+                        <AnimatePresence>
+                          {expandedSections.paranormalPowers && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="space-y-4"
+                            >
+                              {character.paranormalPowers.map((power, idx) => {
+                                const p = power.paranormalPower
+                                const elementColor = {
+                                  Conhecimento: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+                                  Energia: 'bg-purple-500/10 border-purple-500/30 text-purple-300',
+                                  Morte: 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300',
+                                  Sangue: 'bg-red-500/10 border-red-500/30 text-red-300',
+                                  Varia: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
+                                }[p?.element || ''] || 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300'
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    className={`p-4 rounded-lg border flex flex-col gap-3 transition-all hover:bg-zinc-950/80 ${elementColor}`}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <h5 className="font-bold text-base">{p?.name}</h5>
+                                          <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
+                                            {p?.element}
+                                          </span>
+                                        </div>
+                                        {p?.requirements && (
+                                          <p className="text-[10px] opacity-60 uppercase mt-0.5">
+                                            Requisito: {p.requirements}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Button
+                                        isIconOnly
+                                        size="sm"
+                                        variant="light"
+                                        className="text-current opacity-40 hover:opacity-100"
+                                        onPress={() => p?.id && removeParanormalPower(p.id)}
+                                      >
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </div>
+
+                                    {p?.description && (
+                                      <p className="text-xs leading-relaxed opacity-90 italic">
+                                        {p.description}
+                                      </p>
+                                    )}
+
+                                    <div className="flex flex-col gap-2 pt-2 border-t border-current/20">
+                                      {p?.effects?.main && (
+                                        <div>
+                                          <p className="text-[9px] font-black uppercase opacity-60 mb-1">
+                                            Efeito
+                                          </p>
+                                          <p className="text-xs leading-relaxed opacity-100">
+                                            {p.effects.main}
+                                          </p>
+                                        </div>
+                                      )}
+                                      {p?.effects?.affinity && (
+                                        <div className="bg-white/5 p-2 rounded border border-white/10 mt-1">
+                                          <p className="text-[9px] font-black uppercase text-white/50 mb-1">
+                                            Afinidade
+                                          </p>
+                                          <p className="text-xs leading-relaxed text-white/80">
+                                            {p.effects.affinity}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
+
+                    {character.rituals && character.rituals.length > 0 && (
+                      <div className="mt-6 pt-6 border-t border-zinc-800">
+                        <button
+                          onClick={() => toggleSection('rituals')}
+                          className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
+                        >
+                          <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
+                          <h4 className="font-bold text-blue-400 text-sm uppercase tracking-wider flex-1 text-left">
+                            Rituais Aprendidos
+                          </h4>
+                          <motion.div
+                            animate={{ rotate: expandedSections.rituals ? 180 : 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <ChevronDown size={16} className="text-blue-400" />
+                          </motion.div>
+                        </button>
+                        <AnimatePresence>
+                          {expandedSections.rituals && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className="space-y-4"
+                            >
+                              {character.rituals.map((characterRitual, idx) => {
+                                const r = characterRitual.ritual
+                                const elementColor = {
+                                  Conhecimento: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+                                  Energia: 'bg-purple-500/10 border-purple-500/30 text-purple-300',
+                                  Morte: 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300',
+                                  Sangue: 'bg-red-500/10 border-red-500/30 text-red-300',
+                                }[r?.element || ''] || 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300'
+
+                                return (
+                                  <div
+                                    key={idx}
+                                    className={`p-4 rounded-lg border flex flex-col gap-3 transition-all hover:bg-zinc-950/80 ${elementColor}`}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <h5 className="font-bold text-base">{r?.name}</h5>
+                                          <Chip
+                                            size="sm"
+                                            variant="flat"
+                                            className="bg-black/20 text-current border-current/20"
+                                          >
+                                            {r?.circle}º Círculo
+                                          </Chip>
+                                          <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
+                                            {r?.element}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <Button
+                                        isIconOnly
+                                        size="sm"
+                                        variant="light"
+                                        className="text-current opacity-40 hover:opacity-100"
+                                        onPress={() => r?.id && removeRitual(r.id)}
+                                      >
+                                        <Trash2 size={14} />
+                                      </Button>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] uppercase font-bold opacity-70">
+                                      <div>
+                                        <span className="opacity-50">Execução:</span> {r?.execution}
+                                      </div>
+                                      <div>
+                                        <span className="opacity-50">Alcance:</span> {r?.range}
+                                      </div>
+                                      <div>
+                                        <span className="opacity-50">Alvo:</span> {r?.target}
+                                      </div>
+                                      <div>
+                                        <span className="opacity-50">Duração:</span> {r?.duration}
+                                      </div>
+                                    </div>
+
+                                    {r?.description && (
+                                      <p className="text-xs leading-relaxed opacity-90 italic border-t border-current/10 pt-2">
+                                        {r.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    )}
 
                     {/* HABILIDADES DE TRILHA */}
                     {character.trail &&
@@ -2289,7 +2865,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           >
                             <div className="w-3 h-3 rounded-full bg-red-500"></div>
                             <h4 className="font-bold text-red-400 text-sm uppercase tracking-wider flex-1 text-left">
-                              Poderes Paranormais ({paranormalPowers.length})
+                              Habilidades de Transcender ({paranormalPowers.length})
                             </h4>
                             <motion.div
                               animate={{ rotate: expandedSections.acquiredAbilities ? 180 : 0 }}
@@ -2397,14 +2973,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 )}
                 {[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length >
                   0 && (
-                  <span className="text-emerald-400">
-                    {' '}
-                    +{
-                      [strength, agility, intellect, vigor, presence].filter((v) => v === 0).length
-                    }{' '}
-                    (atributos em 0)
-                  </span>
-                )}
+                    <span className="text-emerald-400">
+                      {' '}
+                      +{
+                        [strength, agility, intellect, vigor, presence].filter((v) => v === 0).length
+                      }{' '}
+                      (atributos em 0)
+                    </span>
+                  )}
                 <span className="text-zinc-600"> | Usado: {usedPoints}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -2554,6 +3130,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     type="number"
                     value={damageToHp}
                     onChange={(e) => setDamageToHp(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && applyDamageHp()}
                     className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 font-bold text-white w-20"
                     min="0"
                   />
@@ -2629,7 +3206,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   <input
                     type="number"
                     value={damageToPe}
-                    onChange={(e) => setDamageToPe(Math.max(0, Number(e.target.value)))}
+                    onChange={(e) => setDamageToPe(String(Math.max(0, Number(e.target.value))))}
+                    onKeyDown={(e) => e.key === 'Enter' && applyDamagePe()}
                     className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 font-bold text-white w-20"
                     min="0"
                   />
@@ -2703,7 +3281,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   <input
                     type="number"
                     value={damageToSan}
-                    onChange={(e) => setDamageToSan(Math.max(0, Number(e.target.value)))}
+                    onChange={(e) => setDamageToSan(String(Math.max(0, Number(e.target.value))))}
+                    onKeyDown={(e) => e.key === 'Enter' && applyDamageSan()}
                     className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 font-bold text-white w-20"
                     min="0"
                   />
@@ -3138,11 +3717,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             key={skill}
                             size="sm"
                             onPress={() => toggleSkillSelection(skill)}
-                            className={`font-semibold ${
-                              selectedSkills.includes(skill)
-                                ? 'bg-amber-500 text-white border-amber-400'
-                                : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
-                            } border`}
+                            className={`font-semibold ${selectedSkills.includes(skill)
+                              ? 'bg-amber-500 text-white border-amber-400'
+                              : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
+                              } border`}
                           >
                             {selectedSkills.includes(skill) && '✓ '}
                             {skill}
@@ -3262,41 +3840,44 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 </p>
               </ModalHeader>
               <ModalBody>
-                {availableAbilities.length > 0 ? (
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {availableAbilities.map((ability) => (
-                      <Card
-                        key={ability.id}
-                        isPressable
-                        onPress={() => addClassAbility(ability.id)}
-                        className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
-                      >
-                        <CardBody className="space-y-3">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <h3 className="text-lg font-bold text-amber-400">{ability.name}</h3>
-                              {ability.effects?.nex && (
-                                <p className="text-xs text-zinc-400 mt-1">
-                                  Requer: NEX {ability.effects.nex}
-                                </p>
-                              )}
+                <div className="pt-4">
+                  {availableAbilities.length > 0 ? (
+                    <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                      {availableAbilities.map((ability) => (
+                        <Card
+                          key={ability.id}
+                          isPressable
+                          onPress={() => addClassAbility(ability.id)}
+                          className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
+                        >
+                          <CardBody className="space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h3 className="text-lg font-bold text-amber-400">
+                                  {ability.name}
+                                </h3>
+                                {ability.effects?.nex && (
+                                  <p className="text-xs text-zinc-400 mt-1">
+                                    Requer: NEX {ability.effects.nex}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-
-                          {ability.description && (
-                            <p className="text-sm text-zinc-300">{ability.description}</p>
-                          )}
-                        </CardBody>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-6 text-center text-zinc-400">
-                    <p className="text-sm">
-                      Nenhuma habilidade disponível para escolher no momento
-                    </p>
-                  </div>
-                )}
+                            {ability.description && (
+                              <p className="text-sm text-zinc-300">{ability.description}</p>
+                            )}
+                          </CardBody>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-zinc-400">
+                      <p className="text-sm">
+                        Nenhuma habilidade disponível para escolher no momento
+                      </p>
+                    </div>
+                  )}
+                </div>
               </ModalBody>
             </>
           )}
@@ -3874,73 +4455,73 @@ export default function CharacterShow(initialProps: CharacterProps) {
                               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItemExpanded(key) } }}
                               className="cursor-pointer outline-none"
                             >
-                            <Card
-                              className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                            >
-                              <CardBody className="py-3 px-4">
-                                <div className="flex flex-row items-start justify-between gap-4">
-                                  <div className="min-w-0 flex-1">
-                                    <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                    <p className="text-xs text-zinc-500 mt-0.5">
-                                      {item.type} · Categoria {item.category}
-                                      {!isExpanded && (
-                                        <> · {item.description || 'Sem descrição'}</>
-                                      )}
-                                    </p>
-                                    {item.description && (
-                                      <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                        {item.description}
+                              <Card
+                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                              >
+                                <CardBody className="py-3 px-4">
+                                  <div className="flex flex-row items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                      <p className="text-xs text-zinc-500 mt-0.5">
+                                        {item.type} · Categoria {item.category}
+                                        {!isExpanded && (
+                                          <> · {item.description || 'Sem descrição'}</>
+                                        )}
                                       </p>
-                                    )}
-                                  </div>
-                                  <span onClick={(e) => e.stopPropagation()}>
-                                    <Button
-                                      size="sm"
-                                      className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                      onPress={() => addItemToCharacter('ammunition', item.id)}
-                                    >
-                                      <Plus size={14} className="mr-1" /> Adicionar
-                                    </Button>
-                                  </span>
-                                </div>
-                                {isExpanded && (
-                                  <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                      <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Categoria</p>
-                                      <p className="text-lg font-bold text-orange-300 mt-0.5">{item.category}</p>
+                                      {item.description && (
+                                        <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                          {item.description}
+                                        </p>
+                                      )}
                                     </div>
-                                    <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                      <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo</p>
-                                      <p className="text-lg font-bold text-orange-300 mt-0.5">{item.type}</p>
-                                    </div>
-                                    {item.damageBonus && (
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de dano</p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageBonus}</p>
-                                      </div>
-                                    )}
-                                    {item.damageTypeOverride && (
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo de dano</p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageTypeOverride}</p>
-                                      </div>
-                                    )}
-                                    {item.criticalBonus && (
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de crítico</p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalBonus}</p>
-                                      </div>
-                                    )}
-                                    {item.criticalMultiplierBonus && (
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Mult. de crítico</p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalMultiplierBonus}</p>
-                                      </div>
-                                    )}
+                                    <span onClick={(e) => e.stopPropagation()}>
+                                      <Button
+                                        size="sm"
+                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                        onPress={() => addItemToCharacter('ammunition', item.id)}
+                                      >
+                                        <Plus size={14} className="mr-1" /> Adicionar
+                                      </Button>
+                                    </span>
                                   </div>
-                                )}
-                              </CardBody>
-                            </Card>
+                                  {isExpanded && (
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Categoria</p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.category}</p>
+                                      </div>
+                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo</p>
+                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.type}</p>
+                                      </div>
+                                      {item.damageBonus && (
+                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de dano</p>
+                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageBonus}</p>
+                                        </div>
+                                      )}
+                                      {item.damageTypeOverride && (
+                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo de dano</p>
+                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageTypeOverride}</p>
+                                        </div>
+                                      )}
+                                      {item.criticalBonus && (
+                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de crítico</p>
+                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalBonus}</p>
+                                        </div>
+                                      )}
+                                      {item.criticalMultiplierBonus && (
+                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Mult. de crítico</p>
+                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalMultiplierBonus}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </CardBody>
+                              </Card>
                             </div>
                           )
                         })
@@ -3948,6 +4529,317 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     </div>
                   </Tab>
                 </Tabs>
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Transcend Choice Modal */}
+      <Modal
+        isOpen={isTranscendChoiceOpen}
+        onOpenChange={() => setIsTranscendChoiceOpen(false)}
+        size="md"
+        placement="center"
+        classNames={{
+          base: 'bg-zinc-900 border border-zinc-800',
+          header: 'border-b border-zinc-800',
+          body: 'py-6',
+        }}
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-white">Transcender</h2>
+                <p className="text-xs text-zinc-400">Escolha como deseja transcender</p>
+              </ModalHeader>
+              <ModalBody>
+                <div className="grid grid-cols-1 gap-4">
+                  <Button
+                    className="h-24 text-xl font-bold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 shadow-lg shadow-blue-500/10 transition-all border border-blue-500/30"
+                    onPress={() => {
+                      setIsTranscendChoiceOpen(false)
+                      setIsParanormalSelectOpen(true)
+                    }}
+                  >
+                    Aprender Poder Paranormal
+                  </Button>
+                  <Button
+                    className="h-24 text-xl font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 shadow-lg shadow-purple-500/10 transition-all border border-purple-500/30"
+                    onPress={() => {
+                      setIsTranscendChoiceOpen(false)
+                      setIsRitualSelectOpen(true)
+                    }}
+                  >
+                    Aprender Ritual
+                  </Button>
+                </div>
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Paranormal Power Selection Modal (Dedicated) */}
+      <Modal
+        isOpen={isParanormalSelectOpen}
+        onOpenChange={() => setIsParanormalSelectOpen(false)}
+        size="2xl"
+        placement="center"
+        classNames={{
+          base: 'bg-zinc-900 border border-zinc-800',
+          header: 'border-b border-zinc-800',
+          body: 'py-6',
+        }}
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-white">Escolher Poder Paranormal</h2>
+                <p className="text-xs text-zinc-400 text-amber-500 font-bold uppercase tracking-tighter">
+                  Vínculo com o outro lado
+                </p>
+              </ModalHeader>
+              <ModalBody>
+                <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                  {catalogParanormalPowers && catalogParanormalPowers.length > 0 ? (
+                    catalogParanormalPowers.map((power) => {
+                      const isAcquired = character.paranormalPowers?.some(
+                        (p: any) => p.paranormalPowerId === power.id
+                      )
+                      const elementColor = {
+                        Conhecimento: 'text-amber-400',
+                        Energia: 'text-purple-400',
+                        Morte: 'text-zinc-400',
+                        Sangue: 'text-red-400',
+                        Varia: 'text-blue-400',
+                      }[power.element || ''] || 'text-zinc-400'
+
+                      return (
+                        <Card
+                          key={power.id}
+                          isPressable={!isAcquired && !isAddingAbility}
+                          onPress={() => !isAcquired && !isAddingAbility && addParanormalPower(power.id)}
+                          className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
+                        >
+                          <CardBody className="space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-lg font-bold text-zinc-100">{power.name}</h3>
+                                  {isAcquired && (
+                                    <Chip size="sm" color="success" variant="flat">
+                                      Adquirido
+                                    </Chip>
+                                  )}
+                                </div>
+                                <p className={`text-xs font-bold uppercase ${elementColor}`}>
+                                  {power.element}
+                                </p>
+                                {power.requirements && (
+                                  <p className="text-[10px] text-zinc-500 mt-1 uppercase">
+                                    Requisito: {power.requirements}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {power.description && (
+                              <p className="text-sm text-zinc-300 italic">{power.description}</p>
+                            )}
+                            <div className="space-y-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                              {power.effects?.main && (
+                                <div>
+                                  <p className="text-[10px] font-bold text-zinc-500 uppercase">
+                                    Efeito:
+                                  </p>
+                                  <p className="text-xs text-zinc-300">{power.effects.main}</p>
+                                </div>
+                              )}
+                              {power.effects?.affinity && (
+                                <div>
+                                  <p className="text-[10px] font-bold text-amber-500/70 uppercase">
+                                    Afinidade:
+                                  </p>
+                                  <p className="text-xs text-amber-200/70">
+                                    {power.effects.affinity}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </CardBody>
+                        </Card>
+                      )
+                    })
+                  ) : (
+                    <p className="text-center text-zinc-500 py-8">Nenhum poder encontrado</p>
+                  )}
+                </div>
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+
+      {/* Ritual Selection Modal */}
+      <Modal
+        isOpen={isRitualSelectOpen}
+        onOpenChange={() => setIsRitualSelectOpen(false)}
+        size="2xl"
+        placement="center"
+        classNames={{
+          base: 'bg-zinc-900 border border-zinc-800',
+          header: 'border-b border-zinc-800',
+          body: 'py-6',
+        }}
+      >
+        <ModalContent>
+          {() => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <h2 className="text-xl font-bold text-white">Aprender Ritual</h2>
+                <p className="text-xs text-zinc-400">Desvende os segredos do ocultismo</p>
+
+                {/* Search and Filters UI */}
+                <div className="flex flex-col sm:flex-row gap-3 mt-4">
+                  <Input
+                    placeholder="Buscar ritual pelo nome..."
+                    value={ritualSearch}
+                    onValueChange={setRitualSearch}
+                    startContent={<Filter size={16} className="text-zinc-500" />}
+                    className="flex-1"
+                    size="sm"
+                    classNames={{
+                      inputWrapper: 'bg-zinc-950 border-zinc-800'
+                    }}
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={elementFilter}
+                      onChange={(e) => setElementFilter(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
+                    >
+                      <option value="Todos">Todos Elementos</option>
+                      <option value="Conhecimento">Conhecimento</option>
+                      <option value="Energia">Energia</option>
+                      <option value="Morte">Morte</option>
+                      <option value="Sangue">Sangue</option>
+                      <option value="Medo">Medo</option>
+                    </select>
+                    <select
+                      value={circleFilter}
+                      onChange={(e) => setCircleFilter(e.target.value)}
+                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
+                    >
+                      <option value="Todos">Todos Círculos</option>
+                      <option value="1">1º Círculo</option>
+                      <option value="2">2º Círculo</option>
+                      <option value="3">3º Círculo</option>
+                      <option value="4">4º Círculo</option>
+                    </select>
+                  </div>
+                </div>
+              </ModalHeader>
+              <ModalBody>
+                <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+                  {filteredRituals && filteredRituals.length > 0 ? (
+                    filteredRituals.map((ritual) => {
+                      const isAcquired = character.rituals?.some(
+                        (r: any) => r.ritualId === ritual.id
+                      )
+                      const elementColor = (({
+                        CONHECIMENTO: 'text-amber-400',
+                        ENERGIA: 'text-purple-400',
+                        MORTE: 'text-zinc-400',
+                        SANGUE: 'text-red-400',
+                        MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
+                      } as Record<string, string>)[(ritual.element || '').toUpperCase()]) || 'text-zinc-400'
+
+                      return (
+                        <Card
+                          key={ritual.id}
+                          isPressable={!isAcquired && !isAddingAbility}
+                          onPress={() => !isAcquired && !isAddingAbility && addRitual(ritual.id)}
+                          className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
+                        >
+                          <CardBody className="space-y-3">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
+                                  <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
+                                    {ritual.circle}º Círculo
+                                  </Chip>
+                                  {isAcquired && (
+                                    <Chip size="sm" color="success" variant="flat">
+                                      Aprendido
+                                    </Chip>
+                                  )}
+                                </div>
+                                <p className={`text-xs font-bold uppercase ${elementColor}`}>
+                                  {ritual.element}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 uppercase font-bold">
+                              <div>
+                                <span className="text-zinc-600">Execução:</span> {ritual.execution}
+                              </div>
+                              <div>
+                                <span className="text-zinc-600">Alcance:</span> {ritual.range}
+                              </div>
+                              <div>
+                                <span className="text-zinc-600 text-xs">Duração:</span> {ritual.duration}
+                              </div>
+                              {ritual.resistance && (
+                                <div>
+                                  <span className="text-zinc-600 text-xs">Resistência:</span> {ritual.resistance}
+                                </div>
+                              )}
+                            </div>
+                            {ritual.description && (
+                              <p className="text-sm text-zinc-300 italic">
+                                {ritual.description}
+                              </p>
+                            )}
+
+                            {(ritual.discente || ritual.verdadeiro) && (
+                              <div className="space-y-2 mt-2 pt-2 border-t border-zinc-800/50 text-xs">
+                                {ritual.discente && (
+                                  <div className="text-zinc-400">
+                                    <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
+                                    {ritual.discente}
+                                  </div>
+                                )}
+                                {ritual.verdadeiro && (
+                                  <div className="text-zinc-400">
+                                    <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
+                                    {ritual.verdadeiro}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </CardBody>
+                        </Card>
+                      )
+                    })
+                  ) : (
+                    <div className="p-8 text-center text-zinc-500 bg-zinc-950/20 border border-dashed border-zinc-800 rounded-xl">
+                      <p>Nenhum ritual encontrado com esses filtros.</p>
+                      <button
+                        onClick={() => {
+                          setRitualSearch('')
+                          setElementFilter('Todos')
+                          setCircleFilter('Todos')
+                        }}
+                        className="text-xs text-amber-500 hover:text-amber-400 mt-2 font-bold uppercase"
+                      >
+                        Limpar Filtros
+                      </button>
+                    </div>
+                  )}
+                </div>
               </ModalBody>
             </>
           )}

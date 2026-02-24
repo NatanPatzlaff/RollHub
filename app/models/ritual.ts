@@ -27,7 +27,16 @@ export default class Ritual extends BaseModel {
   declare duration: string
 
   @column()
+  declare resistance: string | null
+
+  @column()
   declare description: string | null
+
+  @column()
+  declare discente: string | null
+
+  @column()
+  declare verdadeiro: string | null
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
