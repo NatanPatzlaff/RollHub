@@ -34,6 +34,11 @@ router.group(() => {
     router.put('/characters/:id/skills', [CharactersController, 'updateSkills'])
     router.post('/characters/:id/items', [CharactersController, 'addItem'])
     router.delete('/characters/:id/items/:itemId', [CharactersController, 'removeItem'])
+
+    // Weapon Modifications
+    router.post('/characters/:id/weapons/:characterWeaponId/modifications', [CharactersController, 'addWeaponModification'])
+    router.delete('/characters/:id/weapons/:characterWeaponId/modifications/:modificationId', [CharactersController, 'removeWeaponModification'])
+
     router.delete('/characters/:id', [CharactersController, 'destroy'])
     router.put('/characters/:id/stats', [CharacterStatsController, 'update'])
 }).use(middleware.auth())

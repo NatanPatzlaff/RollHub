@@ -6,7 +6,9 @@ export default class WeaponModificationsSeeder extends BaseSeeder {
   async run() {
     await db.from('weapon_modifications').delete()
     const now = DateTime.now().toSQL()
+    
     const mods = [
+      // --- MELHORIAS ---
       {
         name: 'Certeira',
         category: 1,
@@ -66,15 +68,6 @@ export default class WeaponModificationsSeeder extends BaseSeeder {
         created_at: now,
       },
       {
-        name: 'Compensador',
-        category: 1,
-        type: 'Acessório',
-        description: 'Sistema de amortecimento que anula a penalidade em testes de ataque por disparar rajadas.',
-        special_properties: JSON.stringify({ ignore_auto_penalty: true }),
-        weapon_type_restriction: JSON.stringify(['Automática']),
-        created_at: now,
-      },
-      {
         name: 'Ferrolho Automático',
         category: 1,
         type: 'Melhoria',
@@ -83,62 +76,111 @@ export default class WeaponModificationsSeeder extends BaseSeeder {
         weapon_type_restriction: JSON.stringify(['Arma de fogo']),
         created_at: now,
       },
+
+      // --- MALDIÇÕES ---
+      // CONHECIMENTO
       {
-        name: 'Mira Laser',
-        category: 1,
-        type: 'Acessório',
-        description: 'Laser que ajuda em disparos letais; aumenta a margem de ameaça em +2.',
-        critical_bonus: 2,
-        weapon_type_restriction: JSON.stringify(['Arma de fogo']),
+        name: 'Antielemento',
+        category: 2,
+        type: 'Maldição',
+        element: 'Conhecimento',
+        description: 'Letal contra criaturas de um elemento. Gaste 2 PE e acerte o ataque para causar +4d8 de dano.',
         created_at: now,
       },
       {
-        name: 'Mira Telescópica',
-        category: 1,
-        type: 'Acessório',
-        description: 'Luneta para disparos de longa distância. Aumenta o alcance da arma em uma categoria e permite usar Ataque Furtivo em qualquer alcance.',
-        range_bonus: 1,
-        special_properties: JSON.stringify({ sneak_attack_any_range: true }),
-        weapon_type_restriction: JSON.stringify(['Arma de fogo']),
+        name: 'Ritualística',
+        category: 2,
+        type: 'Maldição',
+        element: 'Conhecimento',
+        description: 'Armazena um ritual na arma para ser descarregado como ação livre ao acertar um ataque.',
         created_at: now,
       },
       {
-        name: 'Silenciador',
-        category: 1,
-        type: 'Acessório',
-        description: 'Reduz em –2d a penalidade em Furtividade para se esconder no mesmo turno em que atacou.',
-        special_properties: JSON.stringify({ stealth_penalty_reduction: 2 }),
-        weapon_type_restriction: JSON.stringify(['Arma de fogo']),
+        name: 'Senciente',
+        category: 4,
+        type: 'Maldição',
+        element: 'Conhecimento',
+        description: 'A arma flutua e ataca por conta própria. Custo: 2 PE para imbuir + 1 PE por turno para manter.',
+        created_at: now,
+      },
+      // ENERGIA
+      {
+        name: 'Empuxo',
+        category: 2,
+        type: 'Maldição',
+        element: 'Energia',
+        description: 'A arma pode ser arremessada, causa +1 dado de dano e volta voando para você. (Corpo a corpo apenas)',
         created_at: now,
       },
       {
-        name: 'Visão de Calor',
-        category: 1,
-        type: 'Acessório',
-        description: 'Sistema eletrônico infravermelho; permite ignorar qualquer camuflagem do alvo ao disparar.',
-        special_properties: JSON.stringify({ ignore_camouflage: true }),
+        name: 'Energética',
+        category: 2,
+        type: 'Maldição',
+        element: 'Energia',
+        description: 'Gaste 2 PE para converter o dano em Energia. Fornece +5 no ataque e ignora RD.',
         created_at: now,
       },
       {
-        name: 'Dum Dum',
-        category: 1,
-        type: 'Munição',
-        description: 'Balas feitas para se expandir no impacto; aumenta o multiplicador de crítico em +1.',
-        critical_multiplier_bonus: '+1x',
-        weapon_type_restriction: JSON.stringify(['Munição']),
+        name: 'Vibrante',
+        category: 2,
+        type: 'Maldição',
+        element: 'Energia',
+        description: 'Recebe Ataque Extra. Se já tiver, o custo da habilidade diminui em -1 PE.',
+        created_at: now,
+      },
+      // MORTE
+      {
+        name: 'Consumidora',
+        category: 2,
+        type: 'Maldição',
+        element: 'Morte',
+        description: 'Drena entropia. Gaste 2 PE para deixar o alvo imóvel por uma rodada ao acertar.',
         created_at: now,
       },
       {
-        name: 'Explosiva',
-        category: 1,
-        type: 'Munição',
-        description: 'Balas que explodem ao atingir o alvo; aumenta o dano causado em +2d6.',
-        damage_bonus: '+2d6',
-        weapon_type_restriction: JSON.stringify(['Munição']),
+        name: 'Erosiva',
+        category: 2,
+        type: 'Maldição',
+        element: 'Morte',
+        description: 'Acelera o envelhecimento: +1d8 de dano de Morte. Gaste 2 PE por 2d4 de dano extra por 2 rodadas.',
+        created_at: now,
+      },
+      {
+        name: 'Repulsora',
+        category: 2,
+        type: 'Maldição',
+        element: 'Morte',
+        description: 'Aura que fornece +2 de Defesa. Ao bloquear, gaste 2 PE para ganhar +5 adicional na Defesa.',
+        created_at: now,
+      },
+      // SANGUE
+      {
+        name: 'Lancinante',
+        category: 2,
+        type: 'Maldição',
+        element: 'Sangue',
+        description: 'Ferimentos terríveis: +1d8 de dano de Sangue (multiplicado em críticos).',
+        created_at: now,
+      },
+      {
+        name: 'Predadora',
+        category: 2,
+        type: 'Maldição',
+        element: 'Sangue',
+        description: 'Anula penalidades por camuflagem/cobertura leves, aumenta alcance em uma categoria e duplica a margem de ameaça.',
+        created_at: now,
+      },
+      {
+        name: 'Sanguinária',
+        category: 2,
+        type: 'Maldição',
+        element: 'Sangue',
+        description: 'Causa sangramento cumulativo. Críticos drenam sangue (alvo fraco + 2d10 PV temporários).',
         created_at: now,
       },
     ]
+
     await db.table('weapon_modifications').multiInsert(mods)
-    console.log(`✅ ${mods.length} modificações inseridas com sucesso!`)
+    console.log(`✅ ${mods.length} modificações (Melhorias e Maldições) inseridas com sucesso!`)
   }
 }

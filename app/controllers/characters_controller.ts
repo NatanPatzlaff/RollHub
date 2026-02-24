@@ -136,12 +136,17 @@ export default class CharactersController {
       console.log(`[SKILL ASSIGNMENT] No originId provided`)
     }
 
-    // Add mandatory class abilities
-    const allClassAbilities = await ClassAbility.query().where('classId', data.classId)
+    // Add mandatory class abilities using the centralized method
+    await this.syncMandatoryAbilities(character)
 
-    console.log(
-      `[CLASS ABILITY] Found ${allClassAbilities.length} total abilities for class ${data.classId}`
-    )
+    return response.redirect().toPath(`/characters/${character.id}`)
+  }
+
+  /**
+   * Centralized method to sync mandatory abilities based on character's NEX and Class
+   */
+  private async syncMandatoryAbilities(character: Character) {
+    const allClassAbilities = await ClassAbility.query().where('classId', character.classId)
 
     for (const ability of allClassAbilities) {
       const effects =
@@ -150,16 +155,37 @@ export default class CharactersController {
           : ability.effects || {}
 
       if (effects.mandatory === true) {
-        console.log(`[CLASS ABILITY] Adding mandatory ability: ${ability.name}`)
-        await CharacterClassAbility.create({
-          characterId: character.id,
-          classAbilityId: ability.id,
-        })
-        console.log(`[CLASS ABILITY] Added ability ${ability.name} to character ${character.id}`)
+        // Check for NEX requirement if present in effects (e.g., Engenhosidade unlocks at 40%)
+        let meetsNexRequirement = true
+        if (effects.unlocks_at) {
+          const requiredNex = parseInt(effects.unlocks_at)
+          if (character.nex < requiredNex) {
+            meetsNexRequirement = false
+          }
+        }
+
+        const exists = await CharacterClassAbility.query()
+          .where('characterId', character.id)
+          .where('classAbilityId', ability.id)
+          .first()
+
+        if (meetsNexRequirement) {
+          if (!exists) {
+            console.log(`[CLASS ABILITY] Adding mandatory ability: ${ability.name}`)
+            await CharacterClassAbility.create({
+              characterId: character.id,
+              classAbilityId: ability.id,
+            })
+          }
+        } else {
+          // If they no longer meet the requirement (e.g. lowered NEX), remove it
+          if (exists) {
+            console.log(`[CLASS ABILITY] Removing mandatory ability (NEX low): ${ability.name}`)
+            await exists.delete()
+          }
+        }
       }
     }
-
-    return response.redirect().toPath(`/characters/${character.id}`)
   }
 
   async show({ params, inertia }: HttpContext) {
@@ -300,6 +326,7 @@ export default class CharactersController {
         cursedItemsRows,
         ammunitionRows,
         characterWeaponsRows,
+        characterWeaponModificationsRows,
         characterProtectionsRows,
         characterGeneralItemsRows,
       ] = await Promise.all([
@@ -307,7 +334,7 @@ export default class CharactersController {
         db.from('protections').select('*').orderBy('name', 'asc'),
         db.from('general_items').select('*').orderBy('name', 'asc'),
         db.from('cursed_items').select('*').orderBy('name', 'asc'),
-        db.from('weapon_modifications').where('type', 'Munição').select('*').orderBy('name', 'asc'), // Munições
+        db.from('weapon_modifications').select('*').orderBy('name', 'asc'), // Todas as modificações (Melhorias, Acessórios, Munição)
         db
           .from('character_weapons')
           .where('character_id', character.id)
@@ -325,6 +352,12 @@ export default class CharactersController {
             'weapons.spaces',
             'weapons.category'
           ),
+        db
+          .from('character_weapon_modifications')
+          .join('character_weapons', 'character_weapon_modifications.character_weapon_id', 'character_weapons.id')
+          .where('character_weapons.character_id', character.id)
+          .leftJoin('weapon_modifications', 'character_weapon_modifications.modification_id', 'weapon_modifications.id')
+          .select('character_weapon_modifications.*', 'weapon_modifications.name as mod_name', 'weapon_modifications.type as mod_type', 'weapon_modifications.element as mod_element', 'weapon_modifications.category as mod_category'),
         db
           .from('character_protections')
           .where('character_id', character.id)
@@ -415,25 +448,36 @@ export default class CharactersController {
         damageTypeOverride: r.damage_type_override,
         criticalBonus: r.critical_bonus,
         criticalMultiplierBonus: r.critical_multiplier_bonus,
+        element: r.element,
         weaponTypeRestriction: r.weapon_type_restriction,
       }))
 
       // Itens do inventário do personagem (armas)
-      const inventoryWeapons = characterWeaponsRows.map((r: any) => ({
-        id: r.id, // Usar o ID da tabela pivot (character_weapons.id)
-        weaponId: r.weapon_id,
-        name: r.name,
+      const inventoryWeapons = characterWeaponsRows.map((cw: any) => ({
+        id: cw.id, // Usar o ID da tabela pivot (character_weapons.id)
+        weaponId: cw.weapon_id,
+        name: cw.custom_name || cw.name,
         type: 'Weapon',
-        damage: r.damage,
-        range: r.range,
-        critical: r.critical,
-        criticalMultiplier: r.critical_multiplier,
-        damageType: r.damage_type,
-        description: r.description,
-        equipped: r.is_equipped,
+        damage: cw.damage,
+        range: cw.range,
+        critical: cw.critical,
+        criticalMultiplier: cw.critical_multiplier,
+        damageType: cw.damage_type,
+        description: cw.description,
+        equipped: cw.is_equipped,
         quantity: 1,
-        spaces: r.spaces || 0,
-        category: r.category,
+        spaces: cw.spaces || 0,
+        category: cw.category,
+        modifications: characterWeaponModificationsRows
+          .filter((m: any) => m.character_weapon_id === cw.id)
+          .map((m: any) => ({
+            id: m.id,
+            modificationId: m.modification_id,
+            name: m.mod_name,
+            type: m.mod_type,
+            element: m.mod_element,
+            category: m.mod_category,
+          })),
       }))
 
       const inventoryProtections = characterProtectionsRows.map((r: any) => ({
@@ -709,32 +753,10 @@ export default class CharactersController {
           await charAbility.delete()
         }
       }
+    } // This closes the 'if (classId && classId !== oldClassId)' block.
 
-      // Add mandatory abilities from new class
-      const newClassAbilities = await ClassAbility.query().where('classId', classId)
-
-      for (const ability of newClassAbilities) {
-        const effects =
-          typeof ability.effects === 'string'
-            ? JSON.parse(ability.effects || '{}')
-            : ability.effects || {}
-
-        if (effects.mandatory === true) {
-          // Check if it already exists to avoid duplicates
-          const exists = await CharacterClassAbility.query()
-            .where('characterId', character.id)
-            .where('classAbilityId', ability.id)
-            .first()
-
-          if (!exists) {
-            await CharacterClassAbility.create({
-              characterId: character.id,
-              classAbilityId: ability.id,
-            })
-          }
-        }
-      }
-    }
+    // Sync mandatory abilities (handles NEX changes and class changes)
+    await this.syncMandatoryAbilities(character)
 
     await character.save()
 
@@ -983,12 +1005,20 @@ export default class CharactersController {
     const character = await Character.query()
       .where('id', params.id)
       .where('userId', user.id)
+      .preload('class')
+      .preload('attributes')
       .firstOrFail()
 
-    // Fetch the ritual
+    // ─── 1. Somente Ocultistas podem aprender rituais ───────────────────
+    const isOcultista = character.class?.name === 'Ocultista'
+    if (!isOcultista) {
+      return response.status(403).send({ error: 'Apenas Ocultistas podem aprender rituais.' })
+    }
+
+    // ─── 2. Buscar o ritual ──────────────────────────────────────────────
     const ritual = await Ritual.findOrFail(ritualId)
 
-    // Check if ritual is already acquired
+    // ─── 3. Verificar se já foi aprendido ───────────────────────────────
     const existing = await CharacterRitual.query()
       .where('characterId', character.id)
       .where('ritualId', ritual.id)
@@ -998,10 +1028,68 @@ export default class CharactersController {
       return response.status(400).send({ error: 'Ritual já foi aprendido' })
     }
 
-    // Add ritual
-    await CharacterRitual.create({
-      characterId: character.id,
-      ritualId: ritual.id,
+    // ─── 4. Calcular CirculoMaximo baseado no NEX ───────────────────────
+    const nex = character.nex || 5
+    let circuloMaximo = 1
+    if (nex >= 85) circuloMaximo = 4
+    else if (nex >= 55) circuloMaximo = 3
+    else if (nex >= 25) circuloMaximo = 2
+
+    // ─── 5. Verificar se o círculo do ritual está liberado ──────────────
+    if (Number((ritual as any).circle) > circuloMaximo) {
+      return response.status(400).send({
+        error: `Ritual de ${(ritual as any).circle}º Círculo bloqueado. Seu NEX ${nex}% permite até o ${circuloMaximo}º Círculo.`,
+      })
+    }
+
+    // ─── 6. Calcular créditos de rituais do Ocultista ───────────────────
+    // Créditos ganhos: 3 iniciais + 1 por nível (level = floor(nex/5), nível 1 não conta progressão)
+    const level = Math.floor(nex / 5)
+    const creditosGanhos = 3 + Math.max(0, level - 1)
+
+    // Créditos usados: rituais com ignora_limite_conhecimento = true
+    const creditosUsados = await db
+      .from('character_rituals')
+      .where('character_id', character.id)
+      .where('ignora_limite_conhecimento', true)
+      .count('* as total')
+
+    const creditosRestantes = creditosGanhos - Number((creditosUsados[0] as any)?.total || 0)
+
+    // ─── 7. Determinar se usa crédito ou conta no limite de Intelecto ───
+    let ignoraLimite = false
+
+    if (creditosRestantes > 0) {
+      // Tem crédito disponível — usa crédito, não conta no limite
+      ignoraLimite = true
+    } else {
+      // Sem créditos — verificar limite de rituais por Intelecto
+      const intellect = character.attributes?.intellect || 0
+      const limiteRituais = intellect // 1 ritual por ponto de Intelecto
+
+      // Contar rituais que NÃO ignoram o limite
+      const rituaisComuns = await db
+        .from('character_rituals')
+        .where('character_id', character.id)
+        .where('ignora_limite_conhecimento', false)
+        .count('* as total')
+
+      const totalComuns = Number((rituaisComuns[0] as any)?.total || 0)
+
+      if (totalComuns >= limiteRituais) {
+        return response.status(400).send({
+          error: `Limite de rituais atingido. Seu Intelecto (${intellect}) permite ${limiteRituais} ritual(is) além dos gratuitos.`,
+        })
+      }
+    }
+
+    // ─── 8. Registrar o ritual ──────────────────────────────────────────
+    await db.table('character_rituals').insert({
+      character_id: character.id,
+      ritual_id: ritual.id,
+      ignora_limite_conhecimento: ignoraLimite,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
 
     // If acquired via Transcend, register the ability too
@@ -1130,10 +1218,19 @@ export default class CharactersController {
     const [weaponsCats, protectionsCats, generalCats] = await Promise.all([
       db
         .from('character_weapons')
-        .where('character_id', character.id)
+        .where('character_weapons.character_id', character.id)
         .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
-        .select('weapons.category')
-        .then((rows) => rows.map((r) => r.category)),
+        .leftJoin('character_weapon_modifications', 'character_weapons.id', 'character_weapon_modifications.character_weapon_id')
+        .leftJoin('weapon_modifications', 'character_weapon_modifications.modification_id', 'weapon_modifications.id')
+        .select('character_weapons.id', 'weapons.category as base_category')
+        .sum('weapon_modifications.category as mods_category')
+        .groupBy('character_weapons.id', 'weapons.category')
+        .then((rows) => rows.map((r) => {
+          const base = typeof r.base_category === 'string'
+            ? ['I', 'II', 'III', 'IV', 'V'].indexOf(r.base_category) + 1
+            : Number(r.base_category || 0)
+          return base + Number(r.mods_category || 0)
+        })),
       db
         .from('character_protections')
         .where('character_id', character.id)
@@ -1205,6 +1302,8 @@ export default class CharactersController {
         character_id: character.id,
         protection_id: itemId,
         is_equipped: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
     } else if (type === 'general') {
       const item = await db.from('general_items').where('id', itemId).first()
@@ -1370,5 +1469,77 @@ export default class CharactersController {
     await character.delete()
 
     return response.redirect().toPath('/')
+  }
+
+  async addWeaponModification({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, characterWeaponId } = params
+    const { modificationId } = request.only(['modificationId'])
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Verify character weapon belongs to character
+    const characterWeapon = await db
+      .from('character_weapons')
+      .where('id', characterWeaponId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterWeapon) {
+      return response.notFound({ error: 'Arma do personagem não encontrada' })
+    }
+
+    // Check if modification already exists
+    const existing = await db
+      .from('character_weapon_modifications')
+      .where('character_weapon_id', characterWeapon.id)
+      .where('modification_id', modificationId)
+      .first()
+
+    if (existing) {
+      return response.badRequest({ error: 'Modificação já aplicada' })
+    }
+
+    const now = new Date().toISOString()
+    await db.table('character_weapon_modifications').insert({
+      character_weapon_id: characterWeapon.id,
+      modification_id: modificationId,
+      created_at: now,
+      updated_at: now,
+    })
+
+    return response.redirect().back()
+  }
+
+  async removeWeaponModification({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, characterWeaponId, modificationId } = params
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Verify character weapon belongs to character
+    const characterWeapon = await db
+      .from('character_weapons')
+      .where('id', characterWeaponId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterWeapon) {
+      return response.notFound({ error: 'Arma do personagem não encontrada' })
+    }
+
+    await db
+      .from('character_weapon_modifications')
+      .where('character_weapon_id', characterWeapon.id)
+      .where('modification_id', modificationId)
+      .delete()
+
+    return response.redirect().back()
   }
 }

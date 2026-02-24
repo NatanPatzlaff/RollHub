@@ -439,6 +439,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setExpandedItemKey((prev) => (prev === key ? null : key))
   }
 
+  // Weapon Modification Modal state
+  const {
+    isOpen: isModifyWeaponModalOpen,
+    onOpen: onModifyWeaponModalOpen,
+    onOpenChange: onModifyWeaponModalOpenChange,
+  } = useDisclosure()
+  const [modifyingWeapon, setModifyingWeapon] = useState<any>(null)
+  const [isUpdatingModifications, setIsUpdatingModifications] = useState(false)
+  const [modTypeFilter, setModTypeFilter] = useState<'Melhoria' | 'Maldição'>('Melhoria')
+
   // Filtered and sorted rituals
   const filteredRituals = useMemo(() => {
     if (!catalogRituals) return []
@@ -472,8 +482,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
     Recruta: { 1: 2, 2: 0, 3: 0, 4: 0 },
     Operador: { 1: 3, 2: 1, 3: 0, 4: 0 },
     'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
-    'Oficial de Operações': { 1: 5, 2: 3, 3: 2, 4: 1 },
-    'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
+    'Oficial de Operações': { 1: 3, 2: 3, 3: 2, 4: 1 },
+    'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
   }
 
   const categoryLabels: Record<number, string> = { 0: '0', 1: 'I', 2: 'II', 3: 'III', 4: 'IV' }
@@ -495,6 +505,35 @@ export default function CharacterShow(initialProps: CharacterProps) {
       )
     }
   }, [rank])
+
+  // Check if adding a modification to a weapon would exceed the rank's category limits
+  const canApplyModification = (weapon: any, modCategory: number): { allowed: boolean; reason?: string } => {
+    const limits = RANK_LIMITS[rank] || {}
+
+    // Calculate the final category of the weapon if we add this modification
+    const baseCategory = typeof weapon.category === 'string'
+      ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weapon.category) + 1
+      : (weapon.category || 0)
+    const currentModSum = weapon.modifications?.reduce((sum: number, m: any) => sum + (m.category || 0), 0) || 0
+    const newFinalCategory = baseCategory + currentModSum + modCategory
+
+    if (newFinalCategory > 4) {
+      return { allowed: false, reason: `Categoria ${newFinalCategory} não existe.` }
+    }
+
+    const limit = limits[newFinalCategory] ?? 0
+    const currentUsedOfNewCategory = categoryConsumption[newFinalCategory] || 0
+
+    if (currentUsedOfNewCategory >= limit) {
+      const romanCats = ['I', 'II', 'III', 'IV']
+      return {
+        allowed: false,
+        reason: `Limite de ${limit} item(ns) CAT ${romanCats[newFinalCategory - 1]} para patente ${rank} atingido.`,
+      }
+    }
+
+    return { allowed: true }
+  }
 
   // @ts-ignore
   if (isAddingAbility) {
@@ -520,6 +559,27 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }
 
   const maxPeritoPe = getMaxPeritoPe()
+
+  // ─── Ocultista: créditos de rituais ────────────────────────────────────
+  const isOcultista = character.class?.name === 'Ocultista'
+
+  const circuloMaximo = (() => {
+    if (character.nex >= 85) return 4
+    if (character.nex >= 55) return 3
+    if (character.nex >= 25) return 2
+    return 1
+  })()
+
+  // Créditos ganhos: 3 iniciais + 1 por nível acima do 1 (level = floor(nex/5))
+  const nexLevel = Math.floor(character.nex / 5)
+  const creditosGanhos = 3 + Math.max(0, nexLevel - 1)
+
+  // Créditos usados = rituais com ignora_limite_conhecimento = true
+  const creditosUsados = (character.rituals || []).filter(
+    (r: any) => r.ignoraLimiteConhecimento === true || r.ignora_limite_conhecimento === true
+  ).length
+
+  const creditosRestantes = creditosGanhos - creditosUsados
 
   // Function to format ability descriptions with paragraph breaks
   const formatAbilityDescription = (text: string | null) => {
@@ -810,6 +870,41 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const removeRitual = (ritualId: number) => {
     if (!confirm('Tem certeza que deseja remover este ritual?')) return
     router.delete(`/characters/${character.id}/rituals/${ritualId}`)
+  }
+
+  // Toggle Weapon Modification
+  const toggleModification = async (
+    characterWeaponId: number,
+    modificationId: number,
+    action: 'add' | 'remove'
+  ) => {
+    setIsUpdatingModifications(true)
+
+    if (action === 'add') {
+      router.post(
+        `/characters/${character.id}/weapons/${characterWeaponId}/modifications`,
+        { modificationId },
+        {
+          onSuccess: () => {
+            setIsUpdatingModifications(false)
+            // Update local state if needed (Inertia will reload usually)
+          },
+          onError: () => setIsUpdatingModifications(false),
+          preserveScroll: true,
+        }
+      )
+    } else {
+      router.delete(
+        `/characters/${character.id}/weapons/${characterWeaponId}/modifications/${modificationId}`,
+        {
+          onSuccess: () => {
+            setIsUpdatingModifications(false)
+          },
+          onError: () => setIsUpdatingModifications(false),
+          preserveScroll: true,
+        }
+      )
+    }
   }
 
   const handleSkillContextMenu = (skillName: string, event: React.MouseEvent) => {
@@ -1339,31 +1434,45 @@ export default function CharacterShow(initialProps: CharacterProps) {
     damage?: string
     damageType?: string | null
     category?: number | null
+    calculatedCategory?: number | null // Adicionamos a categoria calculada baseada em mods
     critical?: string | null
     criticalMultiplier?: string | null
     range?: string | null
     weaponType?: string | null
     uniqueId: string
     spaces: number
+    modifications?: any[]
   }[] = useMemo(() => {
-    const weapons = inventoryWeapons.map((w, index) => ({
-      id: w.id,
-      weaponId: w.weaponId,
-      name: w.name,
-      desc: w.description || '',
-      qty: w.quantity ?? 1,
-      weight: `${w.spaces} Espaços`,
-      spaces: w.spaces || 0,
-      type: 'Arma',
-      damage: w.damage,
-      damageType: w.damageType,
-      category: w.category,
-      critical: w.critical,
-      criticalMultiplier: w.criticalMultiplier,
-      range: w.range,
-      weaponType: w.weaponType,
-      uniqueId: `weapon-${w.id}-${index}`,
-    }))
+    const weapons = inventoryWeapons.map((w, index) => {
+      // Calcula a Categoria (+1 por Melhoria, +2 por Maldição via mod.category)
+      const baseCategory = typeof w.category === 'string' 
+        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(w.category) + 1 
+        : (w.category || 0)
+        
+      const modsCategorySum = w.modifications?.reduce((sum: number, mod: any) => sum + (mod.category || 0), 0) || 0
+      const finalCategory = baseCategory + modsCategorySum
+
+      return {
+        id: w.id,
+        weaponId: w.weaponId,
+        name: w.name,
+        desc: w.description || '',
+        qty: w.quantity ?? 1,
+        weight: `${w.spaces} Espaços`,
+        spaces: w.spaces || 0,
+        type: 'Arma',
+        damage: w.damage,
+        damageType: w.damageType,
+        category: w.category,
+        calculatedCategory: finalCategory > 0 ? finalCategory : null,
+        critical: w.critical,
+        criticalMultiplier: w.criticalMultiplier,
+        range: w.range,
+        weaponType: w.weaponType,
+        uniqueId: `weapon-${w.id}-${index}`,
+        modifications: w.modifications
+      }
+    })
 
     const protections = inventoryProtections.map((p, index) => ({
       id: p.id,
@@ -1399,9 +1508,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
     const consumption: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 }
 
     inventory.forEach((item) => {
-      if (item.category && item.category > 0) {
+      const cat = item.calculatedCategory || item.category
+      if (cat && cat > 0) {
         // Na Regra de Ordem Paranormal, cada item de categoria I ocupa 1 slot de Categoria I.
-        consumption[item.category] = (consumption[item.category] || 0) + (item.qty || 1)
+        consumption[cat] = (consumption[cat] || 0) + (item.qty || 1)
       }
     })
 
@@ -1448,6 +1558,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
       overloadPercentage: totalUsed > limit ? Math.min(((totalUsed - limit) / limit) * 100, 100) : 0,
     }
   }, [character, inventory])
+
+  // Sync modifyingWeapon with inventory updates so modal reacts in real-time
+  useEffect(() => {
+    if (modifyingWeapon) {
+      const updatedWeapon = inventory.find((i) => i.id === modifyingWeapon.id && i.type === 'Arma')
+      if (updatedWeapon) {
+        setModifyingWeapon(updatedWeapon)
+      }
+    }
+  }, [inventory])
 
   const removeItem = (itemId: number) => {
     if (!confirm('Tem certeza que deseja remover este item?')) return
@@ -1974,29 +2094,81 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   {item.name}
                                 </div>
                                 <div className="text-[11px] text-zinc-500">{item.desc}</div>
+                                {item.type === 'Arma' && item.calculatedCategory && item.calculatedCategory > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-300 font-bold uppercase tracking-tight">
+                                      CAT {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory}
+                                    </div>
+                                    {item.modifications?.map((mod: any) => {
+                                      const isCurse = mod.type === 'Maldição'
+                                      const elementColor = 
+                                        mod.element === 'Sangue' ? 'text-red-400' :
+                                        mod.element === 'Morte' ? 'text-zinc-400' :
+                                        mod.element === 'Energia' ? 'text-purple-400' :
+                                        mod.element === 'Conhecimento' ? 'text-amber-400' :
+                                        'text-red-400'
+                                      
+                                      const elementBg = 
+                                        mod.element === 'Sangue' ? 'bg-red-500/10 border-red-500/20' :
+                                        mod.element === 'Morte' ? 'bg-zinc-500/10 border-zinc-500/20' :
+                                        mod.element === 'Energia' ? 'bg-purple-500/10 border-purple-500/20' :
+                                        mod.element === 'Conhecimento' ? 'bg-amber-500/10 border-amber-500/20' :
+                                        'bg-red-500/10 border-red-500/20'
+
+                                      return (
+                                        <div
+                                          key={mod.id}
+                                          className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-tight ${
+                                            isCurse ? `${elementBg} ${elementColor}` : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                                          }`}
+                                        >
+                                          {mod.name}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-3">
                               <span className="text-xs text-zinc-500">x{item.qty}</span>
-                              <span className="text-xs text-zinc-500">{item.weight}</span>
                               <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800 text-zinc-400 text-xs">
                                 {item.type === 'Equipamento' ? 'Equip' : item.type}
                               </span>
-                              {!isExpanded && (
-                                <button
+                              
+                              <div className="flex items-center gap-1 border-l border-zinc-800 pl-3 ml-1">
+                                {item.type === 'Arma' && (
+                                  <Button
+                                    isIconOnly
+                                    size="sm"
+                                    variant="light"
+                                    className="text-zinc-500 hover:text-blue-400 h-8 w-8"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setModifyingWeapon(item)
+                                      onModifyWeaponModalOpen()
+                                    }}
+                                  >
+                                    <Edit3 size={16} />
+                                  </Button>
+                                )}
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  variant="light"
+                                  className="text-zinc-500 hover:text-red-400 h-8 w-8"
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     removeItem(item.id)
                                   }}
-                                  className="text-zinc-600 hover:text-red-400 transition-colors"
                                 >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                              <ChevronDown
-                                size={14}
-                                className={`text-zinc-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                              />
+                                  <Trash2 size={16} />
+                                </Button>
+                                <ChevronDown
+                                  size={16}
+                                  className={`text-zinc-600 ml-1 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                />
+                              </div>
                             </div>
                           </div>
                           {isExpanded && item.type === 'Arma' && (
@@ -2021,8 +2193,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                     Categoria
                                   </p>
                                   <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {(item.category != null && item.category > 0)
-                                      ? (categoryLabels[item.category] ?? item.category)
+                                    {(item.calculatedCategory != null && item.calculatedCategory > 0)
+                                      ? (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory)
                                       : '0'}
                                   </p>
                                 </div>
@@ -2051,17 +2223,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   </p>
                                 </div>
                               </div>
-                              <div className="flex justify-end mt-2 mb-2">
-                                <button
-                                  className="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    removeItem(item.id)
-                                  }}
-                                >
-                                  <Trash2 size={12} /> Remover item
-                                </button>
-                              </div>
                             </div>
                           )}
                         </div>
@@ -2087,13 +2248,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       </div>
                       <h3 className="text-lg font-bold text-zinc-100">Rituais</h3>
                     </div>
-                    <Button
-                      size="sm"
-                      className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                      onPress={() => setIsRitualSelectOpen(true)}
-                    >
-                      <Plus size={14} className="mr-2" /> Aprender Ritual
-                    </Button>
+                    {isOcultista && (
+                      <Button
+                        size="sm"
+                        className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
+                        onPress={() => setIsRitualSelectOpen(true)}
+                      >
+                        <Plus size={14} className="mr-2" /> Aprender Ritual
+                      </Button>
+                    )}
                   </div>
 
                   {/* Rituals List */}
@@ -2116,7 +2279,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             key={charRitual.id}
                             className="bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 transition-all"
                           >
-                            <CardBody className="space-y-3">
+                            <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
                               <div className="flex justify-between items-start">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2">
@@ -2202,12 +2365,27 @@ export default function CharacterShow(initialProps: CharacterProps) {
               >
                 <div className="p-6">
                   {/* Combat Header */}
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
                     <div className="flex items-center gap-2">
                       <div className="p-1 bg-red-600/20 rounded text-red-500">
                         <div className="w-4 h-4 border-2 border-red-600 rounded-sm"></div>
                       </div>
                       <h3 className="text-lg font-bold text-zinc-100">Combate</h3>
+                    </div>
+                    {/* DT Badges */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/10 border border-red-500/20">
+                        <span className="text-[10px] uppercase tracking-wider text-red-400/70 font-bold whitespace-nowrap">DT Explosivo</span>
+                        <span className="text-sm font-black text-red-300">
+                          {10 + Math.floor(character.nex / 5) + agility}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20">
+                        <span className="text-[10px] uppercase tracking-wider text-violet-400/70 font-bold whitespace-nowrap">DT Ritual</span>
+                        <span className="text-sm font-black text-violet-300">
+                          {10 + Math.floor(character.nex / 5) + presence}
+                        </span>
+                      </div>
                     </div>
                     <Button
                       size="sm"
@@ -3011,7 +3189,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       <div className={`p-1.5 rounded bg-zinc-950 ${attr.color}`}>
                         <attr.icon size={12} />
                       </div>
-                      <span className="text-xs font-bold text-zinc-400 w-6">{attr.label}</span>
+                      <span className="text-xs font-bold text-zinc-400 w-8 whitespace-nowrap">{attr.label}</span>
                       <div className="flex items-center bg-zinc-950 rounded border border-zinc-800">
                         <button
                           onClick={() => attr.set(Math.max(0, attr.val - 1))}
@@ -3211,6 +3389,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 font-bold text-white w-20"
                     min="0"
                   />
+                  <span className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-[11px]">
+                    ⚡ {Math.floor(character.nex / 5)} PE/turno
+                  </span>
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-4xl font-black text-white">{pe}</span>
@@ -3850,7 +4031,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           onPress={() => addClassAbility(ability.id)}
                           className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
                         >
-                          <CardBody className="space-y-3">
+                          <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <h3 className="text-lg font-bold text-amber-400">
@@ -3911,7 +4092,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       onPress={() => selectTrail(trail.id)}
                       className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
                     >
-                      <CardBody className="space-y-3">
+                      <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
                         <div className="flex justify-between items-start">
                           <h3 className="text-lg font-bold text-amber-400">{trail.name}</h3>
                         </div>
@@ -3957,7 +4138,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         classNames={{
           base: 'bg-zinc-900 border border-zinc-800',
           header: 'border-b border-zinc-800',
-          body: 'flex-1 flex flex-col max-h-[70vh] min-h-0',
+          body: 'h-[65vh] flex flex-col overflow-hidden',
         }}
       >
         <ModalContent>
@@ -3978,7 +4159,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     tabList: 'gap-2 border-b border-zinc-800 px-0 sticky top-0 bg-zinc-900 z-10',
                     cursor: 'bg-orange-500',
                     tab: 'text-zinc-400 data-[selected=true]:text-orange-500',
-                    panel: 'py-4',
+                    panel: 'py-4 h-[55vh] overflow-y-auto',
                   }}
                 >
                   <Tab
@@ -4230,101 +4411,102 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     key="general"
                     title={<span className="flex items-center gap-2">🎒 Itens Gerais</span>}
                   >
-                    <div className="space-y-3 pr-2">
+                    <div className="space-y-6 pr-2">
                       {catalogGeneralItems.length === 0 ? (
                         <p className="text-sm text-zinc-500">Nenhum item geral cadastrado.</p>
                       ) : (
-                        catalogGeneralItems.map((item) => {
-                          const key = `general-${item.id}`
-                          const isExpanded = expandedItemKey === key
-                          return (
-                            <div
-                              key={key}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => toggleItemExpanded(key)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  toggleItemExpanded(key)
-                                }
-                              }}
-                              className="cursor-pointer outline-none"
-                            >
-                              <Card
-                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                              >
-                                <CardBody className="py-3 px-4">
-                                  <div className="flex flex-row items-start justify-between gap-4">
-                                    <div className="min-w-0 flex-1">
-                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                      <p className="text-xs text-zinc-500 mt-0.5">
-                                        {item.type ?? 'Diversos'}
-                                        {!isExpanded && <> · {item.spaces} espaço(s)</>}
-                                      </p>
-                                      {item.description && (
-                                        <p
-                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                        >
-                                          {item.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <span onClick={(e) => e.stopPropagation()}>
-                                      <Button
-                                        size="sm"
-                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                        onPress={() => addItemToCharacter('general', item.id)}
+                        (() => {
+                          // DT de Explosivos: 10 + Limite de PE/turno + Agilidade
+                          const explosiveDT = 10 + Math.floor(character.nex / 5) + agility
+                          return (['Acessório', 'Explosivo', 'Operacional', 'Paranormal'] as const).map((sectionType) => {
+                            const sectionItems = catalogGeneralItems.filter((i) => i.type === sectionType)
+                            if (sectionItems.length === 0) return null
+
+                            const sectionIcon = sectionType === 'Acessório' ? '🔧' : sectionType === 'Explosivo' ? '💥' : sectionType === 'Paranormal' ? '🔮' : '🎒'
+                            const sectionColor = sectionType === 'Acessório' ? 'text-blue-400' : sectionType === 'Explosivo' ? 'text-red-400' : sectionType === 'Paranormal' ? 'text-purple-400' : 'text-orange-400'
+                            const sectionBg = sectionType === 'Acessório' ? 'bg-blue-500/10 border-blue-500/20' : sectionType === 'Explosivo' ? 'bg-red-500/10 border-red-500/20' : sectionType === 'Paranormal' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-orange-500/10 border-orange-500/20'
+
+                            return (
+                              <div key={sectionType} className="space-y-2">
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${sectionBg}`}>
+                                  <span>{sectionIcon}</span>
+                                  <span className={`text-xs font-black uppercase tracking-widest ${sectionColor}`}>{sectionType}s</span>
+                                </div>
+                                {sectionItems.map((item) => {
+                                  const key = `general-${item.id}`
+                                  const isExpanded = expandedItemKey === key
+                                  return (
+                                    <div
+                                      key={key}
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() => toggleItemExpanded(key)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault()
+                                          toggleItemExpanded(key)
+                                        }
+                                      }}
+                                      className="cursor-pointer outline-none"
+                                    >
+                                      <Card
+                                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
                                       >
-                                        <Plus size={14} className="mr-1" /> Adicionar
-                                      </Button>
-                                    </span>
-                                  </div>
-                                  {isExpanded && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Categoria
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {categoryLabels[item.category as number] ?? item.category}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Tipo
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.type ?? 'Diversos'}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Espaços
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.spaces}
-                                        </p>
-                                      </div>
-                                      {item.effects &&
-                                        typeof item.effects === 'object' &&
-                                        Object.keys(item.effects).length > 0 && (
-                                          <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3 col-span-2 sm:col-span-3">
-                                            <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                              Efeitos
-                                            </p>
-                                            <p className="text-sm text-orange-200/90 mt-0.5">
-                                              {JSON.stringify(item.effects)}
-                                            </p>
+                                        <CardBody className="py-3 px-4">
+                                          <div className="flex flex-row items-start justify-between gap-4">
+                                            <div className="min-w-0 flex-1">
+                                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                                              <p className="text-xs text-zinc-500 mt-0.5">
+                                                CAT {item.category === 0 ? '0' : ['I', 'II', 'III', 'IV'][parseInt(String(item.category)) - 1] ?? item.category}
+                                                {!isExpanded && <> · {item.spaces} espaço(s)</>}
+                                              </p>
+                                              {item.description && (
+                                                <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                                  {sectionType === 'Explosivo'
+                                                    ? item.description.replace(/DT Agi/g, `DT ${explosiveDT}`)
+                                                    : item.description}
+                                                </p>
+                                              )}
+                                            </div>
+                                            <span onClick={(e) => e.stopPropagation()}>
+                                              <Button
+                                                size="sm"
+                                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                                onPress={() => addItemToCharacter('general', item.id)}
+                                              >
+                                                <Plus size={14} className="mr-1" /> Adicionar
+                                              </Button>
+                                            </span>
                                           </div>
-                                        )}
+                                          {isExpanded && (
+                                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                                  Categoria
+                                                </p>
+                                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                                  {item.category === 0 ? '0' : categoryLabels[item.category as number] ?? item.category}
+                                                </p>
+                                              </div>
+                                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                                  Espaços
+                                                </p>
+                                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                                  {item.spaces}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </CardBody>
+                                      </Card>
                                     </div>
-                                  )}
-                                </CardBody>
-                              </Card>
-                            </div>
-                          )
-                        })
+                                  )
+                                })}
+                              </div>
+                            )
+                          })
+                        })()
                       )}
                     </div>
                   </Tab>
@@ -4624,7 +4806,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           onPress={() => !isAcquired && !isAddingAbility && addParanormalPower(power.id)}
                           className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
                         >
-                          <CardBody className="space-y-3">
+                          <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
@@ -4700,6 +4882,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
               <ModalHeader className="flex flex-col gap-1">
                 <h2 className="text-xl font-bold text-white">Aprender Ritual</h2>
                 <p className="text-xs text-zinc-400">Desvende os segredos do ocultismo</p>
+                {/* Badges de crédito e círculo */}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-[11px] font-bold text-violet-300 whitespace-nowrap">
+                    🔮 Créditos: <span className={creditosRestantes > 0 ? 'text-violet-200' : 'text-zinc-500'}>{creditosRestantes}</span> / {creditosGanhos}
+                  </span>
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] font-bold text-amber-300 whitespace-nowrap">
+                    ⭕ Círculo máx: {circuloMaximo}º
+                  </span>
+                </div>
 
                 {/* Search and Filters UI */}
                 <div className="flex flex-col sm:flex-row gap-3 mt-4">
@@ -4748,35 +4939,41 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       const isAcquired = character.rituals?.some(
                         (r: any) => r.ritualId === ritual.id
                       )
-                      const elementColor = (({
+                      const isBlocked = Number((ritual as any).circle) > circuloMaximo
+                      const elementColor = ((({
                         CONHECIMENTO: 'text-amber-400',
                         ENERGIA: 'text-purple-400',
                         MORTE: 'text-zinc-400',
                         SANGUE: 'text-red-400',
                         MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
-                      } as Record<string, string>)[(ritual.element || '').toUpperCase()]) || 'text-zinc-400'
+                      } as Record<string, string>)[(ritual.element || '').toUpperCase()])) || 'text-zinc-400'
 
                       return (
                         <Card
                           key={ritual.id}
-                          isPressable={!isAcquired && !isAddingAbility}
-                          onPress={() => !isAcquired && !isAddingAbility && addRitual(ritual.id)}
-                          className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
+                          isPressable={!isAcquired && !isAddingAbility && !isBlocked}
+                          onPress={() => !isAcquired && !isAddingAbility && !isBlocked && addRitual(ritual.id)}
+                          className={`bg-zinc-950 border transition-colors ${isBlocked ? 'border-zinc-800 opacity-40 grayscale cursor-not-allowed' : 'border-zinc-700 hover:border-amber-500/50 cursor-pointer'} ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
                         >
-                          <CardBody className="space-y-3">
+                          <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
-                                  <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
-                                    {ritual.circle}º Círculo
-                                  </Chip>
-                                  {isAcquired && (
-                                    <Chip size="sm" color="success" variant="flat">
-                                      Aprendido
-                                    </Chip>
-                                  )}
-                                </div>
+                                 <div className="flex items-center gap-2 flex-wrap">
+                                   <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
+                                   <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
+                                     {ritual.circle}º Círculo
+                                   </Chip>
+                                   {isBlocked && (
+                                     <Chip size="sm" variant="flat" className="bg-red-950 text-red-400 border border-red-900">
+                                       🔒 NEX insuficiente
+                                     </Chip>
+                                   )}
+                                   {isAcquired && (
+                                     <Chip size="sm" color="success" variant="flat">
+                                       Aprendido
+                                     </Chip>
+                                   )}
+                                 </div>
                                 <p className={`text-xs font-bold uppercase ${elementColor}`}>
                                   {ritual.element}
                                 </p>
@@ -4799,21 +4996,21 @@ export default function CharacterShow(initialProps: CharacterProps) {
                               )}
                             </div>
                             {ritual.description && (
-                              <p className="text-sm text-zinc-300 italic">
+                              <p className="text-xs text-zinc-300 italic line-clamp-2">
                                 {ritual.description}
                               </p>
                             )}
 
                             {(ritual.discente || ritual.verdadeiro) && (
-                              <div className="space-y-2 mt-2 pt-2 border-t border-zinc-800/50 text-xs">
+                              <div className="flex flex-col gap-0.5 mt-auto text-[11px]">
                                 {ritual.discente && (
-                                  <div className="text-zinc-400">
+                                  <div className="text-zinc-400 truncate">
                                     <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
                                     {ritual.discente}
                                   </div>
                                 )}
                                 {ritual.verdadeiro && (
-                                  <div className="text-zinc-400">
+                                  <div className="text-zinc-400 truncate">
                                     <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
                                     {ritual.verdadeiro}
                                   </div>
@@ -4841,6 +5038,231 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   )}
                 </div>
               </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+      {/* Modal de Modificação de Arma */}
+      <Modal
+        isOpen={isModifyWeaponModalOpen}
+        onOpenChange={onModifyWeaponModalOpenChange}
+        className="bg-zinc-900 border border-zinc-800 text-zinc-100"
+        size="2xl"
+        scrollBehavior="inside"
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1 border-b border-zinc-800 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+                    <Edit3 size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold">Modificar {modifyingWeapon?.name}</h2>
+                    <p className="text-xs text-zinc-500 font-normal">
+                      Melhorias, Acessórios e Maldições
+                    </p>
+                  </div>
+                </div>
+              </ModalHeader>
+              <ModalBody className="py-6">
+                <div className="space-y-6">
+                  {/* Modificações Atuais */}
+                  <div>
+                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3">
+                      Modificações Atuais
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {modifyingWeapon?.modifications && modifyingWeapon.modifications.length > 0 ? (
+                        modifyingWeapon.modifications.map((mod: any) => (
+                          <Chip
+                            key={mod.id}
+                            variant="flat"
+                            color={mod.type === 'Maldição' ? 'danger' : 'primary'}
+                            onClose={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
+                            className={mod.type === 'Maldição' 
+                              ? mod.element === 'Sangue' ? 'bg-red-500/10 text-red-300 border border-red-500/20' :
+                                mod.element === 'Morte' ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20' :
+                                mod.element === 'Energia' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' :
+                                mod.element === 'Conhecimento' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
+                                'bg-red-500/10 text-red-300 border border-red-500/20'
+                              : "bg-blue-500/10 text-blue-300 border border-blue-500/20"}
+                          >
+                            {mod.name}
+                          </Chip>
+                        ))
+                      ) : (
+                        <span className="text-sm text-zinc-600 italic">
+                          Nenhuma modificação aplicada.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <Divider className="bg-zinc-800" />
+
+                  {/* Catálogo de Modificações */}
+                  <div>
+                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3 flex items-center justify-between">
+                      Disponíveis no Catálogo
+                      <div className="flex bg-zinc-800/50 p-1 rounded-xl border border-zinc-800">
+                        {['Melhoria', 'Maldição'].map((type) => {
+                          const isActive = modTypeFilter === type
+                          const activeBg = type === 'Melhoria' ? 'bg-blue-600' : 'bg-red-600'
+                          
+                          return (
+                            <button
+                              key={type}
+                              onClick={() => setModTypeFilter(type as any)}
+                              className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
+                                isActive 
+                                  ? `${activeBg} text-white shadow-md` 
+                                  : 'text-zinc-500 hover:text-zinc-300'
+                              }`}
+                            >
+                              {type}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </h3>
+                    <div className="space-y-6 pr-2">
+                      {modTypeFilter === 'Maldição' ? (
+                        ['Sangue', 'Morte', 'Energia', 'Conhecimento'].map((element) => {
+                          const elementMods = catalogAmmunitions.filter(m => m.type === 'Maldição' && m.element === element)
+                          if (elementMods.length === 0) return null
+                          
+                          const elementColor = 
+                            element === 'Sangue' ? 'text-red-500' :
+                            element === 'Morte' ? 'text-zinc-400' :
+                            element === 'Energia' ? 'text-purple-500' :
+                            'text-amber-500' // Conhecimento
+
+                          const elementBg = 
+                            element === 'Sangue' ? 'bg-red-500/10' :
+                            element === 'Morte' ? 'bg-zinc-500/10' :
+                            element === 'Energia' ? 'bg-purple-500/10' :
+                            'bg-amber-500/10'
+
+                          const elementBorder = 
+                            element === 'Sangue' ? 'border-red-500/20 font-red-glow' :
+                            element === 'Morte' ? 'border-zinc-500/20 font-death-glow' :
+                            element === 'Energia' ? 'border-purple-500/20 font-energy-glow' :
+                            'border-amber-500/20 font-knowledge-glow'
+
+                          return (
+                            <div key={element} className="space-y-3">
+                              <h4 className={`text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 ${elementColor}`}>
+                                <div className={`w-2 h-2 rounded-full ${elementBg.replace('/10', '')} animate-pulse`} />
+                                {element}
+                              </h4>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {elementMods.map((mod) => {
+                                  const isActive = modifyingWeapon?.modifications?.some(
+                                    (m: any) => m.modificationId === mod.id
+                                  )
+                                  const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                                  const isBlocked = !isActive && !validation.allowed
+                                  return (
+                                    <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
+                                    <Card
+                                      className={`w-full border transition-all ${
+                                        isBlocked
+                                          ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                          : isActive
+                                            ? `${elementBg} ${elementBorder.split(' ')[0]}`
+                                            : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                                        }`}
+                                    >
+                                      <CardBody className="p-3">
+                                        <div className="flex justify-between items-start mb-1">
+                                          <span className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}>
+                                            {mod.name}
+                                          </span>
+                                          <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                            +{mod.category} CAT
+                                          </Chip>
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
+                                          {mod.description}
+                                        </p>
+                                        <div className="mt-2 flex items-center justify-between">
+                                          <span className={`text-[9px] uppercase font-bold ${
+                                            isBlocked ? 'text-red-600' : isActive ? elementColor : 'text-zinc-600'
+                                          }`}>
+                                            {isBlocked ? validation.reason : 'MALDIÇÃO'}
+                                          </span>
+                                          {isActive && <Check size={12} className={elementColor} />}
+                                        </div>
+                                      </CardBody>
+                                    </Card>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <div className="grid grid-cols-1 gap-3">
+                          {catalogAmmunitions
+                            .filter((m) => m.type === 'Melhoria')
+                            .map((mod) => {
+                              const isActive = modifyingWeapon?.modifications?.some(
+                                (m: any) => m.modificationId === mod.id
+                              )
+                              const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                              const isBlocked = !isActive && !validation.allowed
+                              return (
+                                <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
+                                <Card
+                                  isPressable={!isBlocked}
+                                  onPress={isBlocked ? undefined : () => toggleModification(modifyingWeapon.id, mod.id, isActive ? 'remove' : 'add')}
+                                  className={`w-full border transition-all ${
+                                    isBlocked 
+                                      ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                      : isActive
+                                        ? 'bg-blue-500/10 border-blue-500/50'
+                                        : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                                  }`}
+                                >
+                                  <CardBody className="p-3">
+                                    <div className="flex justify-between items-start mb-1">
+                                      <span className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}>
+                                        {mod.name}
+                                      </span>
+                                      <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                        +{mod.category} CAT
+                                      </Chip>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
+                                      {mod.description}
+                                    </p>
+                                    <div className="mt-2 flex items-center justify-between">
+                                      <span className={`text-[9px] uppercase font-bold ${
+                                        isBlocked ? 'text-red-600' : 'text-zinc-600'
+                                      }`}>
+                                        {isBlocked ? validation.reason : 'MELHORIA'}
+                                      </span>
+                                      {isActive && <Check size={12} className="text-blue-400" />}
+                                    </div>
+                                  </CardBody>
+                                </Card>
+                                </div>
+                              )
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </ModalBody>
+              <ModalFooter className="border-t border-zinc-800 pt-4">
+                <Button color="danger" variant="light" onPress={onClose} size="sm">
+                  Fechar
+                </Button>
+              </ModalFooter>
             </>
           )}
         </ModalContent>
