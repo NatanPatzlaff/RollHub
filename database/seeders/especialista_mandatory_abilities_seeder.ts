@@ -29,7 +29,7 @@ export default class extends BaseSeeder {
         classId: especialista.id,
         name: 'Perito',
         description:
-          'Escolha duas perícias nas quais você é treinado (exceto Luta e Pontaria). Quando faz um teste de uma dessas perícias, você pode gastar 2 PE para somar +1d6 no resultado do teste. Conforme avança de NEX, você pode gastar +1 PE para aumentar o dado de bônus (veja a Tabela 1.4). Por exemplo, em NEX 55%, pode gastar 4 PE para receber +1d10 no teste. (NEX 25%: +1d8; NEX 85%: +1d12).',
+          'Escolha duas perícias nas quais você é treinado (exceto Luta e Pontaria). Quando faz um teste de uma dessas perícias, você pode gastar 2 PE para somar +1d6 no resultado do teste. Conforme avança de NEX, você pode gastar +1 PE para aumentar o dado de bônus. Por exemplo, em NEX 55%, pode gastar 4 PE para receber +1d10 no teste. (NEX 25%: +1d8; NEX 85%: +1d12).',
         effects: {
           pe_cost: 2,
           bonus_dice: '1d6',

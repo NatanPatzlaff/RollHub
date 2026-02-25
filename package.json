@@ -71,6 +71,7 @@
     "@inertiajs/react": "^2.3.15",
     "@vinejs/vine": "^3.0.1",
     "better-sqlite3": "^12.6.2",
+    "dddice-js": "^0.19.34-974",
     "edge.js": "^6.2.1",
     "framer-motion": "^12.34.2",
     "lucide-react": "^0.575.0",

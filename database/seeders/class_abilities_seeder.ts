@@ -19,7 +19,7 @@ export default class extends BaseSeeder {
       {
         name: 'Artista Marcial',
         description:
-          'Seus ataques desarmados causam 1d6 pontos de dano, podem causar dano letal e se tornam ágeis (veja p. 59). Em NEX 35%, o dano aumenta para 1d8 e, em NEX 70%, para 1d10.',
+          'Seus ataques desarmados causam 1d6 pontos de dano, podem causar dano letal e se tornam ágeis. Em NEX 35%, o dano aumenta para 1d8 e, em NEX 70%, para 1d10.',
         effects: { prerequisite: 'Nenhum', nex: '15%', upgrades: '35%, 70%' },
       },
       {
@@ -113,7 +113,7 @@ export default class extends BaseSeeder {
       {
         name: 'Transcender',
         description:
-          'Escolha um poder paranormal (veja a página 114). Você recebe o poder escolhido, mas não ganha Sanidade neste aumento de NEX. Você pode escolher este poder várias vezes.',
+          'Escolha um poder paranormal. Você recebe o poder escolhido, mas não ganha Sanidade neste aumento de NEX. Você pode escolher este poder várias vezes.',
         effects: { prerequisite: 'Nenhum', nex: '15%', repeatable: true },
       },
       {

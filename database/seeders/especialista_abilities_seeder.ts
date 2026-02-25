@@ -92,7 +92,7 @@ export default class extends BaseSeeder {
       {
         name: 'Transcender',
         description:
-          'Escolha um poder paranormal (veja a página 114). Você recebe o poder escolhido, mas não ganha Sanidade neste aumento de NEX. Você pode escolher este poder várias vezes.',
+          'Escolha um poder paranormal. Você recebe o poder escolhido, mas não ganha Sanidade neste aumento de NEX. Você pode escolher este poder várias vezes.',
         effects: { prerequisite: 'Nenhum', nex: '15%', repeatable: true },
       },
       {

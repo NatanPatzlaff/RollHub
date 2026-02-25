@@ -23,7 +23,7 @@ import {
 } from '@heroui/react'
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getOriginIcon } from '../../utils/originIcons'
 import { skillDescriptions } from '../../utils/skillDescriptions'
@@ -314,7 +314,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   const catalogParanormalPowers: ParanormalPower[] = catalogParanormalPowersProp || []
 
-  console.log('inventoryWeapons RAW:', JSON.stringify(inventoryWeapons, null, 2))
+
 
   // Personagem sem trilha: considerar trailId ou trail_id (serialização pode vir em snake_case)
   const characterTrailId = character.trailId ?? (character as { trail_id?: number | null }).trail_id
@@ -395,6 +395,91 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [elementFilter, setElementFilter] = useState('Todos')
   const [circleFilter, setCircleFilter] = useState('Todos')
 
+  // ─── Detecção automática de habilidades ──────────────────────────────────
+  const hasAbility = (name: string) =>
+    (character.classAbilities || []).some((ca) => ca.classAbility?.name === name)
+
+  // Ocultista
+  const hasRitualPotente = hasAbility('Ritual Potente')
+  const hasRitualPredileto = hasAbility('Ritual Predileto')
+  const hasTatuagemRitualistica = hasAbility('Tatuagem Ritualística')
+  const hasMestreEmElemento = hasAbility('Mestre em Elemento')
+  const hasCamuflarOcultismo = hasAbility('Camuflar Ocultismo')
+
+  // Especialista
+  const hasPerito = hasAbility('Perito')
+  const hasEcletico = hasAbility('Eclético')
+  const hasEngenhosidade = hasAbility('Engenhosidade')
+
+  // Combatente
+  const hasTiroCerteiro = hasAbility('Tiro Certeiro')
+
+  // ─── Configuração de Ritual Predileto (nome do ritual configurado) ────────
+  const ritualPrediletoConfig = useMemo(() => {
+    const ca = (character.classAbilities || []).find(
+      (ca) => ca.classAbility?.name === 'Ritual Predileto'
+    )
+    return (ca?.config as { ritualName?: string } | undefined)?.ritualName || null
+  }, [character.classAbilities])
+
+  // Elemento configurado para Mestre em Elemento
+  const mestreElementoConfig = useMemo(() => {
+    const ca = (character.classAbilities || []).find(
+      (ca) => ca.classAbility?.name === 'Mestre em Elemento'
+    )
+    return (ca?.config as { element?: string } | undefined)?.element || null
+  }, [character.classAbilities])
+
+  // ─── Toggles opcionais de uso de habilidades ─────────────────────────────
+  const [usarCamuflar, setUsarCamuflar] = useState(false)
+  const [usarPeritoSkill, setUsarPeritoSkill] = useState<string | null>(null)
+
+  // ─── Cálculo de PE ajustado para um ritual ───────────────────────────────
+  const calcPeAjustado = (ritual: Ritual | undefined): { base: number; ajustado: number; reducoes: string[] } => {
+    if (!ritual) return { base: 0, ajustado: 0, reducoes: [] }
+    const base = ritual.circle * 2
+    let ajustado = base
+    const reducoes: string[] = []
+
+    if (hasRitualPredileto && ritualPrediletoConfig &&
+      ritual.name.toLowerCase() === ritualPrediletoConfig.toLowerCase()) {
+      ajustado -= 1
+      reducoes.push('Ritual Predileto –1')
+    }
+    if (hasTatuagemRitualistica && ritual.range?.toLowerCase().includes('pessoal')) {
+      ajustado -= 1
+      reducoes.push('Tatuagem Ritualística –1')
+    }
+    if (hasMestreEmElemento && mestreElementoConfig &&
+      ritual.element?.toLowerCase() === mestreElementoConfig.toLowerCase()) {
+      ajustado -= 1
+      reducoes.push('Mestre em Elemento –1')
+    }
+    if (hasCamuflarOcultismo && usarCamuflar) {
+      ajustado += 2
+      reducoes.push('Camuflar Ocultismo +2')
+    }
+
+    return { base, ajustado: Math.max(1, ajustado), reducoes }
+  }
+
+  // ─── Cálculo de dado do Perito conforme NEX ───────────────────────────────
+  const peritoBonus = useMemo(() => {
+    if (character.nex >= 85) return { dice: '1d12', cost: 4 }
+    if (character.nex >= 55) return { dice: '1d10', cost: 3 }
+    if (character.nex >= 25) return { dice: '1d8', cost: 3 }
+    return { dice: '1d6', cost: 2 }
+  }, [character.nex])
+
+  // Perícias configuradas no Perito
+  const peritoSkills = useMemo(() => {
+    const ca = (character.classAbilities || []).find(
+      (ca) => ca.classAbility?.name === 'Perito'
+    )
+    return (ca?.config?.selectedSkills as string[] | undefined) || []
+  }, [character.classAbilities])
+
+
 
 
   // Ability configuration modal state
@@ -407,6 +492,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const [availableSkills, setAvailableSkills] = useState<string[]>([])
   const [isConfiguringAbility, setIsConfiguringAbility] = useState(false)
+  const [selectedRitual, setSelectedRitual] = useState<string>('')
+  const [selectedElement, setSelectedElement] = useState<string>('')
 
   // Perito PE spending state
   const [peritoPeSpending, setPeritoPeSpending] = useState<Record<string, number>>({})
@@ -477,6 +564,21 @@ export default function CharacterShow(initialProps: CharacterProps) {
     'Oficial de Operações',
     'Agente de Elite',
   ]
+
+  // ─── Bandeja de Dados ────────────────────────────────────────────────────
+  const [isDiceTray, setIsDiceTray] = useState(false)
+  const [isRolling, setIsRolling] = useState(false)
+  const [diceResult, setDiceResult] = useState<{ label: string; total: number; rolls: number[] } | null>(null)
+  const [weaponRollResult, setWeaponRollResult] = useState<{
+    weapon: string
+    attack: { total: number; rolls: number[]; label: string; skill: string }
+    damage: { total: number; rolls: number[]; label: string }
+  } | null>(null)
+  const [diceHistory, setDiceHistory] = useState<Array<{ label: string; total: number }>>([])
+  const diceCanvasRef = useRef<HTMLCanvasElement>(null)
+  const dddiceRef = useRef<any>(null)
+  const diceThemeRef = useRef<string | undefined>(undefined) // cache do tema — fetch só na 1a vez
+  const DDDICE_API_KEY = import.meta.env.VITE_DDDICE_API_KEY as string | undefined
 
   const RANK_LIMITS: Record<string, Record<number, number>> = {
     Recruta: { 1: 2, 2: 0, 3: 0, 4: 0 },
@@ -658,24 +760,48 @@ export default function CharacterShow(initialProps: CharacterProps) {
       setSelectedSkills([])
     }
 
+    // Load ritual config (Ritual Predileto)
+    setSelectedRitual(ability.config?.ritualName || '')
+
+    // Load element config (Mestre em Elemento, Especialista em Elemento)
+    setSelectedElement(ability.config?.element || '')
+
     onAbilityConfigOpen()
   }
 
   const saveAbilityConfig = async () => {
     if (!configuringAbility) return
+    const abilityName = configuringAbility.classAbility?.name
 
     // Validate for Perito
-    if (configuringAbility.classAbility?.name === 'Perito' && selectedSkills.length !== 2) {
+    if (abilityName === 'Perito' && selectedSkills.length !== 2) {
       alert('Por favor, selecione exatamente 2 perícias para Perito')
       return
+    }
+    // Validate for Ritual Predileto
+    if (abilityName === 'Ritual Predileto' && !selectedRitual) {
+      alert('Por favor, selecione um ritual')
+      return
+    }
+    // Validate for element abilities
+    if ((abilityName === 'Mestre em Elemento' || abilityName === 'Especialista em Elemento') && !selectedElement) {
+      alert('Por favor, selecione um elemento')
+      return
+    }
+
+    const configPayload: Record<string, any> = {}
+    if (abilityName === 'Perito') {
+      configPayload.selectedSkills = selectedSkills
+    } else if (abilityName === 'Ritual Predileto') {
+      configPayload.ritualName = selectedRitual
+    } else if (abilityName === 'Mestre em Elemento' || abilityName === 'Especialista em Elemento') {
+      configPayload.element = selectedElement
     }
 
     setIsConfiguringAbility(true)
     router.put(
       `/characters/${character.id}/abilities/${configuringAbility.id}`,
-      {
-        selectedSkills: selectedSkills,
-      },
+      configPayload,
       {
         onSuccess: () => {
           setIsConfiguringAbility(false)
@@ -705,7 +831,204 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }
 
+  // ─── Inicialização do dddice ─────────────────────────────────────────────
+  const DDDICE_ROOM_SLUG = import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined
+
+  useEffect(() => {
+    if (!isDiceTray || !DDDICE_API_KEY) return
+    let mounted = true
+    let rafId: number
+
+    const init = async (canvas: HTMLCanvasElement) => {
+      const { ThreeDDice } = await import('dddice-js')
+      if (!mounted) return
+      const instance = new ThreeDDice(canvas, DDDICE_API_KEY, { autoClear: 2000 })
+      await instance.initialize()
+      // Move a câmera para mais perto dos dados (sem afetar a física)
+      try {
+        const cam = (instance as any).camera
+        if (cam?.position) {
+          cam.position.z *= 0.2  // muito mais perto → dados ~5x maiores
+        }
+      } catch (_) { }
+      if (!mounted) return
+      if (DDDICE_ROOM_SLUG) {
+        try {
+          await (instance as any).connect(DDDICE_ROOM_SLUG)
+          console.log('[dddice] Conectado à room:', DDDICE_ROOM_SLUG)
+        } catch (e) {
+          console.warn('[dddice] Erro ao conectar à room:', e)
+        }
+      }
+      if (mounted) dddiceRef.current = instance
+    }
+
+    // Aguarda o canvas estar disponível no DOM
+    const tryInit = () => {
+      if (diceCanvasRef.current) {
+        init(diceCanvasRef.current).catch(console.error)
+      } else {
+        rafId = requestAnimationFrame(tryInit)
+      }
+    }
+    rafId = requestAnimationFrame(tryInit)
+
+    return () => {
+      mounted = false
+      cancelAnimationFrame(rafId)
+      dddiceRef.current = null
+    }
+  }, [isDiceTray, DDDICE_API_KEY, DDDICE_ROOM_SLUG])
+
+
+  // ─── Função de rolagem ───────────────────────────────────────────────────
+  const rollDice = useCallback(async (
+    sides: number,
+    count = 1,
+    label?: string,
+    mode: 'sum' | 'highest' = 'sum',
+    bonus = 0
+  ) => {
+    const diceLabel = label || `${count}d${sides}${bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''}`
+    setIsRolling(true)
+    setDiceResult(null)
+
+    // Rolagem local sempre (base de verdade)
+    const rolls = Array.from({ length: count }, () => Math.ceil(Math.random() * sides))
+    const baseValue = mode === 'highest' ? Math.max(...rolls) : rolls.reduce((a, b) => a + b, 0)
+    const total = baseValue + bonus
+
+    // Animação 3D se disponível
+    // Se a bandeja acabou de abrir, aguarda o dddice inicializar (até 3s)
+    if (!dddiceRef.current && DDDICE_API_KEY) {
+      await new Promise<void>((resolve) => {
+        const start = Date.now()
+        const check = () => {
+          if (dddiceRef.current || Date.now() - start > 3000) resolve()
+          else setTimeout(check, 50)
+        }
+        check()
+      })
+    }
+
+    if (dddiceRef.current && DDDICE_API_KEY) {
+      try {
+        const diceType = `d${sides}`
+        // Usa o tema cacheado (busca só na 1a rolagem para eliminar delay)
+        if (!diceThemeRef.current) {
+          try {
+            const res = await fetch('https://dddice.com/api/1.0/dice-box', {
+              headers: { Authorization: `Bearer ${DDDICE_API_KEY}` },
+            })
+            const data = await res.json()
+            diceThemeRef.current = data?.data?.[0]?.id
+          } catch (e) {
+            // silencia
+          }
+        }
+        const themeSlug = diceThemeRef.current
+        // Cada dado carrega seu valor pré-determinado para sincronizar com o resultado local
+        const diceArr = rolls.map((rollValue) =>
+          themeSlug
+            ? { type: diceType, theme: themeSlug, value: rollValue }
+            : { type: diceType, value: rollValue }
+        )
+        await (dddiceRef.current as any).roll(diceArr)
+        // Aguarda animação 3D terminar antes de mostrar o resultado
+        await new Promise((r) => setTimeout(r, 800))
+      } catch (e: any) {
+        console.warn('[dddice] Erro ao rolar:', e?.message || e)
+      }
+    }
+
+    const result = { label: diceLabel, total, rolls }
+    setWeaponRollResult(null)
+    setDiceResult(result)
+    setDiceHistory((prev) => [{ label: diceLabel, total }, ...prev].slice(0, 8))
+    setIsRolling(false)
+  }, [DDDICE_API_KEY])
+
+  // ─── Rolagem de Arma (Ataque + Dano simultâneos) ─────────────────────────
+  const rollWeapon = useCallback(async (weapon: {
+    name: string; range: string; damage: string
+  }, str: number, agi: number) => {
+    setIsRolling(true)
+    setDiceResult(null)
+    setWeaponRollResult(null)
+
+    // Determina perícia e atributo pelo alcance
+    const isMelee = weapon.range === 'Corpo a corpo'
+    const skill = isMelee ? 'Luta' : 'Pontaria'
+    const attrVal = Math.max(1, isMelee ? str : agi)
+    const skillEntry = character.skills?.find((cs: any) => cs.skill?.name === skill)
+    const degree = skillEntry?.trainingDegree ?? 0
+    const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+
+    // Ataque: rola Xd20, pega o maior, soma bônus
+    const attackRolls = Array.from({ length: attrVal }, () => Math.ceil(Math.random() * 20))
+    const attackBase = Math.max(...attackRolls)
+    const attackTotal = attackBase + trainingBonus
+
+    // Dano: faz parse de "NdM" e rola
+    const damageMatch = weapon.damage.match(/^(\d+)d(\d+)$/i)
+    const dmgCount = damageMatch ? parseInt(damageMatch[1]) : 1
+    const dmgSides = damageMatch ? parseInt(damageMatch[2]) : 6
+    const damageRolls = Array.from({ length: dmgCount }, () => Math.ceil(Math.random() * dmgSides))
+    const damageTotal = damageRolls.reduce((a, b) => a + b, 0)
+
+    // Animação 3D — aguarda se necessário
+    if (!dddiceRef.current && DDDICE_API_KEY) {
+      await new Promise<void>((resolve) => {
+        const start = Date.now()
+        const check = () => {
+          if (dddiceRef.current || Date.now() - start > 3000) resolve()
+          else setTimeout(check, 50)
+        }
+        check()
+      })
+    }
+
+    if (dddiceRef.current && DDDICE_API_KEY) {
+      try {
+        if (!diceThemeRef.current) {
+          try {
+            const res = await fetch('https://dddice.com/api/1.0/dice-box', {
+              headers: { Authorization: `Bearer ${DDDICE_API_KEY}` },
+            })
+            const data = await res.json()
+            diceThemeRef.current = data?.data?.[0]?.id
+          } catch (_) { }
+        }
+        const theme = diceThemeRef.current
+        // Todos os dados juntos numa única chamada
+        const allDice = [
+          ...attackRolls.map((v) => theme ? { type: 'd20', theme, value: v } : { type: 'd20', value: v }),
+          ...damageRolls.map((v) => theme ? { type: `d${dmgSides}`, theme, value: v } : { type: `d${dmgSides}`, value: v }),
+        ]
+        await (dddiceRef.current as any).roll(allDice)
+        await new Promise((r) => setTimeout(r, 800))
+      } catch (e: any) {
+        console.warn('[dddice] Erro ao rolar arma:', e?.message || e)
+      }
+    }
+
+    const attackLabel = `${skill} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
+    const damageLabel = weapon.damage
+    setWeaponRollResult({
+      weapon: weapon.name,
+      attack: { total: attackTotal, rolls: attackRolls, label: attackLabel, skill },
+      damage: { total: damageTotal, rolls: damageRolls, label: damageLabel },
+    })
+    setDiceHistory((prev) => [
+      { label: `${weapon.name} Ataque`, total: attackTotal },
+      { label: `${weapon.name} Dano`, total: damageTotal },
+      ...prev,
+    ].slice(0, 8))
+    setIsRolling(false)
+  }, [DDDICE_API_KEY, character.skills])
+
   const addItemToCharacter = (
+
     type: 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition',
     itemId: number,
     quantity?: number
@@ -1445,10 +1768,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }[] = useMemo(() => {
     const weapons = inventoryWeapons.map((w, index) => {
       // Calcula a Categoria (+1 por Melhoria, +2 por Maldição via mod.category)
-      const baseCategory = typeof w.category === 'string' 
-        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(w.category) + 1 
+      const baseCategory = typeof w.category === 'string'
+        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(w.category) + 1
         : (w.category || 0)
-        
+
       const modsCategorySum = w.modifications?.reduce((sum: number, mod: any) => sum + (mod.category || 0), 0) || 0
       const finalCategory = baseCategory + modsCategorySum
 
@@ -1499,7 +1822,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }))
 
     const allItems = [...weapons, ...protections, ...generalItems]
-    console.log('Todos os itens do inventário:', allItems)
+
     return allItems
   }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems])
 
@@ -1617,6 +1940,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   return (
     <div className="min-h-screen bg-black text-slate-100 font-sans selection:bg-blue-500/30">
       <Head title={`${character.name} - Escudo do Mestre`} />
+
 
       {/* Top Bar / Navigation */}
       <div className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
@@ -1841,15 +2165,30 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         key={index}
                         variant={isTrained ? 'flat' : 'flat'}
                         color={isVeteran ? 'secondary' : isTrained ? 'primary' : 'default'}
-                        onPress={() =>
-                          isLearningSkills && !isLocked ? toggleSkillTraining(skill.name) : null
-                        }
+                        onPress={() => {
+                          if (isLearningSkills && !isLocked) {
+                            toggleSkillTraining(skill.name)
+                          } else if (!isLearningSkills) {
+                            // Rolar a perícia (treinada ou não)
+                            const attrMap: Record<string, number> = {
+                              FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence
+                            }
+                            const attrVal = Math.max(1, attrMap[skill.attr] ?? 1)
+                            const degree = character.skills?.find((cs: any) => cs.skill?.name === skill.name)?.trainingDegree ?? 0
+                            const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                            const label = `${skill.name} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
+                            setIsDiceTray(true)
+                            rollDice(20, attrVal, label, 'highest', trainingBonus)
+                          }
+                        }}
                         onContextMenu={(e) => handleSkillContextMenu(skill.name, e)}
-                        className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all ${isLearningSkills && !isLocked
+                        className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all relative group ${isLearningSkills && !isLocked
                           ? 'cursor-pointer hover:scale-105'
                           : isLocked && isTrained
                             ? 'cursor-not-allowed opacity-75'
-                            : ''
+                            : !isLearningSkills
+                              ? 'cursor-pointer'
+                              : ''
                           } ${!isTrained
                             ? showPoolHighlight
                               ? 'bg-cyan-900/30 border border-cyan-700/50 text-cyan-400 hover:text-white hover:bg-cyan-900/50 hover:border-cyan-600'
@@ -1871,9 +2210,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                 ? `Escolha obrigatória: ${skillPool?.name} (grátis)`
                                 : isClassPool && isPoolExtra
                                   ? 'Escolha extra (custa 1 ponto)'
-                                  : ''
+                                  : isTrained && !isLearningSkills
+                                    ? `Rolar ${skill.name}`
+                                    : ''
                         }
                       >
+                        {/* Ícone de dado aparece ao hover nas treinadas */}
+                        {isTrained && !isLearningSkills && (
+                          <Dices
+                            size={14}
+                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-70 transition-opacity text-amber-400"
+                          />
+                        )}
                         <span className="text-xs font-bold truncate w-full text-center">
                           {skill.name}
                         </span>
@@ -1984,7 +2332,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             {RANK_OPTIONS.map((opt) => (
                               <DropdownItem
                                 key={opt}
-                                className={rank === opt ? 'text-orange-400 font-bold' : ''}
+                                className={rank === opt ? 'text-white font-bold bg-zinc-800' : 'text-white'}
                               >
                                 {opt}
                               </DropdownItem>
@@ -2101,26 +2449,25 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                     </div>
                                     {item.modifications?.map((mod: any) => {
                                       const isCurse = mod.type === 'Maldição'
-                                      const elementColor = 
+                                      const elementColor =
                                         mod.element === 'Sangue' ? 'text-red-400' :
-                                        mod.element === 'Morte' ? 'text-zinc-400' :
-                                        mod.element === 'Energia' ? 'text-purple-400' :
-                                        mod.element === 'Conhecimento' ? 'text-amber-400' :
-                                        'text-red-400'
-                                      
-                                      const elementBg = 
+                                          mod.element === 'Morte' ? 'text-zinc-400' :
+                                            mod.element === 'Energia' ? 'text-purple-400' :
+                                              mod.element === 'Conhecimento' ? 'text-amber-400' :
+                                                'text-red-400'
+
+                                      const elementBg =
                                         mod.element === 'Sangue' ? 'bg-red-500/10 border-red-500/20' :
-                                        mod.element === 'Morte' ? 'bg-zinc-500/10 border-zinc-500/20' :
-                                        mod.element === 'Energia' ? 'bg-purple-500/10 border-purple-500/20' :
-                                        mod.element === 'Conhecimento' ? 'bg-amber-500/10 border-amber-500/20' :
-                                        'bg-red-500/10 border-red-500/20'
+                                          mod.element === 'Morte' ? 'bg-zinc-500/10 border-zinc-500/20' :
+                                            mod.element === 'Energia' ? 'bg-purple-500/10 border-purple-500/20' :
+                                              mod.element === 'Conhecimento' ? 'bg-amber-500/10 border-amber-500/20' :
+                                                'bg-red-500/10 border-red-500/20'
 
                                       return (
                                         <div
                                           key={mod.id}
-                                          className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-tight ${
-                                            isCurse ? `${elementBg} ${elementColor}` : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                                          }`}
+                                          className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-tight ${isCurse ? `${elementBg} ${elementColor}` : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                                            }`}
                                         >
                                           {mod.name}
                                         </div>
@@ -2135,7 +2482,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                               <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800 text-zinc-400 text-xs">
                                 {item.type === 'Equipamento' ? 'Equip' : item.type}
                               </span>
-                              
+
                               <div className="flex items-center gap-1 border-l border-zinc-800 pl-3 ml-1">
                                 {item.type === 'Arma' && (
                                   <Button
@@ -2152,6 +2499,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                     <Edit3 size={16} />
                                   </Button>
                                 )}
+
                                 <Button
                                   isIconOnly
                                   size="sm"
@@ -2397,6 +2745,49 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
                   {/* Combat List */}
                   <div className="space-y-6 overflow-y-auto custom-scrollbar">
+                    {/* ARMAS */}
+                    {inventoryWeapons.length > 0 && (
+                      <div>
+                        <h4 className="font-bold text-orange-400 text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+                          <Sword size={14} /> Armas
+                        </h4>
+                        <div className="space-y-2">
+                          {inventoryWeapons.map((w: any) => {
+                            const isMelee = w.range === 'Corpo a corpo'
+                            const skillName = isMelee ? 'Luta' : 'Pontaria'
+                            return (
+                              <div
+                                key={w.id}
+                                className="flex items-center justify-between px-4 py-3 rounded-lg bg-zinc-950/60 border border-zinc-800 hover:border-orange-500/30 transition-all"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-semibold text-zinc-200 text-sm truncate">{w.name}</div>
+                                  <div className="text-[11px] text-zinc-500 mt-0.5">
+                                    <span className="text-orange-400/80 font-bold">{w.damage}</span>
+                                    <span className="mx-1.5 text-zinc-700">·</span>
+                                    <span>{skillName}</span>
+                                    {!isMelee && w.range && <span className="ml-1 text-zinc-600">({w.range})</span>}
+                                  </div>
+                                </div>
+                                <Button
+                                  isIconOnly
+                                  size="sm"
+                                  className="ml-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 shrink-0"
+                                  title={`Rolar ${w.name}`}
+                                  onClick={() => {
+                                    setIsDiceTray(true)
+                                    rollWeapon({ name: w.name, range: w.range || 'Corpo a corpo', damage: w.damage || '1d6' }, strength, agility)
+                                  }}
+                                >
+                                  <Dices size={15} />
+                                </Button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* HABILIDADES DE COMBATE DA CLASSE */}
                     {character.classAbilities && character.classAbilities.length > 0 ? (
                       <div>
@@ -2723,18 +3114,103 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                           <p className="text-zinc-400 text-xs leading-relaxed mt-1">
                                             {ability.classAbility?.description}
                                           </p>
+
+                                          {/* ── Badge mecânica: Perito ── */}
+                                          {ability.classAbility?.name === 'Perito' && peritoSkills.length > 0 && (
+                                            <div className="mt-2 p-2 rounded bg-amber-500/5 border border-amber-500/20 flex flex-wrap items-center gap-2">
+                                              <span className="text-[9px] font-black uppercase text-amber-400/60 tracking-wider">Ao usar:</span>
+                                              <span className="text-[11px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5">
+                                                +{peritoBonus.dice} por {peritoBonus.cost} PE
+                                              </span>
+                                              <span className="text-[9px] text-zinc-500">nas perícias:</span>
+                                              {peritoSkills.map((s, i) => (
+                                                <span key={i} className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">
+                                                  {s}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+
+                                          {/* ── Badge mecânica: Eclético ── */}
+                                          {ability.classAbility?.name === 'Eclético' && (
+                                            <div className="mt-2 p-2 rounded bg-blue-500/5 border border-blue-500/20 flex flex-wrap items-center gap-2">
+                                              <span className="text-[9px] font-black uppercase text-blue-400/60 tracking-wider">Ao usar:</span>
+                                              <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
+                                                2 PE → Treinado
+                                              </span>
+                                              {hasEngenhosidade && character.nex >= 40 && (
+                                                <>
+                                                  <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
+                                                    4 PE → Veterano
+                                                  </span>
+                                                  {character.nex >= 75 && (
+                                                    <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
+                                                      8 PE → Expert
+                                                    </span>
+                                                  )}
+                                                </>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {/* ── Badge mecânica: Tiro Certeiro ── */}
+                                          {ability.classAbility?.name === 'Tiro Certeiro' && (
+                                            <div className="mt-2 p-2 rounded bg-emerald-500/5 border border-emerald-500/20 flex flex-wrap items-center gap-2">
+                                              <span className="text-[9px] font-black uppercase text-emerald-400/60 tracking-wider">Com armas de fogo:</span>
+                                              <span className="text-[11px] font-black text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-0.5">
+                                                +{agility} no dano
+                                              </span>
+                                              <span className="text-[10px] text-zinc-500">Ignora penalidade em combate corpo a corpo</span>
+                                            </div>
+                                          )}
+
+                                          {/* ── Badge mecânica: Ritual Potente (passivo) ── */}
+                                          {ability.classAbility?.name === 'Ritual Potente' && (
+                                            <div className="mt-2 p-2 rounded bg-violet-500/5 border border-violet-500/20 flex flex-wrap items-center gap-2">
+                                              <span className="text-[9px] font-black uppercase text-violet-400/60 tracking-wider">Passivo nos rituais:</span>
+                                              <span className="text-[11px] font-black text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded px-2 py-0.5">
+                                                <Sparkles size={10} className="inline mr-1" />+{intellect} dano/cura
+                                              </span>
+                                            </div>
+                                          )}
+
+                                          {/* ── Badge mecânica: Camuflar Ocultismo ── */}
+                                          {ability.classAbility?.name === 'Camuflar Ocultismo' && (
+                                            <div className="mt-2 p-2 rounded bg-zinc-500/5 border border-zinc-500/20 flex flex-wrap items-center gap-2">
+                                              <span className="text-[9px] font-black uppercase text-zinc-400/60 tracking-wider">Opcional (por ritual):</span>
+                                              <span className="text-[11px] font-black text-zinc-300 bg-zinc-500/10 border border-zinc-500/20 rounded px-2 py-0.5">
+                                                +2 PE → Ritual invisível
+                                              </span>
+                                              <span className="text-[9px] text-zinc-500">(Ativar via checkbox em cada ritual)</span>
+                                            </div>
+                                          )}
+
+                                          {/* ── Badge mecânica: Ritual Predileto ── */}
+                                          {ability.classAbility?.name === 'Ritual Predileto' && (
+                                            <div className="mt-2 p-2 rounded bg-blue-500/5 border border-blue-500/20 flex flex-wrap items-center gap-2">
+                                              <span className="text-[9px] font-black uppercase text-blue-400/60 tracking-wider">Passivo:</span>
+                                              <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
+                                                –1 PE em {ritualPrediletoConfig || 'ritual não configurado'}
+                                              </span>
+                                            </div>
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-2 ml-2">
-                                          {ability.classAbility?.name === 'Perito' && (
-                                            <Button
-                                              isIconOnly
-                                              size="sm"
-                                              className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/40"
-                                              onPress={() => openAbilityConfig(ability)}
-                                            >
-                                              <Edit3 size={14} />
-                                            </Button>
-                                          )}
+                                          {(
+                                            ability.classAbility?.name === 'Perito' ||
+                                            ability.classAbility?.name === 'Ritual Predileto' ||
+                                            ability.classAbility?.name === 'Mestre em Elemento' ||
+                                            ability.classAbility?.name === 'Especialista em Elemento'
+                                          ) && (
+                                              <Button
+                                                isIconOnly
+                                                size="sm"
+                                                className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/40"
+                                                onPress={() => openAbilityConfig(ability)}
+                                              >
+                                                <Edit3 size={14} />
+                                              </Button>
+                                            )}
                                           <Button
                                             isIconOnly
                                             size="sm"
@@ -2908,6 +3384,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   Sangue: 'bg-red-500/10 border-red-500/30 text-red-300',
                                 }[r?.element || ''] || 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300'
 
+                                const peInfo = calcPeAjustado(r)
+                                const temReducao = peInfo.ajustado < peInfo.base
+                                const temAcrescimo = peInfo.ajustado > peInfo.base
+
                                 return (
                                   <div
                                     key={idx}
@@ -2915,7 +3395,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   >
                                     <div className="flex items-start justify-between">
                                       <div className="flex-1">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
                                           <h5 className="font-bold text-base">{r?.name}</h5>
                                           <Chip
                                             size="sm"
@@ -2927,17 +3407,71 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                           <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
                                             {r?.element}
                                           </span>
+
+                                          {/* ── Badge: Custo em PE ── */}
+                                          <div className="flex items-center gap-1">
+                                            {temReducao ? (
+                                              <span className="flex items-center gap-1">
+                                                <span className="text-[10px] text-zinc-400 line-through">{peInfo.base} PE</span>
+                                                <span className="text-[11px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded px-1.5 py-0.5">
+                                                  {peInfo.ajustado} PE
+                                                </span>
+                                              </span>
+                                            ) : temAcrescimo ? (
+                                              <span className="text-[11px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
+                                                {peInfo.ajustado} PE
+                                              </span>
+                                            ) : (
+                                              <span className="text-[11px] font-black opacity-60 bg-black/20 border border-current/20 rounded px-1.5 py-0.5">
+                                                {peInfo.base} PE
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* ── Badge: Ritual Potente ── */}
+                                          {hasRitualPotente && (
+                                            <span className="text-[10px] font-black text-violet-400 bg-violet-500/10 border border-violet-500/30 rounded px-1.5 py-0.5 flex items-center gap-1">
+                                              <Sparkles size={10} />
+                                              +{intellect} dano/cura
+                                            </span>
+                                          )}
                                         </div>
+
+                                        {/* ── Tooltip das reduções ── */}
+                                        {peInfo.reducoes.length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {peInfo.reducoes.map((red, i) => (
+                                              <span key={i} className="text-[9px] font-bold uppercase tracking-wide opacity-60 bg-current/5 border border-current/10 rounded px-1.5 py-0.5">
+                                                {red}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
                                       </div>
-                                      <Button
-                                        isIconOnly
-                                        size="sm"
-                                        variant="light"
-                                        className="text-current opacity-40 hover:opacity-100"
-                                        onPress={() => r?.id && removeRitual(r.id)}
-                                      >
-                                        <Trash2 size={14} />
-                                      </Button>
+
+                                      <div className="flex items-center gap-2">
+                                        {/* ── Checkbox: Camuflar Ocultismo ── */}
+                                        {hasCamuflarOcultismo && (
+                                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold uppercase tracking-wide opacity-70 hover:opacity-100 transition-opacity select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={usarCamuflar}
+                                              onChange={(e) => setUsarCamuflar(e.target.checked)}
+                                              className="h-3 w-3 accent-current rounded"
+                                            />
+                                            Camuflar
+                                          </label>
+                                        )}
+                                        <Button
+                                          isIconOnly
+                                          size="sm"
+                                          variant="light"
+                                          className="text-current opacity-40 hover:opacity-100"
+                                          onPress={() => r?.id && removeRitual(r.id)}
+                                        >
+                                          <Trash2 size={14} />
+                                        </Button>
+                                      </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] uppercase font-bold opacity-70">
@@ -2963,6 +3497,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   </div>
                                 )
                               })}
+
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -3117,105 +3652,211 @@ export default function CharacterShow(initialProps: CharacterProps) {
         {/* COLUNA DIREITA (Attributes & Stats) */}
         <div className="w-[350px] flex-shrink-0 space-y-6">
           {/* ATTRIBUTES SECTION */}
-          <Card className="bg-zinc-900 border border-zinc-800 shadow-none">
+          <Card className={`border shadow-none transition-colors duration-300 ${isDiceTray ? 'bg-zinc-900 border-amber-500/30' : 'bg-zinc-900 border-zinc-800'}`}>
             <CardHeader className="pb-2 flex justify-between items-center border-b border-zinc-800/50">
-              <div className="text-lg font-bold text-zinc-100">Atributos</div>
               <div className="flex items-center gap-2">
-                <Chip
-                  size="sm"
-                  className={`border ${availablePoints > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : availablePoints < 0 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'}`}
+                <div className={`text-lg font-bold transition-colors ${isDiceTray ? 'text-amber-400' : 'text-zinc-100'}`}>
+                  {isDiceTray ? '🎲 Bandeja de Dados' : 'Atributos'}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Toggle interruptor */}
+                <button
+                  onClick={() => {
+                    if (isDiceTray) diceThemeRef.current = undefined // limpa cache ao fechar
+                    setIsDiceTray(!isDiceTray)
+                    setDiceResult(null)
+                  }}
+                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${isDiceTray ? 'bg-amber-500' : 'bg-zinc-700'}`}
+                  title={isDiceTray ? 'Voltar para Atributos' : 'Abrir Bandeja de Dados'}
                 >
-                  {availablePoints} pts
-                </Chip>
-                {hasChanges && (
-                  <Button
-                    size="sm"
-                    color="primary"
-                    isLoading={isSaving}
-                    onPress={saveAttributes}
-                    isDisabled={availablePoints < 0}
-                    className="font-bold"
-                  >
-                    <Save size={14} className="mr-1" />
-                    Salvar
-                  </Button>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isDiceTray ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+                <Dices size={16} className={isDiceTray ? 'text-amber-400' : 'text-zinc-600'} />
+
+                {/* Controles de atributos (só no modo normal) */}
+                {!isDiceTray && (
+                  <>
+                    <Chip
+                      size="sm"
+                      className={`border ${availablePoints > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : availablePoints < 0 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'}`}
+                    >
+                      {availablePoints} pts
+                    </Chip>
+                    {hasChanges && (
+                      <Button
+                        size="sm"
+                        color="primary"
+                        isLoading={isSaving}
+                        onPress={saveAttributes}
+                        isDisabled={availablePoints < 0}
+                        className="font-bold"
+                      >
+                        <Save size={14} className="mr-1" />
+                        Salvar
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </CardHeader>
-            <CardBody>
-              {/* Points explanation */}
-              <div className="text-xs text-zinc-500 mb-3 bg-zinc-950/50 p-2 rounded border border-zinc-800">
-                <span className="text-zinc-400">4 pontos base</span>
-                {attributeBonusFromNex > 0 && (
-                  <span className="text-blue-400"> +{attributeBonusFromNex} (NEX)</span>
-                )}
-                {[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length >
-                  0 && (
-                    <span className="text-emerald-400">
-                      {' '}
-                      +{
-                        [strength, agility, intellect, vigor, presence].filter((v) => v === 0).length
-                      }{' '}
-                      (atributos em 0)
-                    </span>
-                  )}
-                <span className="text-zinc-600"> | Usado: {usedPoints}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="w-[180px] h-[180px]">
-                  <ResponsiveContainer width={180} height={180}>
-                    <RadarChart cx="50%" cy="50%" outerRadius="70%" data={attributesData}>
-                      <PolarGrid stroke="#3f3f46" />
-                      <PolarAngleAxis
-                        dataKey="subject"
-                        tick={{ fill: '#a1a1aa', fontSize: 11, fontWeight: 'bold' }}
-                      />
-                      <Radar
-                        name="Atributos"
-                        dataKey="A"
-                        stroke="#f97316"
-                        strokeWidth={2}
-                        fill="#f97316"
-                        fillOpacity={0.2}
-                      />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
 
-                {/* Attribute Inputs Side Panel */}
-                <div className="space-y-3 min-w-[120px]">
-                  {attributeInputs.map((attr) => (
-                    <div key={attr.label} className="flex items-center gap-3">
-                      <div className={`p-1.5 rounded bg-zinc-950 ${attr.color}`}>
-                        <attr.icon size={12} />
-                      </div>
-                      <span className="text-xs font-bold text-zinc-400 w-8 whitespace-nowrap">{attr.label}</span>
-                      <div className="flex items-center bg-zinc-950 rounded border border-zinc-800">
-                        <button
-                          onClick={() => attr.set(Math.max(0, attr.val - 1))}
-                          className="px-1.5 py-0.5 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded-l transition-colors"
-                        >
-                          -
-                        </button>
-                        <span
-                          className={`text-xs w-5 text-center font-mono ${attr.val === 0 ? 'text-emerald-400' : ''}`}
-                        >
-                          {attr.val}
-                        </span>
-                        <button
-                          onClick={() => attr.set(Math.min(5, attr.val + 1))}
-                          disabled={availablePoints <= 0}
-                          className={`px-1.5 py-0.5 rounded-r transition-colors ${availablePoints <= 0 ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white hover:bg-zinc-800'}`}
-                        >
-                          +
-                        </button>
-                      </div>
+            <CardBody>
+              {!isDiceTray ? (
+                /* ── Modo Atributos (original) ── */
+                <>
+                  <div className="text-xs text-zinc-500 mb-3 bg-zinc-950/50 p-2 rounded border border-zinc-800">
+                    <span className="text-zinc-400">4 pontos base</span>
+                    {attributeBonusFromNex > 0 && (
+                      <span className="text-blue-400"> +{attributeBonusFromNex} (NEX)</span>
+                    )}
+                    {[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length > 0 && (
+                      <span className="text-emerald-400">
+                        {' '}
+                        +{[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length}{' '}
+                        (atributos em 0)
+                      </span>
+                    )}
+                    <span className="text-zinc-600"> | Usado: {usedPoints}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="w-[180px] h-[180px]">
+                      <ResponsiveContainer width={180} height={180}>
+                        <RadarChart cx="50%" cy="50%" outerRadius="70%" data={attributesData}>
+                          <PolarGrid stroke="#3f3f46" />
+                          <PolarAngleAxis
+                            dataKey="subject"
+                            tick={{ fill: '#a1a1aa', fontSize: 11, fontWeight: 'bold' }}
+                          />
+                          <Radar
+                            name="Atributos"
+                            dataKey="A"
+                            stroke="#f97316"
+                            strokeWidth={2}
+                            fill="#f97316"
+                            fillOpacity={0.2}
+                          />
+                        </RadarChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))}
+                    <div className="space-y-3 min-w-[120px]">
+                      {attributeInputs.map((attr) => (
+                        <div key={attr.label} className="flex items-center gap-3">
+                          <div className={`p-1.5 rounded bg-zinc-950 ${attr.color}`}>
+                            <attr.icon size={12} />
+                          </div>
+                          <span className="text-xs font-bold text-zinc-400 w-8 whitespace-nowrap">{attr.label}</span>
+                          <div className="flex items-center bg-zinc-950 rounded border border-zinc-800">
+                            <button
+                              onClick={() => attr.set(Math.max(0, attr.val - 1))}
+                              className="px-1.5 py-0.5 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded-l transition-colors"
+                            >
+                              -
+                            </button>
+                            <span className={`text-xs w-5 text-center font-mono ${attr.val === 0 ? 'text-emerald-400' : ''}`}>
+                              {attr.val}
+                            </span>
+                            <button
+                              onClick={() => attr.set(Math.min(5, attr.val + 1))}
+                              disabled={availablePoints <= 0}
+                              className={`px-1.5 py-0.5 rounded-r transition-colors ${availablePoints <= 0 ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white hover:bg-zinc-800'}`}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* ── Modo Bandeja de Dados ── */
+                <div className="space-y-3">
+                  {/* Área preta — only the 3D dice animation */}
+                  <div className="relative rounded-xl overflow-hidden bg-black" style={{ height: '300px' }}>
+                    <canvas
+                      ref={diceCanvasRef}
+                      className="absolute inset-0 w-full h-full"
+                    />
+                    {/* Indicador de espera (só quando sem resultado) */}
+                    {!diceResult && !isRolling && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="text-center text-zinc-800">
+                          <Dices size={40} className="mx-auto mb-2 opacity-30" />
+                          <span className="text-xs">Aguardando rolagem</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Resultado abaixo da área dos dados */}
+                  {(diceResult || weaponRollResult || isRolling) && (
+                    <div className="px-1">
+                      {isRolling ? (
+                        <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
+                          <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.5, ease: 'linear' }} style={{ display: 'inline-block' }}>⟳</motion.span>
+                          Rolando...
+                        </div>
+                      ) : weaponRollResult ? (
+                        /* Resultado de arma: ataque + dano lado a lado */
+                        <motion.div
+                          key={weaponRollResult.weapon + weaponRollResult.attack.total}
+                          initial={{ y: 6, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          className="space-y-1"
+                        >
+                          <div className="text-[10px] font-bold uppercase text-zinc-600 tracking-wider truncate">{weaponRollResult.weapon}</div>
+                          <div className="flex items-stretch gap-3">
+                            {/* Ataque */}
+                            <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2">
+                              <div className="text-[9px] uppercase font-bold text-zinc-600 tracking-wider mb-0.5">Ataque · {weaponRollResult.attack.skill}</div>
+                              <div className="text-3xl font-black text-amber-400 leading-none">{weaponRollResult.attack.total}</div>
+                              <div className="text-[10px] text-zinc-600 mt-0.5">{weaponRollResult.attack.label} → [{weaponRollResult.attack.rolls.join(', ')}]</div>
+                            </div>
+                            {/* Dano */}
+                            <div className="flex-1 bg-zinc-950 border border-red-900/30 rounded-lg px-3 py-2">
+                              <div className="text-[9px] uppercase font-bold text-red-900/80 tracking-wider mb-0.5">Dano · {weaponRollResult.damage.label}</div>
+                              <div className="text-3xl font-black text-red-400 leading-none">{weaponRollResult.damage.total}</div>
+                              <div className="text-[10px] text-zinc-600 mt-0.5">[{weaponRollResult.damage.rolls.join(', ')}]</div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ) : diceResult ? (
+                        /* Resultado de perícia simples */
+                        <motion.div
+                          key={diceResult.total + diceResult.label}
+                          initial={{ y: 6, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          className="flex items-baseline gap-3"
+                        >
+                          <span className="text-4xl font-black text-amber-400">{diceResult.total}</span>
+                          <span className="text-xs text-zinc-500">{diceResult.label} → [{diceResult.rolls.join(', ')}]</span>
+                        </motion.div>
+                      ) : null}
+                    </div>
+                  )}
+
+
+                  {/* Histórico compacto */}
+                  {diceHistory.length > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap gap-1.5">
+                        {diceHistory.map((h, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-zinc-950 border border-zinc-800 rounded text-[11px] font-bold text-zinc-400">
+                            {h.label}: <span className="text-amber-400">{h.total}</span>
+                          </span>
+                        ))}
+                      </div>
+                      <button onClick={() => setDiceHistory([])} className="text-[10px] text-zinc-700 hover:text-zinc-400 shrink-0 ml-2">
+                        limpar
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </CardBody>
           </Card>
+
 
           {/* COMBAT DEFENSES */}
           <Card className="bg-zinc-900 border border-zinc-800 shadow-none">
@@ -3929,6 +4570,101 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     )}
                   </div>
                 )}
+
+                {/* ── Ritual Predileto: escolha um ritual ── */}
+                {configuringAbility?.classAbility?.name === 'Ritual Predileto' && (
+                  <div className="space-y-4">
+                    <p className="text-sm text-zinc-400">
+                      Escolha um ritual que você conhece. O custo desse ritual será reduzido em{' '}
+                      <span className="text-emerald-400 font-bold">–1 PE</span>.
+                    </p>
+                    {character.rituals && character.rituals.length > 0 ? (
+                      <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                        {character.rituals.map((cr, idx) => {
+                          const r = cr.ritual
+                          const elementColor = {
+                            Conhecimento: 'border-amber-500/40 hover:border-amber-500',
+                            Energia: 'border-purple-500/40 hover:border-purple-500',
+                            Morte: 'border-zinc-500/40 hover:border-zinc-500',
+                            Sangue: 'border-red-500/40 hover:border-red-500',
+                          }[r?.element || ''] || 'border-zinc-700 hover:border-zinc-500'
+                          const isSelected = selectedRitual === r?.name
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => setSelectedRitual(r?.name || '')}
+                              className={`w-full text-left p-3 rounded-lg border transition-all ${isSelected
+                                ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/50'
+                                : `bg-zinc-950/50 ${elementColor}`
+                                }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                {isSelected && <span className="text-blue-400 font-black">✓</span>}
+                                <span className="font-bold text-white text-sm">{r?.name}</span>
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase">{r?.element}</span>
+                                <span className="text-[10px] text-zinc-500">{r?.circle}º Círculo</span>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500 italic">Nenhum ritual aprendido ainda.</p>
+                    )}
+                    {selectedRitual && (
+                      <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                        <p className="text-xs text-blue-400 font-bold">Selecionado: <span className="text-white">{selectedRitual}</span></p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Mestre em Elemento / Especialista em Elemento: escolha o elemento ── */}
+                {(configuringAbility?.classAbility?.name === 'Mestre em Elemento' ||
+                  configuringAbility?.classAbility?.name === 'Especialista em Elemento') && (
+                    <div className="space-y-4">
+                      <p className="text-sm text-zinc-400">
+                        {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
+                          ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
+                          : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { name: 'Conhecimento', color: 'amber', icon: '📚' },
+                          { name: 'Energia', color: 'purple', icon: '⚡' },
+                          { name: 'Morte', color: 'zinc', icon: '💀' },
+                          { name: 'Sangue', color: 'red', icon: '🩸' },
+                        ].map((el) => {
+                          const isSelected = selectedElement === el.name
+                          const colorMap: Record<string, string> = {
+                            amber: 'bg-amber-500/20 border-amber-500 text-amber-300',
+                            purple: 'bg-purple-500/20 border-purple-500 text-purple-300',
+                            zinc: 'bg-zinc-500/20 border-zinc-400 text-zinc-300',
+                            red: 'bg-red-500/20 border-red-500 text-red-300',
+                          }
+                          const inactiveMap: Record<string, string> = {
+                            amber: 'border-amber-500/30 hover:border-amber-500/60 text-amber-400/60 hover:text-amber-400',
+                            purple: 'border-purple-500/30 hover:border-purple-500/60 text-purple-400/60 hover:text-purple-400',
+                            zinc: 'border-zinc-500/30 hover:border-zinc-500/60 text-zinc-400/60 hover:text-zinc-400',
+                            red: 'border-red-500/30 hover:border-red-500/60 text-red-400/60 hover:text-red-400',
+                          }
+                          return (
+                            <button
+                              key={el.name}
+                              onClick={() => setSelectedElement(el.name)}
+                              className={`p-4 rounded-lg border-2 transition-all font-bold text-sm flex items-center gap-2 ${isSelected ? colorMap[el.color] : `bg-zinc-950/50 ${inactiveMap[el.color]}`
+                                }`}
+                            >
+                              <span>{el.icon}</span>
+                              {el.name}
+                              {isSelected && <span className="ml-auto">✓</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
               </ModalBody>
               <ModalFooter>
                 <Button
@@ -4958,22 +5694,22 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
-                                 <div className="flex items-center gap-2 flex-wrap">
-                                   <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
-                                   <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
-                                     {ritual.circle}º Círculo
-                                   </Chip>
-                                   {isBlocked && (
-                                     <Chip size="sm" variant="flat" className="bg-red-950 text-red-400 border border-red-900">
-                                       🔒 NEX insuficiente
-                                     </Chip>
-                                   )}
-                                   {isAcquired && (
-                                     <Chip size="sm" color="success" variant="flat">
-                                       Aprendido
-                                     </Chip>
-                                   )}
-                                 </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
+                                  <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
+                                    {ritual.circle}º Círculo
+                                  </Chip>
+                                  {isBlocked && (
+                                    <Chip size="sm" variant="flat" className="bg-red-950 text-red-400 border border-red-900">
+                                      🔒 NEX insuficiente
+                                    </Chip>
+                                  )}
+                                  {isAcquired && (
+                                    <Chip size="sm" color="success" variant="flat">
+                                      Aprendido
+                                    </Chip>
+                                  )}
+                                </div>
                                 <p className={`text-xs font-bold uppercase ${elementColor}`}>
                                   {ritual.element}
                                 </p>
@@ -5081,12 +5817,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             variant="flat"
                             color={mod.type === 'Maldição' ? 'danger' : 'primary'}
                             onClose={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
-                            className={mod.type === 'Maldição' 
+                            className={mod.type === 'Maldição'
                               ? mod.element === 'Sangue' ? 'bg-red-500/10 text-red-300 border border-red-500/20' :
                                 mod.element === 'Morte' ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20' :
-                                mod.element === 'Energia' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' :
-                                mod.element === 'Conhecimento' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
-                                'bg-red-500/10 text-red-300 border border-red-500/20'
+                                  mod.element === 'Energia' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' :
+                                    mod.element === 'Conhecimento' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
+                                      'bg-red-500/10 text-red-300 border border-red-500/20'
                               : "bg-blue-500/10 text-blue-300 border border-blue-500/20"}
                           >
                             {mod.name}
@@ -5110,16 +5846,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         {['Melhoria', 'Maldição'].map((type) => {
                           const isActive = modTypeFilter === type
                           const activeBg = type === 'Melhoria' ? 'bg-blue-600' : 'bg-red-600'
-                          
+
                           return (
                             <button
                               key={type}
                               onClick={() => setModTypeFilter(type as any)}
-                              className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
-                                isActive 
-                                  ? `${activeBg} text-white shadow-md` 
-                                  : 'text-zinc-500 hover:text-zinc-300'
-                              }`}
+                              className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${isActive
+                                ? `${activeBg} text-white shadow-md`
+                                : 'text-zinc-500 hover:text-zinc-300'
+                                }`}
                             >
                               {type}
                             </button>
@@ -5132,24 +5867,24 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         ['Sangue', 'Morte', 'Energia', 'Conhecimento'].map((element) => {
                           const elementMods = catalogAmmunitions.filter(m => m.type === 'Maldição' && m.element === element)
                           if (elementMods.length === 0) return null
-                          
-                          const elementColor = 
+
+                          const elementColor =
                             element === 'Sangue' ? 'text-red-500' :
-                            element === 'Morte' ? 'text-zinc-400' :
-                            element === 'Energia' ? 'text-purple-500' :
-                            'text-amber-500' // Conhecimento
+                              element === 'Morte' ? 'text-zinc-400' :
+                                element === 'Energia' ? 'text-purple-500' :
+                                  'text-amber-500' // Conhecimento
 
-                          const elementBg = 
+                          const elementBg =
                             element === 'Sangue' ? 'bg-red-500/10' :
-                            element === 'Morte' ? 'bg-zinc-500/10' :
-                            element === 'Energia' ? 'bg-purple-500/10' :
-                            'bg-amber-500/10'
+                              element === 'Morte' ? 'bg-zinc-500/10' :
+                                element === 'Energia' ? 'bg-purple-500/10' :
+                                  'bg-amber-500/10'
 
-                          const elementBorder = 
+                          const elementBorder =
                             element === 'Sangue' ? 'border-red-500/20 font-red-glow' :
-                            element === 'Morte' ? 'border-zinc-500/20 font-death-glow' :
-                            element === 'Energia' ? 'border-purple-500/20 font-energy-glow' :
-                            'border-amber-500/20 font-knowledge-glow'
+                              element === 'Morte' ? 'border-zinc-500/20 font-death-glow' :
+                                element === 'Energia' ? 'border-purple-500/20 font-energy-glow' :
+                                  'border-amber-500/20 font-knowledge-glow'
 
                           return (
                             <div key={element} className="space-y-3">
@@ -5166,37 +5901,35 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   const isBlocked = !isActive && !validation.allowed
                                   return (
                                     <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
-                                    <Card
-                                      className={`w-full border transition-all ${
-                                        isBlocked
+                                      <Card
+                                        className={`w-full border transition-all ${isBlocked
                                           ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
                                           : isActive
                                             ? `${elementBg} ${elementBorder.split(' ')[0]}`
                                             : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                        }`}
-                                    >
-                                      <CardBody className="p-3">
-                                        <div className="flex justify-between items-start mb-1">
-                                          <span className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}>
-                                            {mod.name}
-                                          </span>
-                                          <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
-                                            +{mod.category} CAT
-                                          </Chip>
-                                        </div>
-                                        <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
-                                          {mod.description}
-                                        </p>
-                                        <div className="mt-2 flex items-center justify-between">
-                                          <span className={`text-[9px] uppercase font-bold ${
-                                            isBlocked ? 'text-red-600' : isActive ? elementColor : 'text-zinc-600'
-                                          }`}>
-                                            {isBlocked ? validation.reason : 'MALDIÇÃO'}
-                                          </span>
-                                          {isActive && <Check size={12} className={elementColor} />}
-                                        </div>
-                                      </CardBody>
-                                    </Card>
+                                          }`}
+                                      >
+                                        <CardBody className="p-3">
+                                          <div className="flex justify-between items-start mb-1">
+                                            <span className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}>
+                                              {mod.name}
+                                            </span>
+                                            <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                              +{mod.category} CAT
+                                            </Chip>
+                                          </div>
+                                          <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
+                                            {mod.description}
+                                          </p>
+                                          <div className="mt-2 flex items-center justify-between">
+                                            <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : isActive ? elementColor : 'text-zinc-600'
+                                              }`}>
+                                              {isBlocked ? validation.reason : 'MALDIÇÃO'}
+                                            </span>
+                                            {isActive && <Check size={12} className={elementColor} />}
+                                          </div>
+                                        </CardBody>
+                                      </Card>
                                     </div>
                                   )
                                 })}
@@ -5216,39 +5949,37 @@ export default function CharacterShow(initialProps: CharacterProps) {
                               const isBlocked = !isActive && !validation.allowed
                               return (
                                 <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
-                                <Card
-                                  isPressable={!isBlocked}
-                                  onPress={isBlocked ? undefined : () => toggleModification(modifyingWeapon.id, mod.id, isActive ? 'remove' : 'add')}
-                                  className={`w-full border transition-all ${
-                                    isBlocked 
+                                  <Card
+                                    isPressable={!isBlocked}
+                                    onPress={isBlocked ? undefined : () => toggleModification(modifyingWeapon.id, mod.id, isActive ? 'remove' : 'add')}
+                                    className={`w-full border transition-all ${isBlocked
                                       ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
                                       : isActive
                                         ? 'bg-blue-500/10 border-blue-500/50'
                                         : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                  }`}
-                                >
-                                  <CardBody className="p-3">
-                                    <div className="flex justify-between items-start mb-1">
-                                      <span className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}>
-                                        {mod.name}
-                                      </span>
-                                      <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
-                                        +{mod.category} CAT
-                                      </Chip>
-                                    </div>
-                                    <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
-                                      {mod.description}
-                                    </p>
-                                    <div className="mt-2 flex items-center justify-between">
-                                      <span className={`text-[9px] uppercase font-bold ${
-                                        isBlocked ? 'text-red-600' : 'text-zinc-600'
-                                      }`}>
-                                        {isBlocked ? validation.reason : 'MELHORIA'}
-                                      </span>
-                                      {isActive && <Check size={12} className="text-blue-400" />}
-                                    </div>
-                                  </CardBody>
-                                </Card>
+                                      }`}
+                                  >
+                                    <CardBody className="p-3">
+                                      <div className="flex justify-between items-start mb-1">
+                                        <span className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}>
+                                          {mod.name}
+                                        </span>
+                                        <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                          +{mod.category} CAT
+                                        </Chip>
+                                      </div>
+                                      <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
+                                        {mod.description}
+                                      </p>
+                                      <div className="mt-2 flex items-center justify-between">
+                                        <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'
+                                          }`}>
+                                          {isBlocked ? validation.reason : 'MELHORIA'}
+                                        </span>
+                                        {isActive && <Check size={12} className="text-blue-400" />}
+                                      </div>
+                                    </CardBody>
+                                  </Card>
                                 </div>
                               )
                             })}

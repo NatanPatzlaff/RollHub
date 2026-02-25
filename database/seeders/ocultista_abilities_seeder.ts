@@ -20,7 +20,7 @@ export default class extends BaseSeeder {
       {
         name: 'Criar Selo',
         description:
-          'Você sabe fabricar selos paranormais de rituais que conheça (veja a página 151). Fabricar um selo gasta uma ação de interlúdio e um número de PE iguais ao custo de conjurar o ritual. Você pode ter um número máximo de selos criados ao mesmo tempo igual à sua Presença.',
+          'Você sabe fabricar selos paranormais de rituais que conheça. Fabricar um selo gasta uma ação de interlúdio e um número de PE iguais ao custo de conjurar o ritual. Você pode ter um número máximo de selos criados ao mesmo tempo igual à sua Presença.',
         effects: { prerequisite: 'Nenhum', nex: '15%' },
       },
       {
@@ -102,7 +102,7 @@ export default class extends BaseSeeder {
       {
         name: 'Transcender',
         description:
-          'Escolha um poder paranormal (veja a página 114). Você recebe o poder escolhido, mas não ganha Sanidade neste aumento de NEX. Você pode escolher este poder várias vezes.',
+          'Escolha um poder paranormal. Você recebe o poder escolhido, mas não ganha Sanidade neste aumento de NEX. Você pode escolher este poder várias vezes.',
         effects: { prerequisite: 'Nenhum', nex: '15%', repeatable: true },
       },
       {
