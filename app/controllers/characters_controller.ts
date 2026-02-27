@@ -92,6 +92,7 @@ export default class CharactersController {
       currentPe: maxPe,
       maxSanity: maxSanity,
       currentSanity: maxSanity,
+      permanentSanityLoss: 0,
       defenseMisc: 0,
       defenseTemp: 0,
       dodgeMisc: 0,
@@ -306,6 +307,9 @@ export default class CharactersController {
         character.classAbilities?.filter((ca) => ca.classAbility?.name === 'Transcender').length || 0
       calculatedMaxSanity -= transcendCount * classData.sanityPerLevel
 
+      // Subtract permanent sanity loss
+      calculatedMaxSanity -= character.stats?.permanentSanityLoss || 0
+
       // Calculate defense (10 + AGI + armor)
       const baseDefense = 10 + (attributes?.agility || 0)
       const baseDodge = attributes?.agility || 0
@@ -329,6 +333,9 @@ export default class CharactersController {
         characterWeaponModificationsRows,
         characterProtectionsRows,
         characterGeneralItemsRows,
+        protectionModificationsRows,
+        characterProtectionModificationsRows,
+        characterGeneralItemModificationsRows,
       ] = await Promise.all([
         db.from('weapons').select('*').orderBy('name', 'asc'),
         db.from('protections').select('*').orderBy('name', 'asc'),
@@ -367,7 +374,10 @@ export default class CharactersController {
             'protections.name',
             'protections.spaces',
             'protections.description',
-            'protections.category'
+            'protections.category',
+            'protections.defense_bonus',
+            'protections.dodge_penalty',
+            'protections.type'
           ),
         db
           .from('character_general_items')
@@ -378,8 +388,22 @@ export default class CharactersController {
             'general_items.name',
             'general_items.spaces',
             'general_items.description',
-            'general_items.category'
+            'general_items.category',
+            'general_items.type'
           ),
+        db.from('protection_modifications').select('*').orderBy('name', 'asc'),
+        db
+          .from('character_protection_modifications')
+          .join('character_protections', 'character_protection_modifications.character_protection_id', 'character_protections.id')
+          .where('character_protections.character_id', character.id)
+          .leftJoin('protection_modifications', 'character_protection_modifications.modification_id', 'protection_modifications.id')
+          .select('character_protection_modifications.*', 'protection_modifications.name as mod_name', 'protection_modifications.type as mod_type', 'protection_modifications.element as mod_element', 'protection_modifications.category as mod_category'),
+        db
+          .from('character_general_item_modifications')
+          .join('character_general_items', 'character_general_item_modifications.character_general_item_id', 'character_general_items.id')
+          .where('character_general_items.character_id', character.id)
+          .leftJoin('protection_modifications', 'character_general_item_modifications.modification_id', 'protection_modifications.id')
+          .select('character_general_item_modifications.*', 'protection_modifications.name as mod_name', 'protection_modifications.type as mod_type', 'protection_modifications.element as mod_element', 'protection_modifications.category as mod_category'),
       ])
       const catalogWeapons = weaponsRows.map((r: any) => ({
         id: r.id,
@@ -424,6 +448,7 @@ export default class CharactersController {
       const catalogCursedItems = cursedItemsRows.map((r: any) => ({
         id: r.id,
         name: r.name,
+        category: r.category,
         element: r.element,
         itemType: r.item_type,
         spaces: r.spaces,
@@ -435,6 +460,18 @@ export default class CharactersController {
               : null
             : r.benefits,
         curses: typeof r.curses === 'string' ? (r.curses ? JSON.parse(r.curses) : null) : r.curses,
+      }))
+
+      const catalogProtectionModifications = protectionModificationsRows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category,
+        type: r.type,
+        element: r.element,
+        description: r.description,
+        specialProperties: r.special_properties,
+        defenseBonus: r.defense_bonus,
+        protectionTypeRestriction: r.protection_type_restriction,
       }))
 
       // Catálogo de munições (tipo especial de modificação de arma)
@@ -485,22 +522,45 @@ export default class CharactersController {
         protectionId: r.protection_id,
         name: r.name,
         type: 'Protection',
+        protectionType: r.type,
         description: r.description,
         equipped: r.is_equipped,
         quantity: 1,
         spaces: r.spaces || 0,
         category: r.category,
+        defenseBonus: r.defense_bonus || 0,
+        dodgePenalty: r.dodge_penalty || 0,
+        modifications: characterProtectionModificationsRows
+          .filter((m: any) => m.character_protection_id === r.id)
+          .map((m: any) => ({
+            id: m.id,
+            modificationId: m.modification_id,
+            name: m.mod_name,
+            type: m.mod_type,
+            element: m.mod_element,
+            category: m.mod_category,
+          })),
       }))
 
       const inventoryGeneralItems = characterGeneralItemsRows.map((r: any) => ({
         id: r.id,
         generalItemId: r.general_item_id,
         name: r.name,
-        type: 'General',
+        type: r.type, // Use o tipo real do banco (Acessório, Consumível, etc)
         description: r.description,
         quantity: r.quantity || 1,
         spaces: r.spaces || 0,
         category: r.category,
+        modifications: characterGeneralItemModificationsRows
+          .filter((m: any) => m.character_general_item_id === r.id)
+          .map((m: any) => ({
+            id: m.id,
+            modificationId: m.modification_id,
+            name: m.mod_name,
+            type: m.mod_type,
+            element: m.mod_element,
+            category: m.mod_category,
+          })),
       }))
 
       return inertia.render('characters/show', {
@@ -518,6 +578,7 @@ export default class CharactersController {
           currentHp: character.stats?.currentHp || calculatedMaxHp,
           currentPe: character.stats?.currentPe || calculatedMaxPe,
           currentSanity: character.stats?.currentSanity || calculatedMaxSanity,
+          permanentSanityLoss: character.stats?.permanentSanityLoss || 0,
           defense:
             baseDefense + (character.stats?.defenseMisc || 0) + (character.stats?.defenseTemp || 0),
           dodge: baseDodge + (character.stats?.dodgeMisc || 0) + (character.stats?.dodgeTemp || 0),
@@ -535,6 +596,7 @@ export default class CharactersController {
         catalogGeneralItems,
         catalogCursedItems,
         catalogAmmunitions,
+        catalogProtectionModifications,
         inventoryWeapons,
         inventoryProtections,
         inventoryGeneralItems,
@@ -763,6 +825,33 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
+  async updateAffinity({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    if (character.nex < 50) {
+      return response.badRequest({ error: 'Personagem não possui NEX suficiente para escolher afinidade.' })
+    }
+
+    if (character.affinity) {
+      return response.badRequest({ error: 'Personagem já possui afinidade.' })
+    }
+
+    const { affinity } = request.only(['affinity'])
+
+    if (!affinity) {
+      return response.badRequest({ error: 'Afinidade é obrigatória.' })
+    }
+
+    character.affinity = affinity
+    await character.save()
+
+    return response.redirect().back()
+  }
+
   async configureAbility({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
@@ -935,7 +1024,59 @@ export default class CharactersController {
       .where('classAbilityId', abilityId)
       .firstOrFail()
 
+    // Before deleting the ability, check if it has linked powers or rituals
+    const linkedPowers = await CharacterParanormalPower.query()
+      .where('characterClassAbilityId', characterAbility.id)
+
+    const linkedRituals = await CharacterRitual.query()
+      .where('characterClassAbilityId', characterAbility.id)
+
+    // Delete linked items manually if needed (though CASCADE should handle DB level)
+    for (const power of linkedPowers) {
+      await power.delete()
+    }
+    for (const ritual of linkedRituals) {
+      await ritual.delete()
+    }
+
     await characterAbility.delete()
+
+    // Recalculate max sanity since Transcend might have been removed
+    await character.load('classAbilities', (q) => q.preload('classAbility'))
+    await character.load('stats')
+    await character.load('class')
+
+    if (character.class && character.stats) {
+      const classData = await Class.findOrFail(character.classId)
+      const level = Math.max(1, Math.floor((character.nex || 5) / 5))
+
+      let baseSanity = classData.baseSanity + (level - 1) * classData.sanityPerLevel
+      if (character.originId) {
+        const origin = await Origin.find(character.originId)
+        if (origin?.name === 'Cultista Arrependido' || origin?.name === 'Vítima') {
+          // No action needed for these origins right now.
+        }
+      }
+
+      // Check for 'Aura de Medo' or similar powers
+      await character.load('paranormalPowers')
+
+      // Subtract transcend count
+      const transcendCount =
+        character.classAbilities?.filter((ca) => ca.classAbility?.name === 'Transcender').length || 0
+
+      const newMaxSanity = baseSanity - (transcendCount * classData.sanityPerLevel)
+
+      // We don't have all origin logic here, so let's just do a basic recalculation
+      // or ideally we could re-use a max value function if we had one.
+      // But we know 'Transcender' simply removes 'sanityPerLevel'.
+      // If we just refund sanityPerLevel to current maxSanity, it might be safer than full recalculation.
+
+      character.stats.maxSanity = newMaxSanity
+      // Also refund the current sanity if they lost max sanity
+      character.stats.currentSanity = Math.min(character.stats.currentSanity + classData.sanityPerLevel, character.stats.maxSanity);
+      await character.stats.save()
+    }
 
     return response.redirect().back()
   }
@@ -962,19 +1103,22 @@ export default class CharactersController {
       return response.status(400).send({ error: 'Poder já foi adquirido' })
     }
 
+    // If acquired via Transcend, register the ability too
+    let characterClassAbilityId: number | null = null
+    if (transcendAbilityId) {
+      const createdAbility = await CharacterClassAbility.create({
+        characterId: character.id,
+        classAbilityId: transcendAbilityId,
+      })
+      characterClassAbilityId = createdAbility.id
+    }
+
     // Add power
     await CharacterParanormalPower.create({
       characterId: character.id,
       paranormalPowerId: power.id,
+      characterClassAbilityId,
     })
-
-    // If acquired via Transcend, register the ability too
-    if (transcendAbilityId) {
-      await CharacterClassAbility.create({
-        characterId: character.id,
-        classAbilityId: transcendAbilityId,
-      })
-    }
 
     return response.redirect().back()
   }
@@ -1083,22 +1227,25 @@ export default class CharactersController {
       }
     }
 
+    // If acquired via Transcend, register the ability too
+    let characterClassAbilityId: number | null = null
+    if (transcendAbilityId) {
+      const createdAbility = await CharacterClassAbility.create({
+        characterId: character.id,
+        classAbilityId: transcendAbilityId,
+      })
+      characterClassAbilityId = createdAbility.id
+    }
+
     // ─── 8. Registrar o ritual ──────────────────────────────────────────
     await db.table('character_rituals').insert({
       character_id: character.id,
       ritual_id: ritual.id,
       ignora_limite_conhecimento: ignoraLimite,
+      character_class_ability_id: characterClassAbilityId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
-
-    // If acquired via Transcend, register the ability too
-    if (transcendAbilityId) {
-      await CharacterClassAbility.create({
-        characterId: character.id,
-        classAbilityId: transcendAbilityId,
-      })
-    }
 
     return response.redirect().back()
   }
@@ -1215,7 +1362,7 @@ export default class CharactersController {
       'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
     }
 
-    const [weaponsCats, protectionsCats, generalCats] = await Promise.all([
+    const [weaponsCats, protectionsCats, generalCats, cursedCats] = await Promise.all([
       db
         .from('character_weapons')
         .where('character_weapons.character_id', character.id)
@@ -1243,9 +1390,15 @@ export default class CharactersController {
         .leftJoin('general_items', 'character_general_items.general_item_id', 'general_items.id')
         .select('general_items.category', 'character_general_items.quantity')
         .then((rows) => rows.flatMap((r) => Array(r.quantity || 1).fill(r.category))),
+      db
+        .from('character_cursed_items')
+        .where('character_id', character.id)
+        .leftJoin('cursed_items', 'character_cursed_items.cursed_item_id', 'cursed_items.id')
+        .select('cursed_items.category', 'character_cursed_items.quantity')
+        .then((rows) => rows.flatMap((r) => Array(r.quantity || 1).fill(r.category))),
     ])
 
-    const allCategoriesUsed = [...weaponsCats, ...protectionsCats, ...generalCats]
+    const allCategoriesUsed = [...weaponsCats, ...protectionsCats, ...generalCats, ...cursedCats]
     const categoryCounts: Record<number, number> = {}
     allCategoriesUsed.forEach((cat) => {
       if (cat > 0) categoryCounts[cat] = (categoryCounts[cat] || 0) + 1
@@ -1326,6 +1479,8 @@ export default class CharactersController {
         character_id: character.id,
         general_item_id: itemId,
         quantity: qty,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
     } else if (type === 'cursed') {
       const item = await db.from('cursed_items').where('id', itemId).first()
@@ -1338,10 +1493,19 @@ export default class CharactersController {
         })
       }
 
+      // Validar limites de Categoria para itens amaldiçoados
+      if (!checkCategoryLimit(item.category, qty)) {
+        return response.badRequest({
+          error: `Limite de itens de Categoria ${item.category} atingido para a patente ${character.rank || 'Recruta'}.`,
+        })
+      }
+
       await db.table('character_cursed_items').insert({
         character_id: character.id,
         cursed_item_id: itemId,
         quantity: qty,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
     } else if (type === 'ammunition') {
       const item = await db.from('weapon_modifications').where('id', itemId).first()
@@ -1358,6 +1522,8 @@ export default class CharactersController {
         character_id: character.id,
         general_item_id: itemId,
         quantity: qty,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
     } else {
       return response.badRequest({
@@ -1537,6 +1703,150 @@ export default class CharactersController {
     await db
       .from('character_weapon_modifications')
       .where('character_weapon_id', characterWeapon.id)
+      .where('modification_id', modificationId)
+      .delete()
+
+    return response.redirect().back()
+  }
+
+  async addProtectionModification({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, characterProtectionId } = params
+    const { modificationId } = request.only(['modificationId'])
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Verify character protection belongs to character
+    const characterProtection = await db
+      .from('character_protections')
+      .where('id', characterProtectionId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterProtection) {
+      return response.notFound({ error: 'Proteção do personagem não encontrada' })
+    }
+
+    // Check if modification already exists
+    const existing = await db
+      .from('character_protection_modifications')
+      .where('character_protection_id', characterProtection.id)
+      .where('modification_id', modificationId)
+      .first()
+
+    if (existing) {
+      return response.badRequest({ error: 'Modificação já aplicada' })
+    }
+
+    const now = new Date().toISOString()
+    await db.table('character_protection_modifications').insert({
+      character_protection_id: characterProtection.id,
+      modification_id: modificationId,
+      created_at: now,
+      updated_at: now,
+    })
+
+    return response.redirect().back()
+  }
+
+  async removeProtectionModification({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, characterProtectionId, modificationId } = params
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Verify character protection belongs to character
+    const characterProtection = await db
+      .from('character_protections')
+      .where('id', characterProtectionId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterProtection) {
+      return response.notFound({ error: 'Proteção do personagem não encontrada' })
+    }
+
+    await db
+      .from('character_protection_modifications')
+      .where('character_protection_id', characterProtection.id)
+      .where('modification_id', modificationId)
+      .delete()
+
+    return response.redirect().back()
+  }
+
+  async addGeneralItemModification({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, characterGeneralItemId } = params
+    const { modificationId } = request.only(['modificationId'])
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Verify character general item belongs to character
+    const characterGeneralItem = await db
+      .from('character_general_items')
+      .where('id', characterGeneralItemId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterGeneralItem) {
+      return response.notFound({ error: 'Item do personagem não encontrado' })
+    }
+
+    // Check if modification already exists
+    const existing = await db
+      .from('character_general_item_modifications')
+      .where('character_general_item_id', characterGeneralItem.id)
+      .where('modification_id', modificationId)
+      .first()
+
+    if (existing) {
+      return response.badRequest({ error: 'Modificação já aplicada' })
+    }
+
+    const now = new Date().toISOString()
+    await db.table('character_general_item_modifications').insert({
+      character_general_item_id: characterGeneralItem.id,
+      modification_id: modificationId,
+      created_at: now,
+      updated_at: now,
+    })
+
+    return response.redirect().back()
+  }
+
+  async removeGeneralItemModification({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, characterGeneralItemId, modificationId } = params
+
+    const character = await Character.query()
+      .where('id', id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    // Verify character general item belongs to character
+    const characterGeneralItem = await db
+      .from('character_general_items')
+      .where('id', characterGeneralItemId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterGeneralItem) {
+      return response.notFound({ error: 'Item do personagem não encontrado' })
+    }
+
+    await db
+      .from('character_general_item_modifications')
+      .where('character_general_item_id', characterGeneralItem.id)
       .where('modification_id', modificationId)
       .delete()
 

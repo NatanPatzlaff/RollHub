@@ -3,6 +3,7 @@ import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 import Character from '#models/character'
 import Ritual from '#models/ritual'
+import CharacterClassAbility from '#models/character_class_ability'
 
 export default class CharacterRitual extends BaseModel {
   @column({ isPrimary: true })
@@ -13,6 +14,9 @@ export default class CharacterRitual extends BaseModel {
 
   @column()
   declare ritualId: number
+
+  @column()
+  declare characterClassAbilityId: number | null
 
   @column()
   declare dt: number
@@ -28,4 +32,7 @@ export default class CharacterRitual extends BaseModel {
 
   @belongsTo(() => Ritual)
   declare ritual: BelongsTo<typeof Ritual>
+
+  @belongsTo(() => CharacterClassAbility)
+  declare characterClassAbility: BelongsTo<typeof CharacterClassAbility>
 }
