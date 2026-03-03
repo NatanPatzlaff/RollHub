@@ -737,6 +737,11 @@ export default class CharactersController {
 
     // Store old classId to detect if class changed
     const oldClassId = character.classId
+    let wasMundano = false
+    if (oldClassId) {
+      const oldClass = await Class.find(oldClassId)
+      wasMundano = oldClass?.name === 'Mundano'
+    }
 
     // Update basic info
     if (name) character.name = name
@@ -813,6 +818,42 @@ export default class CharactersController {
         // Delete if it's not mandatory (chosen ability) or if it belongs to old class
         if (effects.mandatory !== true || charAbility.classAbility.classId === oldClassId) {
           await charAbility.delete()
+        }
+      }
+
+      // If transitioning OUT of Mundano, calculate fresh base stats and remove Empenho
+      if (wasMundano) {
+        // 1. Remove "Empenho" if it somehow persisted (mandatory abilities were deleted above, but let's be safe)
+        const empenhoAbility = await ClassAbility.query().where('name', 'Empenho').first()
+        if (empenhoAbility) {
+          await CharacterClassAbility.query()
+            .where('characterId', character.id)
+            .where('classAbilityId', empenhoAbility.id)
+            .delete()
+        }
+
+        // 2. Recalculate Max HP, PE and Sanity for Level 1 of the new class
+        const newClass = await Class.findOrFail(classId)
+        await character.load('attributes')
+        await character.load('stats')
+        const attrs = character.attributes
+
+        let newMaxHp = newClass.baseHp
+        if (newClass.hpAttribute === 'vigor' && attrs) newMaxHp += attrs.vigor
+
+        let newMaxPe = newClass.basePe
+        if (newClass.peAttribute === 'presence' && attrs) newMaxPe += attrs.presence
+
+        const newMaxSanity = newClass.baseSanity
+
+        if (character.stats) {
+          character.stats.maxHp = newMaxHp
+          character.stats.currentHp = newMaxHp
+          character.stats.maxPe = newMaxPe
+          character.stats.currentPe = newMaxPe
+          character.stats.maxSanity = newMaxSanity
+          character.stats.currentSanity = newMaxSanity
+          await character.stats.save()
         }
       }
     } // This closes the 'if (classId && classId !== oldClassId)' block.

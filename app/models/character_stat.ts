@@ -23,6 +23,9 @@ export default class CharacterStat extends BaseModel {
   declare currentSanity: number
 
   @column()
+  declare permanentSanityLoss: number
+
+  @column()
   declare maxPe: number
 
   @column()

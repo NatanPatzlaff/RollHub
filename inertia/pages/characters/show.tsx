@@ -722,6 +722,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }
 
   const submitEditCharacter = () => {
+    // PREVENT MUNDANO (0%) FROM RISING TO 5% WITHOUT CHOOSING A CLASS
+    const isMundano = character.class?.name === 'Mundano'
+    const newClassIsMundano = classes.find((c) => c.id === editClassId)?.name === 'Mundano'
+    
+    if (isMundano && editNex >= 5 && (newClassIsMundano || !editClassId)) {
+      // Force user to pick a class by moving them to step 2
+      setEditStep(2)
+      return
+    }
+
     setIsUpdating(true)
     router.put(
       `/characters/${character.id}`,
@@ -1398,11 +1408,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setDamageToSan('')
   }
 
-  // Calculate available points: 4 base + NEX bonus + 1 for each attribute at 0
+  const isMundano = character.nex === 0 || character.class?.name === 'Mundano'
+  const baseAttrPoints = isMundano ? 3 : 4
+  const maxAttrValue = isMundano ? 3 : 5
+
+  // Calculate available points: base + NEX bonus + 1 for each attribute at 0
   // All attributes start at 1 (base). Points spent = value above 1. Reducing to 0 gives +1 bonus.
   const { usedPoints, availablePoints } = useMemo(() => {
     const attrs = [strength, agility, intellect, vigor, presence]
-    const base = 4 + attributeBonusFromNex
+    const base = baseAttrPoints + (isMundano ? 0 : attributeBonusFromNex)
     const zeroBonus = attrs.filter((v) => v === 0).length
     const total = base + zeroBonus
     // Points used = sum of (value - 1) for each attribute, counting 0 as -1 (gives back a point)
@@ -3706,8 +3720,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 /* ── Modo Atributos (original) ── */
                 <>
                   <div className="text-xs text-zinc-500 mb-3 bg-zinc-950/50 p-2 rounded border border-zinc-800">
-                    <span className="text-zinc-400">4 pontos base</span>
-                    {attributeBonusFromNex > 0 && (
+                    <span className="text-zinc-400">{baseAttrPoints} pontos base</span>
+                    {!isMundano && attributeBonusFromNex > 0 && (
                       <span className="text-blue-400"> +{attributeBonusFromNex} (NEX)</span>
                     )}
                     {[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length > 0 && (
@@ -3757,9 +3771,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
                               {attr.val}
                             </span>
                             <button
-                              onClick={() => attr.set(Math.min(5, attr.val + 1))}
-                              disabled={availablePoints <= 0}
-                              className={`px-1.5 py-0.5 rounded-r transition-colors ${availablePoints <= 0 ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white hover:bg-zinc-800'}`}
+                              onClick={() => attr.set(Math.min(maxAttrValue, attr.val + 1))}
+                              disabled={availablePoints <= 0 || attr.val >= maxAttrValue}
+                              className={`px-1.5 py-0.5 rounded-r transition-colors ${availablePoints <= 0 || attr.val >= maxAttrValue ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white hover:bg-zinc-800'}`}
                             >
                               +
                             </button>
@@ -4304,10 +4318,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         {/* Grid of Origins */}
                         <motion.div
                           layout
-                          className={`grid grid-cols-4 gap-3 flex-1 pr-2 pb-20 content-start ${focusedOrigin ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
+                          className={`grid grid-cols-3 gap-4 flex-1 pr-2 pb-20 content-start ${focusedOrigin ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
                         >
                           {filteredOrigins.length === 0 ? (
-                            <div className="col-span-4 text-center py-8">
+                            <div className="col-span-3 text-center py-8">
                               <p className="text-gray-400">Nenhuma origem encontrada</p>
                             </div>
                           ) : (
@@ -4324,13 +4338,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                   key={origin.id}
                                   onClick={() => setFocusedOrigin(origin)}
                                   className={`
-                                                                    cursor-pointer rounded-xl overflow-hidden border bg-zinc-900 flex flex-col group transition-all
-                                                                    relative h-32 ${isSelected ? 'border-blue-500' : 'border-zinc-800 hover:border-blue-500'}
-                                                                `}
+                                    cursor-pointer rounded-xl overflow-hidden border bg-zinc-900 flex flex-col group transition-all
+                                    relative h-40 ${isSelected ? 'border-blue-500' : 'border-zinc-800 hover:border-blue-500'}
+                                  `}
                                 >
-                                  <motion.div className="bg-zinc-950 flex items-center justify-center p-2 transition-colors w-full h-20 group-hover:bg-zinc-900">
+                                  <motion.div className="bg-zinc-950 flex items-center justify-center p-3 transition-colors w-full flex-1 group-hover:bg-zinc-900">
                                     <Icon
-                                      size={32}
+                                      size={40}
                                       className={`transition-all duration-500 ${isSelected ? 'text-blue-500' : 'text-zinc-600 group-hover:text-blue-500'}`}
                                     />
                                   </motion.div>
@@ -4359,6 +4373,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             })
                           )}
                         </motion.div>
+
 
                         {/* Expanded Origin Card */}
                         <AnimatePresence>

@@ -51,6 +51,21 @@ export default class extends BaseSeeder {
         proficiencies: 'Armas simples e proteções leves',
         trainedSkillsRules: 'Um número de perícias igual a 7 + Intelecto',
       },
+      {
+        name: 'Mundano',
+        description:
+          'Uma pessoa comum sem treinamento da Ordem. Focado em histórias de suspense, terror e sobrevivência, onde a fragilidade humana é o centro da narrativa.',
+        baseHp: 8,
+        hpPerLevel: 0,
+        hpAttribute: 'vigor',
+        basePe: 1,
+        pePerLevel: 0,
+        peAttribute: 'presence',
+        baseSanity: 8,
+        sanityPerLevel: 0,
+        proficiencies: 'Armas simples',
+        trainedSkillsRules: '1 + Intelecto (além das perícias da Origem)',
+      },
     ])
 
     // 1.5 Class Progressions (Aumento de Atributo)
