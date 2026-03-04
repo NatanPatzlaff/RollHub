@@ -51,6 +51,10 @@ import {
   Sword,
 } from 'lucide-react'
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts'
+import TrailSelectModal from './components/TrailSelectModal'
+import BaseModal from './components/BaseModal'
+import SkillsCard from './components/SkillsCard'
+import CharacterTabsCard from './components/CharacterTabsCard'
 
 interface Origin {
   id: number
@@ -610,6 +614,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   // Check if adding a modification to a weapon would exceed the rank's category limits
   const canApplyModification = (weapon: any, modCategory: number): { allowed: boolean; reason?: string } => {
+    if (!weapon) return { allowed: false, reason: 'Nenhuma arma selecionada.' }
     const limits = RANK_LIMITS[rank] || {}
 
     // Calculate the final category of the weapon if we add this modification
@@ -725,7 +730,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     // PREVENT MUNDANO (0%) FROM RISING TO 5% WITHOUT CHOOSING A CLASS
     const isMundano = character.class?.name === 'Mundano'
     const newClassIsMundano = classes.find((c) => c.id === editClassId)?.name === 'Mundano'
-    
+
     if (isMundano && editNex >= 5 && (newClassIsMundano || !editClassId)) {
       // Force user to pick a class by moving them to step 2
       setEditStep(2)
@@ -844,6 +849,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
   // ─── Inicialização do dddice ─────────────────────────────────────────────
   const DDDICE_ROOM_SLUG = import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined
 
+  // Helper: aguarda o dddice ficar pronto (máx. 3s) — centralizado para não duplicar
+  const waitForDddice = useCallback(() =>
+    new Promise<void>((resolve) => {
+      if (dddiceRef.current) { resolve(); return }
+      const start = Date.now()
+      const check = () => {
+        if (dddiceRef.current || Date.now() - start > 3000) resolve()
+        else setTimeout(check, 50)
+      }
+      check()
+    })
+    , [])
+
   useEffect(() => {
     if (!isDiceTray || !DDDICE_API_KEY) return
     let mounted = true
@@ -859,8 +877,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
         const cam = (instance as any).camera
         if (cam?.position) {
           cam.position.z *= 0.2  // muito mais perto → dados ~5x maiores
+          console.log('[dddice] Câmera ajustada — dados ampliados')
+        } else {
+          console.warn('[dddice] Câmera não encontrada, posição não ajustada')
         }
-      } catch (_) { }
+      } catch (e) {
+        console.warn('[dddice] Erro ao ajustar câmera:', e)
+      }
       if (!mounted) return
       if (DDDICE_ROOM_SLUG) {
         try {
@@ -870,7 +893,22 @@ export default function CharacterShow(initialProps: CharacterProps) {
           console.warn('[dddice] Erro ao conectar à room:', e)
         }
       }
-      if (mounted) dddiceRef.current = instance
+      if (mounted) {
+        dddiceRef.current = instance
+        // Pré-carrega o tema para eliminar o delay na primeira rolagem
+        if (!diceThemeRef.current) {
+          try {
+            const res = await fetch('https://dddice.com/api/1.0/dice-box', {
+              headers: { Authorization: `Bearer ${DDDICE_API_KEY}` },
+            })
+            const data = await res.json()
+            diceThemeRef.current = data?.data?.[0]?.id
+            console.log('[dddice] Tema pré-carregado:', diceThemeRef.current)
+          } catch (_) {
+            console.warn('[dddice] Não foi possível pré-carregar o tema')
+          }
+        }
+      }
     }
 
     // Aguarda o canvas estar disponível no DOM
@@ -903,60 +941,38 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setIsRolling(true)
     setDiceResult(null)
 
-    // Rolagem local sempre (base de verdade)
+    // Rolagem local sempre (base de verdade) — resultado instantâneo
     const rolls = Array.from({ length: count }, () => Math.ceil(Math.random() * sides))
     const baseValue = mode === 'highest' ? Math.max(...rolls) : rolls.reduce((a, b) => a + b, 0)
     const total = baseValue + bonus
 
-    // Animação 3D se disponível
-    // Se a bandeja acabou de abrir, aguarda o dddice inicializar (até 3s)
-    if (!dddiceRef.current && DDDICE_API_KEY) {
-      await new Promise<void>((resolve) => {
-        const start = Date.now()
-        const check = () => {
-          if (dddiceRef.current || Date.now() - start > 3000) resolve()
-          else setTimeout(check, 50)
-        }
-        check()
-      })
-    }
-
-    if (dddiceRef.current && DDDICE_API_KEY) {
-      try {
-        const diceType = `d${sides}`
-        // Usa o tema cacheado (busca só na 1a rolagem para eliminar delay)
-        if (!diceThemeRef.current) {
-          try {
-            const res = await fetch('https://dddice.com/api/1.0/dice-box', {
-              headers: { Authorization: `Bearer ${DDDICE_API_KEY}` },
-            })
-            const data = await res.json()
-            diceThemeRef.current = data?.data?.[0]?.id
-          } catch (e) {
-            // silencia
-          }
-        }
-        const themeSlug = diceThemeRef.current
-        // Cada dado carrega seu valor pré-determinado para sincronizar com o resultado local
-        const diceArr = rolls.map((rollValue) =>
-          themeSlug
-            ? { type: diceType, theme: themeSlug, value: rollValue }
-            : { type: diceType, value: rollValue }
-        )
-        await (dddiceRef.current as any).roll(diceArr)
-        // Aguarda animação 3D terminar antes de mostrar o resultado
-        await new Promise((r) => setTimeout(r, 800))
-      } catch (e: any) {
-        console.warn('[dddice] Erro ao rolar:', e?.message || e)
-      }
-    }
-
+    // Exibe o resultado imediatamente — sem esperar a animação 3D
     const result = { label: diceLabel, total, rolls }
     setWeaponRollResult(null)
     setDiceResult(result)
     setDiceHistory((prev) => [{ label: diceLabel, total }, ...prev].slice(0, 8))
     setIsRolling(false)
-  }, [DDDICE_API_KEY])
+
+    // Animação 3D em paralelo (fire-and-forget): não bloqueia a UI
+    if (DDDICE_API_KEY) {
+      ; (async () => {
+        await waitForDddice()
+        if (!dddiceRef.current) return
+        try {
+          const diceType = `d${sides}`
+          const themeSlug = diceThemeRef.current
+          const diceArr = rolls.map((rollValue) =>
+            themeSlug
+              ? { type: diceType, theme: themeSlug, value: rollValue }
+              : { type: diceType, value: rollValue }
+          )
+          await (dddiceRef.current as any).roll(diceArr)
+        } catch (e: any) {
+          console.warn('[dddice] Erro ao rolar:', e?.message || e)
+        }
+      })()
+    }
+  }, [DDDICE_API_KEY, waitForDddice])
 
   // ─── Rolagem de Arma (Ataque + Dano simultâneos) ─────────────────────────
   const rollWeapon = useCallback(async (weapon: {
@@ -986,42 +1002,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     const damageRolls = Array.from({ length: dmgCount }, () => Math.ceil(Math.random() * dmgSides))
     const damageTotal = damageRolls.reduce((a, b) => a + b, 0)
 
-    // Animação 3D — aguarda se necessário
-    if (!dddiceRef.current && DDDICE_API_KEY) {
-      await new Promise<void>((resolve) => {
-        const start = Date.now()
-        const check = () => {
-          if (dddiceRef.current || Date.now() - start > 3000) resolve()
-          else setTimeout(check, 50)
-        }
-        check()
-      })
-    }
-
-    if (dddiceRef.current && DDDICE_API_KEY) {
-      try {
-        if (!diceThemeRef.current) {
-          try {
-            const res = await fetch('https://dddice.com/api/1.0/dice-box', {
-              headers: { Authorization: `Bearer ${DDDICE_API_KEY}` },
-            })
-            const data = await res.json()
-            diceThemeRef.current = data?.data?.[0]?.id
-          } catch (_) { }
-        }
-        const theme = diceThemeRef.current
-        // Todos os dados juntos numa única chamada
-        const allDice = [
-          ...attackRolls.map((v) => theme ? { type: 'd20', theme, value: v } : { type: 'd20', value: v }),
-          ...damageRolls.map((v) => theme ? { type: `d${dmgSides}`, theme, value: v } : { type: `d${dmgSides}`, value: v }),
-        ]
-        await (dddiceRef.current as any).roll(allDice)
-        await new Promise((r) => setTimeout(r, 800))
-      } catch (e: any) {
-        console.warn('[dddice] Erro ao rolar arma:', e?.message || e)
-      }
-    }
-
+    // Exibe o resultado imediatamente — sem esperar a animação 3D
     const attackLabel = `${skill} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
     const damageLabel = weapon.damage
     setWeaponRollResult({
@@ -1035,7 +1016,26 @@ export default function CharacterShow(initialProps: CharacterProps) {
       ...prev,
     ].slice(0, 8))
     setIsRolling(false)
-  }, [DDDICE_API_KEY, character.skills])
+
+    // Animação 3D em paralelo (fire-and-forget): não bloqueia a UI
+    if (DDDICE_API_KEY) {
+      ; (async () => {
+        await waitForDddice()
+        if (!dddiceRef.current) return
+        try {
+          const theme = diceThemeRef.current
+          // Todos os dados juntos numa única chamada
+          const allDice = [
+            ...attackRolls.map((v) => theme ? { type: 'd20', theme, value: v } : { type: 'd20', value: v }),
+            ...damageRolls.map((v) => theme ? { type: `d${dmgSides}`, theme, value: v } : { type: `d${dmgSides}`, value: v }),
+          ]
+          await (dddiceRef.current as any).roll(allDice)
+        } catch (e: any) {
+          console.warn('[dddice] Erro ao rolar arma:', e?.message || e)
+        }
+      })()
+    }
+  }, [DDDICE_API_KEY, character.skills, waitForDddice])
 
   const addItemToCharacter = (
 
@@ -2009,1658 +2009,92 @@ export default function CharacterShow(initialProps: CharacterProps) {
         {/* COLUNA ESQUERDA (Skills & Inventory) */}
         <div className="flex-1 min-w-0 flex flex-col gap-6">
           {/* SKILLS SECTION */}
-          <Card className="bg-zinc-900 border border-zinc-800 shadow-none">
-            <CardHeader className="flex flex-col items-start justify-between pb-2 border-b border-zinc-800/50 gap-2">
-              <div className="flex w-full items-center justify-between">
-                <div className="text-lg font-bold flex items-center gap-2 text-zinc-100">
-                  Perícias & Proficiências
-                </div>
-                <div className="flex gap-2">
-                  <Dropdown>
-                    <DropdownTrigger>
-                      <Button
-                        size="sm"
-                        variant="bordered"
-                        className="border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600"
-                      >
-                        <Filter size={14} className="mr-1" />
-                        {skillFilter === 'Todos' ? 'Filtrar' : skillFilter}
-                      </Button>
-                    </DropdownTrigger>
-                    <DropdownMenu
-                      aria-label="Filtrar Perícias"
-                      onAction={(key) => setSkillFilter(key as string)}
-                      className="bg-zinc-900 border border-zinc-800 text-zinc-300"
-                    >
-                      <DropdownItem key="Todos">Todos os Atributos</DropdownItem>
-                      <DropdownItem key="FOR">Força (FOR)</DropdownItem>
-                      <DropdownItem key="AGI">Agilidade (AGI)</DropdownItem>
-                      <DropdownItem key="INT">Intelecto (INT)</DropdownItem>
-                      <DropdownItem key="VIG">Vigor (VIG)</DropdownItem>
-                      <DropdownItem key="PRE">Presença (PRE)</DropdownItem>
-                    </DropdownMenu>
-                  </Dropdown>
-                  {isLearningSkills ? (
-                    <Button
-                      size="sm"
-                      color="success"
-                      className="font-bold text-white"
-                      isLoading={isSavingSkills}
-                      onPress={saveSkills}
-                    >
-                      <Save size={14} className="mr-1" />
-                      Salvar Perícias
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      color="primary"
-                      className="font-bold"
-                      onPress={() => setIsLearningSkills(true)}
-                    >
-                      <Plus size={14} className="mr-1" />
-                      Aprender Perícia
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {/* Calculate paid skills count for visibility check */}
-              {(() => {
-                const allPoolSkills = classSkillPools.flatMap((p) => p.skills)
-                const regularSkills = trainedSkills.filter(
-                  (skill) =>
-                    !originSkillsFromOrigin.includes(skill) &&
-                    !classMandatorySkills.includes(skill) &&
-                    !allPoolSkills.includes(skill)
-                )
-                const extraPoolSkills = classSkillPools.reduce((sum, pool) => {
-                  const count = trainedSkills.filter((s) => pool.skills.includes(s)).length
-                  return sum + Math.max(0, count - pool.required)
-                }, 0)
-                const paidCount = regularSkills.length + extraPoolSkills
-                const remainingSkills = Math.max(0, availableSkillsToChoose - paidCount)
-                const hasExtraInfo =
-                  originProvidedSkills > 0 ||
-                  classMandatorySkills.length > 0 ||
-                  classSkillPools.length > 0
+          <SkillsCard
+            trainedSkills={trainedSkills}
+            veteranSkills={veteranSkills}
+            skillFilter={skillFilter}
+            isLearningSkills={isLearningSkills}
+            isSavingSkills={isSavingSkills}
+            showSkillInfo={showSkillInfo}
+            availableSkillsToChoose={availableSkillsToChoose}
+            totalVeteranSkillsAllowed={totalVeteranSkillsAllowed}
+            originSkillsFromOrigin={originSkillsFromOrigin}
+            classMandatorySkills={classMandatorySkills}
+            classSkillPools={classSkillPools}
+            characterNex={character.nex}
+            attrMap={{ FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence }}
+            characterSkills={character.skills || []}
+            onFilterChange={setSkillFilter}
+            onToggleLearning={() => setIsLearningSkills(true)}
+            onSaveSkills={saveSkills}
+            onToggleSkill={toggleSkillTraining}
+            onSkillContextMenu={handleSkillContextMenu}
+            onRollSkill={(_skill, attrVal, trainingBonus, label) => {
+              setIsDiceTray(true)
+              rollDice(20, attrVal, label, 'highest', trainingBonus)
+            }}
+            onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
+          />
 
-                return (
-                  <div className="w-full h-[32px] relative">
-                    <div className="absolute inset-0">
-                      <div className="text-xs text-zinc-400 bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-md w-full flex items-center justify-between h-full">
-                        <span>
-                          Você pode escolher{' '}
-                          <strong className="text-blue-400">{remainingSkills}</strong>{' '}
-                          {remainingSkills === 1 ? 'perícia' : 'perícias'} livremente
-                          {showSkillInfo && (
-                            <>
-                              {originProvidedSkills > 0 && (
-                                <span className="text-zinc-500">
-                                  {' '}
-                                  + {originProvidedSkills} da origem
-                                </span>
-                              )}
-                              {classMandatorySkills.length > 0 && (
-                                <span className="text-amber-400">
-                                  {' '}
-                                  + {classMandatorySkills.join(', ')} (classe)
-                                </span>
-                              )}
-                              {classSkillPools.length > 0 && (
-                                <span className="text-cyan-400">
-                                  , escolha entre{' '}
-                                  {classSkillPools
-                                    .map((p) => p.skills.join(' ou '))
-                                    .join(' e escolha entre ')}
-                                </span>
-                              )}
-                            </>
-                          )}
-                          .
-                          {character.nex >= 35 && (
-                            <span className="ml-4 border-l border-blue-500/30 pl-4">
-                              E{' '}
-                              <strong className="text-purple-400">
-                                {totalVeteranSkillsAllowed - veteranSkills.length}
-                              </strong>{' '}
-                              para Veterano (+10).
-                            </span>
-                          )}
-                        </span>
-                        {hasExtraInfo && (
-                          <span
-                            className="text-zinc-500 hover:text-zinc-300 cursor-pointer hidden md:inline transition-colors"
-                            onClick={() => setShowSkillInfo(!showSkillInfo)}
-                          >
-                            {showSkillInfo ? 'Ocultar detalhes' : 'Ver detalhes'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })()}
-            </CardHeader>
-            <CardBody className="p-4">
-              <div className="grid grid-cols-7 gap-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                {allSkills
-                  .filter((skill) => skillFilter === 'Todos' || skill.attr === skillFilter)
-                  .map((skill, index) => {
-                    const isTrained = trainedSkills.includes(skill.name)
-                    const isVeteran = veteranSkills.includes(skill.name)
-                    const isFromOrigin = originSkillsFromOrigin.includes(skill.name)
-                    const isClassMandatory = classMandatorySkills.includes(skill.name)
-                    const isLocked = isFromOrigin || isClassMandatory
-                    const skillPool = classSkillPools.find((pool) =>
-                      pool.skills.includes(skill.name)
-                    )
-                    const isClassPool = !!skillPool
 
-                    // Check if this pool already has the required choice made
-                    let isPoolComplete = false
-                    let isPoolExtra = false
-                    if (skillPool) {
-                      const poolSkillsChosen = trainedSkills.filter((s) =>
-                        skillPool.skills.includes(s)
-                      )
-                      isPoolComplete = poolSkillsChosen.length >= skillPool.required
-                      if (isTrained) {
-                        const thisSkillIndex = poolSkillsChosen.indexOf(skill.name)
-                        // Skills beyond the required count are "extras"
-                        isPoolExtra = thisSkillIndex >= skillPool.required
-                      }
-                    }
-
-                    // Only show cyan highlight if pool is not complete yet
-                    const showPoolHighlight = isClassPool && !isPoolComplete
-
-                    return (
-                      <Button
-                        key={index}
-                        variant={isTrained ? 'flat' : 'flat'}
-                        color={isVeteran ? 'secondary' : isTrained ? 'primary' : 'default'}
-                        onPress={() => {
-                          if (isLearningSkills && !isLocked) {
-                            toggleSkillTraining(skill.name)
-                          } else if (!isLearningSkills) {
-                            // Rolar a perícia (treinada ou não)
-                            const attrMap: Record<string, number> = {
-                              FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence
-                            }
-                            const attrVal = Math.max(1, attrMap[skill.attr] ?? 1)
-                            const degree = character.skills?.find((cs: any) => cs.skill?.name === skill.name)?.trainingDegree ?? 0
-                            const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
-                            const label = `${skill.name} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
-                            setIsDiceTray(true)
-                            rollDice(20, attrVal, label, 'highest', trainingBonus)
-                          }
-                        }}
-                        onContextMenu={(e) => handleSkillContextMenu(skill.name, e)}
-                        className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all relative group ${isLearningSkills && !isLocked
-                          ? 'cursor-pointer hover:scale-105'
-                          : isLocked && isTrained
-                            ? 'cursor-not-allowed opacity-75'
-                            : !isLearningSkills
-                              ? 'cursor-pointer'
-                              : ''
-                          } ${!isTrained
-                            ? showPoolHighlight
-                              ? 'bg-cyan-900/30 border border-cyan-700/50 text-cyan-400 hover:text-white hover:bg-cyan-900/50 hover:border-cyan-600'
-                              : 'bg-zinc-800/50 border border-zinc-700/50 text-zinc-400 hover:text-white hover:bg-zinc-800 hover:border-zinc-600'
-                            : isVeteran
-                              ? 'border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)] bg-purple-500/20 text-purple-100'
-                              : isClassMandatory
-                                ? 'border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)] bg-amber-500/10'
-                                : isClassPool && !isPoolExtra
-                                  ? 'border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)] bg-cyan-500/10'
-                                  : 'border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]'
-                          }`}
-                        title={
-                          isFromOrigin && isTrained
-                            ? 'Perícia fornecida pela origem (não pode remover)'
-                            : isClassMandatory && isTrained
-                              ? 'Perícia obrigatória da classe (não pode remover)'
-                              : showPoolHighlight
-                                ? `Escolha obrigatória: ${skillPool?.name} (grátis)`
-                                : isClassPool && isPoolExtra
-                                  ? 'Escolha extra (custa 1 ponto)'
-                                  : isTrained && !isLearningSkills
-                                    ? `Rolar ${skill.name}`
-                                    : ''
-                        }
-                      >
-                        {/* Ícone de dado aparece ao hover nas treinadas */}
-                        {isTrained && !isLearningSkills && (
-                          <Dices
-                            size={14}
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-70 transition-opacity text-amber-400"
-                          />
-                        )}
-                        <span className="text-xs font-bold truncate w-full text-center">
-                          {skill.name}
-                        </span>
-                        <div className="flex items-center gap-1 text-[10px]">
-                          <span className="opacity-70">{skill.attr}</span>
-                          {isVeteran ? (
-                            <span className="font-bold text-purple-400">+10</span>
-                          ) : isTrained ? (
-                            <span className="font-bold text-blue-400">+5</span>
-                          ) : null}
-                        </div>
-                      </Button>
-                    )
-                  })}
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* INVENTORY SECTION */}
-          <Card className="bg-zinc-900 border border-zinc-800 shadow-none flex-1 flex flex-col">
-            <Tabs
-              aria-label="Inventário"
-              variant="underlined"
-              classNames={{
-                base: 'w-full',
-                tabList:
-                  'gap-6 w-full relative rounded-none p-0 px-6 border-b border-zinc-800 custom-scrollbar',
-                cursor: 'w-full bg-orange-500',
-                tab: 'max-w-fit px-0 h-14',
-                tabContent: 'group-data-[selected=true]:text-orange-500 text-zinc-400 font-bold',
-                panel: 'p-0',
-              }}
-            >
-              <Tab
-                key="inventory"
-                title={
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                    <span>Inventário</span>
-                  </div>
-                }
-              >
-                <div className="p-5">
-                  {/* Inventory Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 bg-orange-500/20 rounded text-orange-500">
-                        <div className="w-4 h-4 border-2 border-orange-500 rounded-sm"></div>
-                      </div>
-                      <h3 className="text-lg font-bold text-zinc-100">Inventário</h3>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                      onPress={onAddItemModalOpen}
-                    >
-                      <Plus size={14} className="mr-2" /> Adicionar Item
-                    </Button>
-                  </div>
-
-                  {/* Weight Bar + Rank Selection */}
-                  <div className="flex flex-col gap-4 mb-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-zinc-500">⚖️</span>
-                        <span
-                          className={`text-xs ${inventoryCapacity.isOverloaded ? 'font-bold text-amber-500' : 'text-zinc-400'}`}
-                        >
-                          {inventoryCapacity.used} / {inventoryCapacity.limit} Espaços
-                        </span>
-                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-800">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${inventoryCapacity.used > inventoryCapacity.maxCapacity
-                              ? 'bg-red-500'
-                              : inventoryCapacity.isOverloaded
-                                ? 'bg-amber-500'
-                                : 'bg-emerald-500'
-                              }`}
-                            style={{
-                              width: `${Math.min((inventoryCapacity.used / inventoryCapacity.limit) * 100, 100)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase font-bold text-zinc-500">
-                          Patente:
-                        </span>
-                        <Dropdown>
-                          <DropdownTrigger>
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              className="bg-zinc-800 text-orange-400 font-bold border border-zinc-700 h-7 px-2"
-                              isLoading={isUpdatingRank}
-                            >
-                              {rank} <ChevronDown size={14} className="ml-1" />
-                            </Button>
-                          </DropdownTrigger>
-                          <DropdownMenu
-                            aria-label="Selecionar Patente"
-                            onAction={(key) => setRank(key as string)}
-                            selectedKeys={[rank]}
-                            selectionMode="single"
-                            className="bg-zinc-900 border border-zinc-800"
-                          >
-                            {RANK_OPTIONS.map((opt) => (
-                              <DropdownItem
-                                key={opt}
-                                className={rank === opt ? 'text-white font-bold bg-zinc-800' : 'text-white'}
-                              >
-                                {opt}
-                              </DropdownItem>
-                            ))}
-                          </DropdownMenu>
-                        </Dropdown>
-                      </div>
-                    </div>
-
-                    {/* Category Limits Display */}
-                    <div className="flex items-center flex-wrap gap-2">
-                      {[1, 2, 3, 4].map((cat) => {
-                        const used = categoryConsumption[cat] || 0
-                        const limit = RANK_LIMITS[rank]?.[cat] ?? 0
-                        const isFull = used >= limit && limit > 0
-                        const isEmpty = limit === 0
-
-                        return (
-                          <Chip
-                            key={cat}
-                            size="sm"
-                            variant="dot"
-                            color={isEmpty ? 'default' : isFull ? 'danger' : 'primary'}
-                            className={`bg-zinc-800/50 border-zinc-700 ${isEmpty ? 'opacity-40' : ''}`}
-                            classNames={{
-                              content: 'font-bold text-[10px]',
-                            }}
-                          >
-                            CAT {categoryLabels[cat]}: {used}/{limit}
-                          </Chip>
-                        )
-                      })}
-                    </div>
-
-                    {inventoryCapacity.isOverloaded && (
-                      <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-500 border border-amber-500/20">
-                        <span className="animate-pulse font-bold">⚠️ SOBRECARGA:</span>
-                        <span>–5 em Defesa e Testes (Deslocamento Reduzido)</span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <select className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-300">
-                          <option>Todos os Tipos</option>
-                          <option>Arma</option>
-                          <option>Armadura</option>
-                          <option>Consumível</option>
-                          <option>Diversos</option>
-                        </select>
-                        <button className="flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:text-white">
-                          ↑ Nome
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 overflow-y-auto custom-scrollbar">
-                    {inventory.map((item) => {
-                      const isExpanded = expandedItemId === item.uniqueId
-                      const getIconForItem = () => {
-                        if (item.type === 'Arma') {
-                          return <Sword size={18} />
-                        }
-                        if (item.type === 'Armadura') {
-                          return <Shield size={18} />
-                        }
-                        if (item.type === 'Consumível') {
-                          return <Zap size={18} />
-                        }
-                        return <Activity size={18} />
-                      }
-                      const getIconColors = () => {
-                        if (item.type === 'Arma') {
-                          return 'bg-orange-500/10 border-orange-500/20 text-orange-400'
-                        }
-                        if (item.type === 'Armadura') {
-                          return 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                        }
-                        if (item.type === 'Consumível') {
-                          return 'bg-purple-500/10 border-purple-500/20 text-purple-400'
-                        }
-                        return 'bg-orange-500/10 border-orange-500/20 text-orange-400'
-                      }
-                      const categoryLabels: Record<number, string> = {
-                        0: '0',
-                        1: 'I',
-                        2: 'II',
-                        3: 'III',
-                        4: 'IV',
-                      }
-                      return (
-                        <div
-                          key={item.uniqueId}
-                          className="rounded-lg border border-zinc-800 bg-zinc-950/50 hover:bg-zinc-950 transition-all overflow-hidden"
-                        >
-                          <div
-                            onClick={() => setExpandedItemId(isExpanded ? null : item.uniqueId)}
-                            className="flex items-center justify-between p-3 cursor-pointer"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`p-2.5 rounded-lg border ${getIconColors()}`}>
-                                {getIconForItem()}
-                              </div>
-                              <div>
-                                <div className="font-semibold text-zinc-200 text-sm">
-                                  {item.name}
-                                </div>
-                                <div className="text-[11px] text-zinc-500">{item.desc}</div>
-                                {item.type === 'Arma' && item.calculatedCategory && item.calculatedCategory > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-300 font-bold uppercase tracking-tight">
-                                      CAT {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory}
-                                    </div>
-                                    {item.modifications?.map((mod: any) => {
-                                      const isCurse = mod.type === 'Maldição'
-                                      const elementColor =
-                                        mod.element === 'Sangue' ? 'text-red-400' :
-                                          mod.element === 'Morte' ? 'text-zinc-400' :
-                                            mod.element === 'Energia' ? 'text-purple-400' :
-                                              mod.element === 'Conhecimento' ? 'text-amber-400' :
-                                                'text-red-400'
-
-                                      const elementBg =
-                                        mod.element === 'Sangue' ? 'bg-red-500/10 border-red-500/20' :
-                                          mod.element === 'Morte' ? 'bg-zinc-500/10 border-zinc-500/20' :
-                                            mod.element === 'Energia' ? 'bg-purple-500/10 border-purple-500/20' :
-                                              mod.element === 'Conhecimento' ? 'bg-amber-500/10 border-amber-500/20' :
-                                                'bg-red-500/10 border-red-500/20'
-
-                                      return (
-                                        <div
-                                          key={mod.id}
-                                          className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-tight ${isCurse ? `${elementBg} ${elementColor}` : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                                            }`}
-                                        >
-                                          {mod.name}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-zinc-500">x{item.qty}</span>
-                              <span className="px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800 text-zinc-400 text-xs">
-                                {item.type === 'Equipamento' ? 'Equip' : item.type}
-                              </span>
-
-                              <div className="flex items-center gap-1 border-l border-zinc-800 pl-3 ml-1">
-                                {item.type === 'Arma' && (
-                                  <Button
-                                    isIconOnly
-                                    size="sm"
-                                    variant="light"
-                                    className="text-zinc-500 hover:text-blue-400 h-8 w-8"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setModifyingWeapon(item)
-                                      onModifyWeaponModalOpen()
-                                    }}
-                                  >
-                                    <Edit3 size={16} />
-                                  </Button>
-                                )}
-
-                                <Button
-                                  isIconOnly
-                                  size="sm"
-                                  variant="light"
-                                  className="text-zinc-500 hover:text-red-400 h-8 w-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    removeItem(item.id)
-                                  }}
-                                >
-                                  <Trash2 size={16} />
-                                </Button>
-                                <ChevronDown
-                                  size={16}
-                                  className={`text-zinc-600 ml-1 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          {isExpanded && item.type === 'Arma' && (
-                            <div className="px-3 pb-3 pt-0 border-t border-zinc-800/50 mt-1">
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
-                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                    Dano
-                                  </p>
-                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {item.damage ?? '—'}
-                                    {item.damageType ? (
-                                      <span className="text-xs font-normal text-orange-200/90">
-                                        {' '}
-                                        ({item.damageType})
-                                      </span>
-                                    ) : null}
-                                  </p>
-                                </div>
-                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
-                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                    Categoria
-                                  </p>
-                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {(item.calculatedCategory != null && item.calculatedCategory > 0)
-                                      ? (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory)
-                                      : '0'}
-                                  </p>
-                                </div>
-                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
-                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                    Alcance
-                                  </p>
-                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {item.range ?? '—'}
-                                  </p>
-                                </div>
-                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
-                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                    Margem de Crítico
-                                  </p>
-                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {item.critical ?? '—'}
-                                  </p>
-                                </div>
-                                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2">
-                                  <p className="text-[9px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                    Multiplicador
-                                  </p>
-                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {item.criticalMultiplier ?? '—'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </Tab>
-              <Tab
-                key="rituals"
-                title={
-                  <div className="flex items-center space-x-2">
-                    <span>🔥 Rituais</span>
-                  </div>
-                }
-              >
-                <div className="p-6">
-                  {/* Rituals Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 bg-red-500/20 rounded text-red-500">
-                        <div className="w-4 h-4 border-2 border-red-500 rounded-sm"></div>
-                      </div>
-                      <h3 className="text-lg font-bold text-zinc-100">Rituais</h3>
-                    </div>
-                    {isOcultista && (
-                      <Button
-                        size="sm"
-                        className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                        onPress={() => setIsRitualSelectOpen(true)}
-                      >
-                        <Plus size={14} className="mr-2" /> Aprender Ritual
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Rituals List */}
-                  <div className="space-y-4 overflow-y-auto custom-scrollbar">
-                    {character.rituals && character.rituals.length > 0 ? (
-                      character.rituals.map((charRitual: any) => {
-                        const ritual = charRitual.ritual
-                        if (!ritual) return null
-
-                        const elementColor = (({
-                          CONHECIMENTO: 'text-amber-400',
-                          ENERGIA: 'text-purple-400',
-                          MORTE: 'text-zinc-400',
-                          SANGUE: 'text-red-400',
-                          MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
-                        } as Record<string, string>)[(ritual.element || '').toUpperCase()]) || 'text-zinc-400'
-
-                        return (
-                          <Card
-                            key={charRitual.id}
-                            className="bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 transition-all"
-                          >
-                            <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
-                                    <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
-                                      {ritual.circle}º Círculo
-                                    </Chip>
-                                  </div>
-                                  <p className={`text-xs font-bold uppercase ${elementColor} mt-1`}>
-                                    {ritual.element}
-                                  </p>
-                                </div>
-                                <Button
-                                  isIconOnly
-                                  size="sm"
-                                  variant="light"
-                                  color="danger"
-                                  className="opacity-50 hover:opacity-100"
-                                  onPress={() => removeRitual(ritual.id)}
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                              </div>
-
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-zinc-500 uppercase font-bold bg-zinc-900/50 p-2 rounded">
-                                <div>
-                                  <span className="text-zinc-600 block">Execução</span> {ritual.execution}
-                                </div>
-                                <div>
-                                  <span className="text-zinc-600 block">Alcance</span> {ritual.range}
-                                </div>
-                                <div>
-                                  <span className="text-zinc-600 block">Duração</span> {ritual.duration}
-                                </div>
-                                {ritual.resistance && (
-                                  <div>
-                                    <span className="text-zinc-600 block">Resistência</span> {ritual.resistance}
-                                  </div>
-                                )}
-                              </div>
-
-                              {ritual.description && (
-                                <p className="text-sm text-zinc-300 italic leading-relaxed">
-                                  {ritual.description}
-                                </p>
-                              )}
-
-                              {(ritual.discente || ritual.verdadeiro) && (
-                                <div className="space-y-2 mt-2 pt-2 border-t border-zinc-800/50 text-xs text-zinc-400">
-                                  {ritual.discente && (
-                                    <div>
-                                      <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
-                                      {ritual.discente}
-                                    </div>
-                                  )}
-                                  {ritual.verdadeiro && (
-                                    <div>
-                                      <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
-                                      {ritual.verdadeiro}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </CardBody>
-                          </Card>
-                        )
-                      })
-                    ) : (
-                      <div className="text-zinc-500 text-center italic py-12 bg-zinc-950/20 rounded-xl border border-dashed border-zinc-800">
-                        Nenhum ritual aprendido. Use o botão acima para adicionar.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Tab>
-              <Tab
-                key="combat"
-                title={
-                  <div className="flex items-center space-x-2">
-                    <span>⚔️ Combate</span>
-                  </div>
-                }
-              >
-                <div className="p-6">
-                  {/* Combat Header */}
-                  <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 bg-red-600/20 rounded text-red-500">
-                        <div className="w-4 h-4 border-2 border-red-600 rounded-sm"></div>
-                      </div>
-                      <h3 className="text-lg font-bold text-zinc-100">Combate</h3>
-                    </div>
-                    {/* DT Badges */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/10 border border-red-500/20">
-                        <span className="text-[10px] uppercase tracking-wider text-red-400/70 font-bold whitespace-nowrap">DT Explosivo</span>
-                        <span className="text-sm font-black text-red-300">
-                          {10 + Math.floor(character.nex / 5) + agility}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20">
-                        <span className="text-[10px] uppercase tracking-wider text-violet-400/70 font-bold whitespace-nowrap">DT Ritual</span>
-                        <span className="text-sm font-black text-violet-300">
-                          {10 + Math.floor(character.nex / 5) + presence}
-                        </span>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                    >
-                      <Plus size={14} className="mr-2" /> Adicionar Atalho
-                    </Button>
-                  </div>
-
-                  {/* Combat List */}
-                  <div className="space-y-6 overflow-y-auto custom-scrollbar">
-                    {/* ARMAS */}
-                    {inventoryWeapons.length > 0 && (
-                      <div>
-                        <h4 className="font-bold text-orange-400 text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
-                          <Sword size={14} /> Armas
-                        </h4>
-                        <div className="space-y-2">
-                          {inventoryWeapons.map((w: any) => {
-                            const isMelee = w.range === 'Corpo a corpo'
-                            const skillName = isMelee ? 'Luta' : 'Pontaria'
-                            return (
-                              <div
-                                key={w.id}
-                                className="flex items-center justify-between px-4 py-3 rounded-lg bg-zinc-950/60 border border-zinc-800 hover:border-orange-500/30 transition-all"
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-semibold text-zinc-200 text-sm truncate">{w.name}</div>
-                                  <div className="text-[11px] text-zinc-500 mt-0.5">
-                                    <span className="text-orange-400/80 font-bold">{w.damage}</span>
-                                    <span className="mx-1.5 text-zinc-700">·</span>
-                                    <span>{skillName}</span>
-                                    {!isMelee && w.range && <span className="ml-1 text-zinc-600">({w.range})</span>}
-                                  </div>
-                                </div>
-                                <Button
-                                  isIconOnly
-                                  size="sm"
-                                  className="ml-3 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 shrink-0"
-                                  title={`Rolar ${w.name}`}
-                                  onClick={() => {
-                                    setIsDiceTray(true)
-                                    rollWeapon({ name: w.name, range: w.range || 'Corpo a corpo', damage: w.damage || '1d6' }, strength, agility)
-                                  }}
-                                >
-                                  <Dices size={15} />
-                                </Button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* HABILIDADES DE COMBATE DA CLASSE */}
-                    {character.classAbilities && character.classAbilities.length > 0 ? (
-                      <div>
-                        <h4 className="font-bold text-red-400 text-sm uppercase tracking-wider mb-3">
-                          Habilidades de Combate
-                        </h4>
-                        <div className="space-y-2">
-                          {character.classAbilities.map((ability, idx) => (
-                            <div key={idx}>
-                              {/* Perito: Show configured skills for rolling */}
-                              {ability.classAbility?.name === 'Perito' &&
-                                ability.config?.selectedSkills ? (
-                                <div className="space-y-3">
-                                  {ability.config.selectedSkills.map((skillName: string) => {
-                                    const currentPe = peritoPeSpending[skillName] || 2
-                                    const diceBonus =
-                                      currentPe === 2
-                                        ? '1d6'
-                                        : currentPe === 3
-                                          ? '1d8'
-                                          : currentPe === 4
-                                            ? '1d10'
-                                            : '1d12'
-
-                                    return (
-                                      <div
-                                        key={skillName}
-                                        className="p-4 bg-zinc-950/50 rounded-lg border border-red-500/30 space-y-3"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                              <h5 className="font-semibold text-red-300">
-                                                {ability.classAbility?.name} - {skillName}
-                                              </h5>
-                                              <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded">
-                                                {currentPe} PE = +{diceBonus}
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <Button
-                                            isIconOnly
-                                            size="sm"
-                                            className="ml-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40"
-                                          >
-                                            <Dices size={14} />
-                                          </Button>
-                                        </div>
-
-                                        {/* PE Cost Slider - Only show if NEX > 5 and max PE > 2 */}
-                                        {character.nex > 5 && maxPeritoPe > 2 && (
-                                          <div className="space-y-2">
-                                            <div className="flex items-center justify-between text-xs">
-                                              <span className="text-zinc-400">Gastar PE:</span>
-                                              <span className="text-red-400 font-bold">
-                                                {currentPe} PE
-                                              </span>
-                                            </div>
-                                            <input
-                                              type="range"
-                                              min={2}
-                                              max={maxPeritoPe}
-                                              step={1}
-                                              value={currentPe}
-                                              onChange={(e) => {
-                                                setPeritoPeSpending({
-                                                  ...peritoPeSpending,
-                                                  [skillName]: parseInt(e.target.value),
-                                                })
-                                              }}
-                                              className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-red-500"
-                                            />
-                                            <div className="flex justify-between text-xs text-zinc-500 px-1">
-                                              <span>2</span>
-                                              <span>{maxPeritoPe}</span>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              ) : null}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-zinc-500 text-center italic py-8">
-                        Nenhuma habilidade de combate disponível.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Tab>
-              <Tab
-                key="skills"
-                title={
-                  <div className="flex items-center space-x-2">
-                    <span>⚡ Habilidades</span>
-                  </div>
-                }
-              >
-                <div className="p-6">
-                  {/* Skills Header */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 bg-amber-500/20 rounded text-amber-500">
-                        <div className="w-4 h-4 border-2 border-amber-500 rounded-sm"></div>
-                      </div>
-                      <h3 className="text-lg font-bold text-zinc-100">Habilidades</h3>
-                      <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 rounded text-amber-300 text-xs font-bold">
-                        {chosenClassAbilities}/{maxClassAbilities}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {character.trailId && futureTrailAbilities.length > 0 && (
-                        <Dropdown isOpen={isTrailPowersOpen} onOpenChange={onTrailPowersOpenChange}>
-                          <DropdownTrigger>
-                            <Button
-                              size="sm"
-                              className="bg-purple-800 hover:bg-purple-700 text-white border border-purple-700"
-                            >
-                              <Sparkles size={14} className="mr-2" /> Poderes de Trilha
-                            </Button>
-                          </DropdownTrigger>
-                          <DropdownMenu
-                            aria-label="Trail powers"
-                            className="max-h-96 overflow-y-auto"
-                            classNames={{
-                              base: 'bg-zinc-900 border border-zinc-800',
-                              list: 'bg-zinc-900',
-                            }}
-                          >
-                            {futureTrailAbilities.map((prog) => (
-                              <DropdownItem
-                                key={prog.id}
-                                textValue={prog.title}
-                                className="px-3 py-2 data-[hover=true]:bg-zinc-800"
-                              >
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2">
-                                    <h5 className="font-semibold text-purple-300">{prog.title}</h5>
-                                    <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
-                                      NEX {prog.nex}%
-                                    </span>
-                                  </div>
-                                  {prog.description && (
-                                    <p className="text-zinc-400 text-xs leading-relaxed">
-                                      {prog.description}
-                                    </p>
-                                  )}
-                                </div>
-                              </DropdownItem>
-                            ))}
-                          </DropdownMenu>
-                        </Dropdown>
-                      )}
-
-                      {/* Trail selection button for characters with no trail and eligible class trails */}
-                      {hasNoTrail && classTrails.length > 0 && (
-                        <Button
-                          size="sm"
-                          className="bg-purple-700 hover:bg-purple-800 text-white border border-purple-700"
-                          onPress={onTrailModalOpen}
-                        >
-                          <Sparkles size={14} className="mr-2" /> Escolher Trilha
-                        </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        className="bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700"
-                        onPress={onAbilitySelectOpen}
-                        isDisabled={!canChooseMore || availableAbilities.length === 0}
-                      >
-                        <Plus size={14} className="mr-2" /> Adicionar Habilidade
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Skills List */}
-                  <div className="space-y-6 overflow-y-auto custom-scrollbar">
-                    {/* HABILIDADES OBRIGATÓRIAS DA CLASSE */}
-                    {(() => {
-                      const mandatoryAbilities =
-                        character.classAbilities?.filter((ability) => {
-                          const effects =
-                            typeof ability.classAbility?.effects === 'string'
-                              ? JSON.parse(ability.classAbility?.effects || '{}')
-                              : ability.classAbility?.effects || {}
-                          return effects.mandatory === true
-                        }) || []
-
-                      return mandatoryAbilities.length > 0 ? (
-                        <div>
-                          <button
-                            onClick={() => toggleSection('classAbilities')}
-                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                          >
-                            <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                            <h4 className="font-bold text-amber-400 text-sm uppercase tracking-wider flex-1 text-left">
-                              Obrigatórias da Classe
-                            </h4>
-                            <motion.div
-                              animate={{ rotate: expandedSections.classAbilities ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <ChevronDown size={16} className="text-amber-400" />
-                            </motion.div>
-                          </button>
-                          <AnimatePresence>
-                            {expandedSections.classAbilities && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="space-y-2"
-                              >
-                                {mandatoryAbilities.map((ability, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-amber-500/30 hover:border-amber-500/50 transition-all"
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <h5 className="font-semibold text-amber-300">
-                                            {ability.classAbility?.name}
-                                          </h5>
-                                          {ability.classAbility?.name === 'Perito' &&
-                                            ability.config?.selectedSkills && (
-                                              <span className="px-2 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded text-emerald-300 text-xs font-bold">
-                                                ✓ Configurada
-                                              </span>
-                                            )}
-                                        </div>
-                                        <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                          {ability.classAbility?.description}
-                                        </p>
-                                        {ability.classAbility?.name === 'Perito' &&
-                                          ability.config?.selectedSkills && (
-                                            <p className="text-zinc-500 text-xs mt-2">
-                                              <span className="text-amber-400">Perícias:</span>{' '}
-                                              {ability.config.selectedSkills.join(', ')}
-                                            </p>
-                                          )}
-                                      </div>
-                                      {ability.classAbility?.name === 'Perito' && (
-                                        <Button
-                                          isIconOnly
-                                          size="sm"
-                                          className="ml-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40"
-                                          onPress={() => openAbilityConfig(ability)}
-                                        >
-                                          <Edit3 size={14} />
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      ) : null
-                    })()}
-
-                    {/* HABILIDADES ESCOLHIDAS */}
-                    {(() => {
-                      const chosenAbilities =
-                        character.classAbilities?.filter((ability) => {
-                          const effects =
-                            typeof ability.classAbility?.effects === 'string'
-                              ? JSON.parse(ability.classAbility?.effects || '{}')
-                              : ability.classAbility?.effects || {}
-                          return effects.mandatory !== true
-                        }) || []
-
-                      return (
-                        <div>
-                          <button
-                            onClick={() => toggleSection('chosenAbilities')}
-                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                          >
-                            <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                            <h4 className="font-bold text-blue-400 text-sm uppercase tracking-wider flex-1 text-left">
-                              Habilidades Escolhidas
-                            </h4>
-                            <motion.div
-                              animate={{ rotate: expandedSections.chosenAbilities ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <ChevronDown size={16} className="text-blue-400" />
-                            </motion.div>
-                          </button>
-                          <AnimatePresence>
-                            {expandedSections.chosenAbilities && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="space-y-2"
-                              >
-                                {chosenAbilities.length > 0 ? (
-                                  chosenAbilities.map((ability, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-blue-500/30 hover:border-blue-500/50 transition-all"
-                                    >
-                                      <div className="flex items-start justify-between">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <h5 className="font-semibold text-blue-300">
-                                              {ability.classAbility?.name}
-                                            </h5>
-                                            {ability.classAbility?.effects?.nex && (
-                                              <span className="px-1.5 py-0.5 bg-blue-500/20 border border-blue-500/40 rounded text-blue-300 text-xs font-bold">
-                                                NEX {ability.classAbility.effects.nex}
-                                              </span>
-                                            )}
-                                          </div>
-                                          <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                            {ability.classAbility?.description}
-                                          </p>
-
-                                          {/* ── Badge mecânica: Perito ── */}
-                                          {ability.classAbility?.name === 'Perito' && peritoSkills.length > 0 && (
-                                            <div className="mt-2 p-2 rounded bg-amber-500/5 border border-amber-500/20 flex flex-wrap items-center gap-2">
-                                              <span className="text-[9px] font-black uppercase text-amber-400/60 tracking-wider">Ao usar:</span>
-                                              <span className="text-[11px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5">
-                                                +{peritoBonus.dice} por {peritoBonus.cost} PE
-                                              </span>
-                                              <span className="text-[9px] text-zinc-500">nas perícias:</span>
-                                              {peritoSkills.map((s, i) => (
-                                                <span key={i} className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">
-                                                  {s}
-                                                </span>
-                                              ))}
-                                            </div>
-                                          )}
-
-                                          {/* ── Badge mecânica: Eclético ── */}
-                                          {ability.classAbility?.name === 'Eclético' && (
-                                            <div className="mt-2 p-2 rounded bg-blue-500/5 border border-blue-500/20 flex flex-wrap items-center gap-2">
-                                              <span className="text-[9px] font-black uppercase text-blue-400/60 tracking-wider">Ao usar:</span>
-                                              <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
-                                                2 PE → Treinado
-                                              </span>
-                                              {hasEngenhosidade && character.nex >= 40 && (
-                                                <>
-                                                  <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
-                                                    4 PE → Veterano
-                                                  </span>
-                                                  {character.nex >= 75 && (
-                                                    <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
-                                                      8 PE → Expert
-                                                    </span>
-                                                  )}
-                                                </>
-                                              )}
-                                            </div>
-                                          )}
-
-                                          {/* ── Badge mecânica: Tiro Certeiro ── */}
-                                          {ability.classAbility?.name === 'Tiro Certeiro' && (
-                                            <div className="mt-2 p-2 rounded bg-emerald-500/5 border border-emerald-500/20 flex flex-wrap items-center gap-2">
-                                              <span className="text-[9px] font-black uppercase text-emerald-400/60 tracking-wider">Com armas de fogo:</span>
-                                              <span className="text-[11px] font-black text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded px-2 py-0.5">
-                                                +{agility} no dano
-                                              </span>
-                                              <span className="text-[10px] text-zinc-500">Ignora penalidade em combate corpo a corpo</span>
-                                            </div>
-                                          )}
-
-                                          {/* ── Badge mecânica: Ritual Potente (passivo) ── */}
-                                          {ability.classAbility?.name === 'Ritual Potente' && (
-                                            <div className="mt-2 p-2 rounded bg-violet-500/5 border border-violet-500/20 flex flex-wrap items-center gap-2">
-                                              <span className="text-[9px] font-black uppercase text-violet-400/60 tracking-wider">Passivo nos rituais:</span>
-                                              <span className="text-[11px] font-black text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded px-2 py-0.5">
-                                                <Sparkles size={10} className="inline mr-1" />+{intellect} dano/cura
-                                              </span>
-                                            </div>
-                                          )}
-
-                                          {/* ── Badge mecânica: Camuflar Ocultismo ── */}
-                                          {ability.classAbility?.name === 'Camuflar Ocultismo' && (
-                                            <div className="mt-2 p-2 rounded bg-zinc-500/5 border border-zinc-500/20 flex flex-wrap items-center gap-2">
-                                              <span className="text-[9px] font-black uppercase text-zinc-400/60 tracking-wider">Opcional (por ritual):</span>
-                                              <span className="text-[11px] font-black text-zinc-300 bg-zinc-500/10 border border-zinc-500/20 rounded px-2 py-0.5">
-                                                +2 PE → Ritual invisível
-                                              </span>
-                                              <span className="text-[9px] text-zinc-500">(Ativar via checkbox em cada ritual)</span>
-                                            </div>
-                                          )}
-
-                                          {/* ── Badge mecânica: Ritual Predileto ── */}
-                                          {ability.classAbility?.name === 'Ritual Predileto' && (
-                                            <div className="mt-2 p-2 rounded bg-blue-500/5 border border-blue-500/20 flex flex-wrap items-center gap-2">
-                                              <span className="text-[9px] font-black uppercase text-blue-400/60 tracking-wider">Passivo:</span>
-                                              <span className="text-[11px] font-black text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded px-2 py-0.5">
-                                                –1 PE em {ritualPrediletoConfig || 'ritual não configurado'}
-                                              </span>
-                                            </div>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-2 ml-2">
-                                          {(
-                                            ability.classAbility?.name === 'Perito' ||
-                                            ability.classAbility?.name === 'Ritual Predileto' ||
-                                            ability.classAbility?.name === 'Mestre em Elemento' ||
-                                            ability.classAbility?.name === 'Especialista em Elemento'
-                                          ) && (
-                                              <Button
-                                                isIconOnly
-                                                size="sm"
-                                                className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/40"
-                                                onPress={() => openAbilityConfig(ability)}
-                                              >
-                                                <Edit3 size={14} />
-                                              </Button>
-                                            )}
-                                          <Button
-                                            isIconOnly
-                                            size="sm"
-                                            className="bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40"
-                                            onPress={() => {
-                                              if (
-                                                confirm(
-                                                  'Tem certeza que deseja remover esta habilidade?'
-                                                )
-                                              ) {
-                                                router.delete(
-                                                  `/characters/${character.id}/abilities/${ability.classAbilityId}`
-                                                )
-                                              }
-                                            }}
-                                          >
-                                            <Trash2 size={14} />
-                                          </Button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))
-                                ) : (
-                                  <div className="p-3 bg-zinc-950/30 rounded-lg border border-zinc-700/30 text-zinc-500 text-xs italic text-center">
-                                    Nenhuma habilidade escolhida. Use o botão "Adicionar Habilidade"
-                                    acima.
-                                  </div>
-                                )}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      )
-                    })()}
-
-                    {character.paranormalPowers && character.paranormalPowers.length > 0 && (
-                      <div className="mt-6 pt-6 border-t border-zinc-800">
-                        <button
-                          onClick={() => toggleSection('paranormalPowers')}
-                          className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                        >
-                          <div className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></div>
-                          <h4 className="font-bold text-purple-400 text-sm uppercase tracking-wider flex-1 text-left">
-                            Poderes Paranormais
-                          </h4>
-                          <motion.div
-                            animate={{ rotate: expandedSections.paranormalPowers ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <ChevronDown size={16} className="text-purple-400" />
-                          </motion.div>
-                        </button>
-                        <AnimatePresence>
-                          {expandedSections.paranormalPowers && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="space-y-4"
-                            >
-                              {character.paranormalPowers.map((power, idx) => {
-                                const p = power.paranormalPower
-                                const elementColor = {
-                                  Conhecimento: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
-                                  Energia: 'bg-purple-500/10 border-purple-500/30 text-purple-300',
-                                  Morte: 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300',
-                                  Sangue: 'bg-red-500/10 border-red-500/30 text-red-300',
-                                  Varia: 'bg-blue-500/10 border-blue-500/30 text-blue-300',
-                                }[p?.element || ''] || 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300'
-
-                                return (
-                                  <div
-                                    key={idx}
-                                    className={`p-4 rounded-lg border flex flex-col gap-3 transition-all hover:bg-zinc-950/80 ${elementColor}`}
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div>
-                                        <div className="flex items-center gap-2">
-                                          <h5 className="font-bold text-base">{p?.name}</h5>
-                                          <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
-                                            {p?.element}
-                                          </span>
-                                        </div>
-                                        {p?.requirements && (
-                                          <p className="text-[10px] opacity-60 uppercase mt-0.5">
-                                            Requisito: {p.requirements}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <Button
-                                        isIconOnly
-                                        size="sm"
-                                        variant="light"
-                                        className="text-current opacity-40 hover:opacity-100"
-                                        onPress={() => p?.id && removeParanormalPower(p.id)}
-                                      >
-                                        <Trash2 size={14} />
-                                      </Button>
-                                    </div>
-
-                                    {p?.description && (
-                                      <p className="text-xs leading-relaxed opacity-90 italic">
-                                        {p.description}
-                                      </p>
-                                    )}
-
-                                    <div className="flex flex-col gap-2 pt-2 border-t border-current/20">
-                                      {p?.effects?.main && (
-                                        <div>
-                                          <p className="text-[9px] font-black uppercase opacity-60 mb-1">
-                                            Efeito
-                                          </p>
-                                          <p className="text-xs leading-relaxed opacity-100">
-                                            {p.effects.main}
-                                          </p>
-                                        </div>
-                                      )}
-                                      {p?.effects?.affinity && (
-                                        <div className="bg-white/5 p-2 rounded border border-white/10 mt-1">
-                                          <p className="text-[9px] font-black uppercase text-white/50 mb-1">
-                                            Afinidade
-                                          </p>
-                                          <p className="text-xs leading-relaxed text-white/80">
-                                            {p.effects.affinity}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-
-                    {character.rituals && character.rituals.length > 0 && (
-                      <div className="mt-6 pt-6 border-t border-zinc-800">
-                        <button
-                          onClick={() => toggleSection('rituals')}
-                          className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                        >
-                          <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
-                          <h4 className="font-bold text-blue-400 text-sm uppercase tracking-wider flex-1 text-left">
-                            Rituais Aprendidos
-                          </h4>
-                          <motion.div
-                            animate={{ rotate: expandedSections.rituals ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            <ChevronDown size={16} className="text-blue-400" />
-                          </motion.div>
-                        </button>
-                        <AnimatePresence>
-                          {expandedSections.rituals && (
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: 'auto' }}
-                              exit={{ opacity: 0, height: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="space-y-4"
-                            >
-                              {character.rituals.map((characterRitual, idx) => {
-                                const r = characterRitual.ritual
-                                const elementColor = {
-                                  Conhecimento: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
-                                  Energia: 'bg-purple-500/10 border-purple-500/30 text-purple-300',
-                                  Morte: 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300',
-                                  Sangue: 'bg-red-500/10 border-red-500/30 text-red-300',
-                                }[r?.element || ''] || 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300'
-
-                                const peInfo = calcPeAjustado(r)
-                                const temReducao = peInfo.ajustado < peInfo.base
-                                const temAcrescimo = peInfo.ajustado > peInfo.base
-
-                                return (
-                                  <div
-                                    key={idx}
-                                    className={`p-4 rounded-lg border flex flex-col gap-3 transition-all hover:bg-zinc-950/80 ${elementColor}`}
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          <h5 className="font-bold text-base">{r?.name}</h5>
-                                          <Chip
-                                            size="sm"
-                                            variant="flat"
-                                            className="bg-black/20 text-current border-current/20"
-                                          >
-                                            {r?.circle}º Círculo
-                                          </Chip>
-                                          <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
-                                            {r?.element}
-                                          </span>
-
-                                          {/* ── Badge: Custo em PE ── */}
-                                          <div className="flex items-center gap-1">
-                                            {temReducao ? (
-                                              <span className="flex items-center gap-1">
-                                                <span className="text-[10px] text-zinc-400 line-through">{peInfo.base} PE</span>
-                                                <span className="text-[11px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded px-1.5 py-0.5">
-                                                  {peInfo.ajustado} PE
-                                                </span>
-                                              </span>
-                                            ) : temAcrescimo ? (
-                                              <span className="text-[11px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
-                                                {peInfo.ajustado} PE
-                                              </span>
-                                            ) : (
-                                              <span className="text-[11px] font-black opacity-60 bg-black/20 border border-current/20 rounded px-1.5 py-0.5">
-                                                {peInfo.base} PE
-                                              </span>
-                                            )}
-                                          </div>
-
-                                          {/* ── Badge: Ritual Potente ── */}
-                                          {hasRitualPotente && (
-                                            <span className="text-[10px] font-black text-violet-400 bg-violet-500/10 border border-violet-500/30 rounded px-1.5 py-0.5 flex items-center gap-1">
-                                              <Sparkles size={10} />
-                                              +{intellect} dano/cura
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {/* ── Tooltip das reduções ── */}
-                                        {peInfo.reducoes.length > 0 && (
-                                          <div className="flex flex-wrap gap-1 mt-1">
-                                            {peInfo.reducoes.map((red, i) => (
-                                              <span key={i} className="text-[9px] font-bold uppercase tracking-wide opacity-60 bg-current/5 border border-current/10 rounded px-1.5 py-0.5">
-                                                {red}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      <div className="flex items-center gap-2">
-                                        {/* ── Checkbox: Camuflar Ocultismo ── */}
-                                        {hasCamuflarOcultismo && (
-                                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold uppercase tracking-wide opacity-70 hover:opacity-100 transition-opacity select-none">
-                                            <input
-                                              type="checkbox"
-                                              checked={usarCamuflar}
-                                              onChange={(e) => setUsarCamuflar(e.target.checked)}
-                                              className="h-3 w-3 accent-current rounded"
-                                            />
-                                            Camuflar
-                                          </label>
-                                        )}
-                                        <Button
-                                          isIconOnly
-                                          size="sm"
-                                          variant="light"
-                                          className="text-current opacity-40 hover:opacity-100"
-                                          onPress={() => r?.id && removeRitual(r.id)}
-                                        >
-                                          <Trash2 size={14} />
-                                        </Button>
-                                      </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] uppercase font-bold opacity-70">
-                                      <div>
-                                        <span className="opacity-50">Execução:</span> {r?.execution}
-                                      </div>
-                                      <div>
-                                        <span className="opacity-50">Alcance:</span> {r?.range}
-                                      </div>
-                                      <div>
-                                        <span className="opacity-50">Alvo:</span> {r?.target}
-                                      </div>
-                                      <div>
-                                        <span className="opacity-50">Duração:</span> {r?.duration}
-                                      </div>
-                                    </div>
-
-                                    {r?.description && (
-                                      <p className="text-xs leading-relaxed opacity-90 italic border-t border-current/10 pt-2">
-                                        {r.description}
-                                      </p>
-                                    )}
-                                  </div>
-                                )
-                              })}
-
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-
-                    {/* HABILIDADES DE TRILHA */}
-                    {character.trail &&
-                      currentTrailAbilities &&
-                      currentTrailAbilities.length > 0 && (
-                        <div>
-                          <button
-                            onClick={() => toggleSection('trailAbilities')}
-                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                          >
-                            <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                            <h4 className="font-bold text-purple-400 text-sm uppercase tracking-wider flex-1 text-left">
-                              Trilha: {character.trail.name}
-                            </h4>
-                            <motion.div
-                              animate={{ rotate: expandedSections.trailAbilities ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <ChevronDown size={16} className="text-purple-400" />
-                            </motion.div>
-                          </button>
-                          <AnimatePresence>
-                            {expandedSections.trailAbilities && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="space-y-2"
-                              >
-                                {currentTrailAbilities.map((progression, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-purple-500/30 hover:border-purple-500/50 transition-all"
-                                  >
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2">
-                                          <h5 className="font-semibold text-purple-300">
-                                            {progression.title}
-                                          </h5>
-                                          <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
-                                            NEX {progression.nex}%
-                                          </span>
-                                        </div>
-                                        {progression.description && (
-                                          <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                            {progression.description}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      )}
-
-                    {/* PODERES PARANORMAIS */}
-                    {(() => {
-                      const paranormalPowers =
-                        character.classAbilities?.filter(
-                          (ability) => ability.classAbility?.name === 'Transcender'
-                        ) || []
-
-                      return (
-                        <div>
-                          <button
-                            onClick={() => toggleSection('acquiredAbilities')}
-                            className="w-full flex items-center gap-2 mb-3 hover:opacity-75 transition-opacity"
-                          >
-                            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                            <h4 className="font-bold text-red-400 text-sm uppercase tracking-wider flex-1 text-left">
-                              Habilidades de Transcender ({paranormalPowers.length})
-                            </h4>
-                            <motion.div
-                              animate={{ rotate: expandedSections.acquiredAbilities ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                            >
-                              <ChevronDown size={16} className="text-red-400" />
-                            </motion.div>
-                          </button>
-                          <AnimatePresence>
-                            {expandedSections.acquiredAbilities && (
-                              <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="space-y-3"
-                              >
-                                {paranormalPowers.length > 0 ? (
-                                  paranormalPowers.map((ability, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="p-3 bg-zinc-950/50 hover:bg-zinc-950 rounded-lg border border-red-500/30 hover:border-red-500/50 transition-all"
-                                    >
-                                      <div className="flex items-start justify-between">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <h5 className="font-semibold text-red-300">
-                                              {ability.classAbility?.name}
-                                            </h5>
-                                            {ability.classAbility?.effects?.nex && (
-                                              <span className="px-1.5 py-0.5 bg-red-500/20 border border-red-500/40 rounded text-red-300 text-xs font-bold">
-                                                NEX {ability.classAbility.effects.nex}
-                                              </span>
-                                            )}
-                                            {(() => {
-                                              const count = paranormalPowers.filter(
-                                                (p) => p.classAbility?.name === 'Transcender'
-                                              ).length
-                                              return count > 1 ? (
-                                                <span className="px-1.5 py-0.5 bg-red-500/20 border border-red-500/40 rounded text-red-300 text-xs font-bold">
-                                                  x{count}
-                                                </span>
-                                              ) : null
-                                            })()}
-                                          </div>
-                                          <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                            {ability.classAbility?.description}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))
-                                ) : (
-                                  <div className="p-3 bg-zinc-950/30 rounded-lg border border-zinc-700/30 text-zinc-500 text-xs italic text-center">
-                                    Nenhum poder paranormal adquirido ainda
-                                  </div>
-                                )}
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-              </Tab>
-            </Tabs>
-          </Card>
+          {/* TABS SECTION */}
+          <CharacterTabsCard
+            inventory={inventory}
+            inventoryCapacity={inventoryCapacity}
+            categoryConsumption={categoryConsumption}
+            rank={rank}
+            isUpdatingRank={isUpdatingRank}
+            expandedItemId={expandedItemId}
+            inventoryWeapons={inventoryWeapons}
+            onAddItem={onAddItemModalOpen}
+            onRankChange={setRank}
+            onModifyWeapon={(item) => { setModifyingWeapon(item); onModifyWeaponModalOpen() }}
+            onRemoveItem={removeItem}
+            onExpandItem={setExpandedItemId}
+            characterRituals={character.rituals || []}
+            isOcultista={isOcultista}
+            onLearnRitual={() => setIsRitualSelectOpen(true)}
+            onRemoveRitual={removeRitual}
+            nex={character.nex}
+            agility={agility}
+            presence={presence}
+            strength={strength}
+            peritoPeSpending={peritoPeSpending}
+            maxPeritoPe={maxPeritoPe}
+            onRollWeapon={(w) => { setIsDiceTray(true); rollWeapon({ name: w.name, range: w.range, damage: w.damage }, strength, agility) }}
+            onPeritoSpendChange={(skill, value) => setPeritoPeSpending({ ...peritoPeSpending, [skill]: value })}
+            classAbilities={character.classAbilities || []}
+            paranormalPowers={character.paranormalPowers || []}
+            currentTrailAbilities={currentTrailAbilities}
+            futureTrailAbilities={futureTrailAbilities}
+            characterTrail={character.trail}
+            chosenClassAbilities={chosenClassAbilities}
+            maxClassAbilities={maxClassAbilities}
+            canChooseMore={canChooseMore}
+            availableAbilities={availableAbilities}
+            hasNoTrail={hasNoTrail}
+            classTrails={classTrails}
+            expandedSections={expandedSections}
+            hasRitualPotente={hasRitualPotente}
+            hasCamuflarOcultismo={hasCamuflarOcultismo}
+            hasEngenhosidade={hasEngenhosidade}
+            intellect={intellect}
+            peritoSkills={peritoSkills}
+            peritoBonus={peritoBonus}
+            isTrailPowersOpen={isTrailPowersOpen}
+            ritualPrediletoConfig={ritualPrediletoConfig}
+            usarCamuflar={usarCamuflar}
+            calcPeAjustado={calcPeAjustado}
+            onToggleSection={toggleSection}
+            onTrailPowersOpenChange={onTrailPowersOpenChange}
+            onOpenTrailModal={onTrailModalOpen}
+            onOpenAbilitySelect={onAbilitySelectOpen}
+            onOpenAbilityConfig={openAbilityConfig}
+            onRemoveAbility={(charId, abilityId) => { if (confirm('Tem certeza que deseja remover esta habilidade?')) router.delete(`/characters/${charId}/abilities/${abilityId}`) }}
+            onRemoveParanormalPower={removeParanormalPower}
+            onSetUsarCamuflar={setUsarCamuflar}
+            characterId={character.id}
+          />
         </div>
 
         {/* COLUNA DIREITA (Attributes & Stats) */}
@@ -4517,760 +2951,548 @@ export default function CharacterShow(initialProps: CharacterProps) {
       </Modal>
 
       {/* Ability Configuration Modal */}
-      <Modal
+      <BaseModal
         isOpen={isAbilityConfigOpen}
-        onOpenChange={onAbilityConfigOpenChange}
-        size="md"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-          footer: 'border-t border-zinc-800',
-        }}
+        onClose={onAbilityConfigOpenChange}
+        maxWidth="max-w-xl"
+        title={`Configurar ${configuringAbility?.classAbility?.name ?? ''}`}
+        footer={
+          <>
+            <button
+              onClick={onAbilityConfigOpenChange}
+              className="px-5 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={saveAbilityConfig}
+              disabled={isConfiguringAbility || (configuringAbility?.classAbility?.name === 'Perito' && selectedSkills.length !== 2)}
+              className="flex items-center gap-2 px-5 py-2 rounded-md font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isConfiguringAbility ? 'Salvando...' : 'Salvar Configuração'}
+            </button>
+          </>
+        }
       >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">
-                  Configurar {configuringAbility?.classAbility?.name}
-                </h2>
-              </ModalHeader>
-              <ModalBody>
-                {configuringAbility?.classAbility?.name === 'Perito' && (
-                  <div className="space-y-4">
-                    <p className="text-sm text-zinc-400">
-                      Selecione exatamente 2 perícias para esta habilidade.{' '}
-                      <span className="text-red-400">Luta e Pontaria não são permitidas.</span>
-                    </p>
+        {configuringAbility?.classAbility?.name === 'Perito' && (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">
+              Selecione exatamente 2 perícias para esta habilidade.{' '}
+              <span className="text-red-400">Luta e Pontaria não são permitidas.</span>
+            </p>
 
-                    <div className="space-y-2">
-                      <p className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
-                        Perícias Disponíveis:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {availableSkills.map((skill) => (
-                          <Button
-                            key={skill}
-                            size="sm"
-                            onPress={() => toggleSkillSelection(skill)}
-                            className={`font-semibold ${selectedSkills.includes(skill)
-                              ? 'bg-amber-500 text-white border-amber-400'
-                              : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
-                              } border`}
-                          >
-                            {selectedSkills.includes(skill) && '✓ '}
-                            {skill}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
+                Perícias Disponíveis:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {availableSkills.map((skill) => (
+                  <Button
+                    key={skill}
+                    size="sm"
+                    onPress={() => toggleSkillSelection(skill)}
+                    className={`font-semibold ${selectedSkills.includes(skill)
+                      ? 'bg-amber-500 text-white border-amber-400'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
+                      } border`}
+                  >
+                    {selectedSkills.includes(skill) && '✓ '}
+                    {skill}
+                  </Button>
+                ))}
+              </div>
+            </div>
 
-                    {selectedSkills.length > 0 && (
-                      <div className="bg-zinc-950/50 p-3 rounded border border-amber-500/30">
-                        <p className="text-xs font-bold text-amber-400 mb-2">
-                          Selecionadas ({selectedSkills.length}/2):
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedSkills.map((skill) => (
-                            <span
-                              key={skill}
-                              className="px-2 py-1 bg-amber-500/20 border border-amber-500/40 rounded text-amber-300 text-xs font-semibold"
-                            >
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ── Ritual Predileto: escolha um ritual ── */}
-                {configuringAbility?.classAbility?.name === 'Ritual Predileto' && (
-                  <div className="space-y-4">
-                    <p className="text-sm text-zinc-400">
-                      Escolha um ritual que você conhece. O custo desse ritual será reduzido em{' '}
-                      <span className="text-emerald-400 font-bold">–1 PE</span>.
-                    </p>
-                    {character.rituals && character.rituals.length > 0 ? (
-                      <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
-                        {character.rituals.map((cr, idx) => {
-                          const r = cr.ritual
-                          const elementColor = {
-                            Conhecimento: 'border-amber-500/40 hover:border-amber-500',
-                            Energia: 'border-purple-500/40 hover:border-purple-500',
-                            Morte: 'border-zinc-500/40 hover:border-zinc-500',
-                            Sangue: 'border-red-500/40 hover:border-red-500',
-                          }[r?.element || ''] || 'border-zinc-700 hover:border-zinc-500'
-                          const isSelected = selectedRitual === r?.name
-                          return (
-                            <button
-                              key={idx}
-                              onClick={() => setSelectedRitual(r?.name || '')}
-                              className={`w-full text-left p-3 rounded-lg border transition-all ${isSelected
-                                ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/50'
-                                : `bg-zinc-950/50 ${elementColor}`
-                                }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                {isSelected && <span className="text-blue-400 font-black">✓</span>}
-                                <span className="font-bold text-white text-sm">{r?.name}</span>
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase">{r?.element}</span>
-                                <span className="text-[10px] text-zinc-500">{r?.circle}º Círculo</span>
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-zinc-500 italic">Nenhum ritual aprendido ainda.</p>
-                    )}
-                    {selectedRitual && (
-                      <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                        <p className="text-xs text-blue-400 font-bold">Selecionado: <span className="text-white">{selectedRitual}</span></p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ── Mestre em Elemento / Especialista em Elemento: escolha o elemento ── */}
-                {(configuringAbility?.classAbility?.name === 'Mestre em Elemento' ||
-                  configuringAbility?.classAbility?.name === 'Especialista em Elemento') && (
-                    <div className="space-y-4">
-                      <p className="text-sm text-zinc-400">
-                        {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
-                          ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
-                          : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
-                      </p>
-                      <div className="grid grid-cols-2 gap-3">
-                        {[
-                          { name: 'Conhecimento', color: 'amber', icon: '📚' },
-                          { name: 'Energia', color: 'purple', icon: '⚡' },
-                          { name: 'Morte', color: 'zinc', icon: '💀' },
-                          { name: 'Sangue', color: 'red', icon: '🩸' },
-                        ].map((el) => {
-                          const isSelected = selectedElement === el.name
-                          const colorMap: Record<string, string> = {
-                            amber: 'bg-amber-500/20 border-amber-500 text-amber-300',
-                            purple: 'bg-purple-500/20 border-purple-500 text-purple-300',
-                            zinc: 'bg-zinc-500/20 border-zinc-400 text-zinc-300',
-                            red: 'bg-red-500/20 border-red-500 text-red-300',
-                          }
-                          const inactiveMap: Record<string, string> = {
-                            amber: 'border-amber-500/30 hover:border-amber-500/60 text-amber-400/60 hover:text-amber-400',
-                            purple: 'border-purple-500/30 hover:border-purple-500/60 text-purple-400/60 hover:text-purple-400',
-                            zinc: 'border-zinc-500/30 hover:border-zinc-500/60 text-zinc-400/60 hover:text-zinc-400',
-                            red: 'border-red-500/30 hover:border-red-500/60 text-red-400/60 hover:text-red-400',
-                          }
-                          return (
-                            <button
-                              key={el.name}
-                              onClick={() => setSelectedElement(el.name)}
-                              className={`p-4 rounded-lg border-2 transition-all font-bold text-sm flex items-center gap-2 ${isSelected ? colorMap[el.color] : `bg-zinc-950/50 ${inactiveMap[el.color]}`
-                                }`}
-                            >
-                              <span>{el.icon}</span>
-                              {el.name}
-                              {isSelected && <span className="ml-auto">✓</span>}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="bordered"
-                  onPress={onClose}
-                  className="border-zinc-700 text-zinc-400"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  color="primary"
-                  onPress={saveAbilityConfig}
-                  isLoading={isConfiguringAbility}
-                  isDisabled={
-                    configuringAbility?.classAbility?.name === 'Perito' &&
-                    selectedSkills.length !== 2
-                  }
-                  className="font-bold"
-                >
-                  Salvar Configuração
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Class Ability Selection Modal */}
-      <Modal
-        isOpen={isSkillMenuOpen}
-        onOpenChange={onSkillMenuOpenChange}
-        size="2xl"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6 max-h-[60vh] overflow-y-auto custom-scrollbar',
-        }}
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">{selectedSkillName}</h2>
-                <p className="text-xs text-zinc-400">Ações disponíveis para esta perícia</p>
-              </ModalHeader>
-              <ModalBody>
-                {selectedSkillName && skillDescriptions[selectedSkillName] ? (
-                  <div className="space-y-4">
-                    {skillDescriptions[selectedSkillName].map((action, idx) => (
-                      <div
-                        key={idx}
-                        className="p-4 bg-zinc-950/50 rounded-lg border border-cyan-500/30 hover:border-cyan-500/50 transition-all"
-                      >
-                        <h3 className="font-bold text-cyan-300 mb-2">{action.title}</h3>
-                        <p className="text-sm text-zinc-300 leading-relaxed">
-                          {action.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-4 text-center text-zinc-400">
-                    Nenhuma ação disponível para esta perícia
-                  </div>
-                )}
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Class Ability Selection Modal */}
-      <Modal
-        isOpen={isAbilitySelectOpen}
-        onOpenChange={onAbilitySelectOpenChange}
-        size="2xl"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-        }}
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">Escolher Habilidade de Classe</h2>
-                <p className="text-xs text-zinc-400">
-                  Escolhidas: {chosenClassAbilities}/{maxClassAbilities}
+            {selectedSkills.length > 0 && (
+              <div className="bg-zinc-950/50 p-3 rounded border border-amber-500/30">
+                <p className="text-xs font-bold text-amber-400 mb-2">
+                  Selecionadas ({selectedSkills.length}/2):
                 </p>
-              </ModalHeader>
-              <ModalBody>
-                <div className="pt-4">
-                  {availableAbilities.length > 0 ? (
-                    <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-                      {availableAbilities.map((ability) => (
-                        <Card
-                          key={ability.id}
-                          isPressable
-                          onPress={() => addClassAbility(ability.id)}
-                          className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
-                        >
-                          <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <h3 className="text-lg font-bold text-amber-400">
-                                  {ability.name}
-                                </h3>
-                                {ability.effects?.nex && (
-                                  <p className="text-xs text-zinc-400 mt-1">
-                                    Requer: NEX {ability.effects.nex}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            {ability.description && (
-                              <p className="text-sm text-zinc-300">{ability.description}</p>
-                            )}
-                          </CardBody>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-6 text-center text-zinc-400">
-                      <p className="text-sm">
-                        Nenhuma habilidade disponível para escolher no momento
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Trail Selection Modal */}
-      <Modal
-        isOpen={isTrailModalOpen}
-        onOpenChange={onTrailModalOpenChange}
-        size="2xl"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-        }}
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">Selecionar uma Trilha</h2>
-                <p className="text-xs text-zinc-400">Escolha uma trilha para seu personagem</p>
-              </ModalHeader>
-              <ModalBody>
-                <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {classTrails.map((trail) => (
-                    <Card
-                      key={trail.id}
-                      isPressable
-                      onPress={() => selectTrail(trail.id)}
-                      className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
+                <div className="flex flex-wrap gap-2">
+                  {selectedSkills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="px-2 py-1 bg-amber-500/20 border border-amber-500/40 rounded text-amber-300 text-xs font-semibold"
                     >
-                      <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                        <div className="flex justify-between items-start">
-                          <h3 className="text-lg font-bold text-amber-400">{trail.name}</h3>
-                        </div>
-
-                        {trail.description && (
-                          <p className="text-sm text-zinc-300">{trail.description}</p>
-                        )}
-
-                        {trail.progression && trail.progression.length > 0 && (
-                          <div className="bg-zinc-900/50 p-3 rounded border border-zinc-700/50">
-                            <p className="text-xs font-bold text-zinc-400 upppercase tracking-wider mb-2">
-                              Progressões:
-                            </p>
-                            <div className="space-y-2">
-                              {trail.progression.map((prog) => (
-                                <div key={prog.id} className="text-xs">
-                                  <span className="font-bold text-amber-400">NEX {prog.nex}:</span>
-                                  <span className="text-zinc-300 ml-2">
-                                    {prog.title}
-                                    {prog.description && ` - ${prog.description}`}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </CardBody>
-                    </Card>
+                      {skill}
+                    </span>
                   ))}
                 </div>
-              </ModalBody>
-            </>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Ritual Predileto: escolha um ritual ── */}
+        {configuringAbility?.classAbility?.name === 'Ritual Predileto' && (
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">
+              Escolha um ritual que você conhece. O custo desse ritual será reduzido em{' '}
+              <span className="text-emerald-400 font-bold">–1 PE</span>.
+            </p>
+            {character.rituals && character.rituals.length > 0 ? (
+              <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                {character.rituals.map((cr, idx) => {
+                  const r = cr.ritual
+                  const elementColor = {
+                    Conhecimento: 'border-amber-500/40 hover:border-amber-500',
+                    Energia: 'border-purple-500/40 hover:border-purple-500',
+                    Morte: 'border-zinc-500/40 hover:border-zinc-500',
+                    Sangue: 'border-red-500/40 hover:border-red-500',
+                  }[r?.element || ''] || 'border-zinc-700 hover:border-zinc-500'
+                  const isSelected = selectedRitual === r?.name
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedRitual(r?.name || '')}
+                      className={`w-full text-left p-3 rounded-lg border transition-all ${isSelected
+                        ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/50'
+                        : `bg-zinc-950/50 ${elementColor}`
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isSelected && <span className="text-blue-400 font-black">✓</span>}
+                        <span className="font-bold text-white text-sm">{r?.name}</span>
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase">{r?.element}</span>
+                        <span className="text-[10px] text-zinc-500">{r?.circle}º Círculo</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500 italic">Nenhum ritual aprendido ainda.</p>
+            )}
+            {selectedRitual && (
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <p className="text-xs text-blue-400 font-bold">Selecionado: <span className="text-white">{selectedRitual}</span></p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Mestre em Elemento / Especialista em Elemento: escolha o elemento ── */}
+        {(configuringAbility?.classAbility?.name === 'Mestre em Elemento' ||
+          configuringAbility?.classAbility?.name === 'Especialista em Elemento') && (
+            <div className="space-y-4">
+              <p className="text-sm text-zinc-400">
+                {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
+                  ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
+                  : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { name: 'Conhecimento', color: 'amber', icon: '📚' },
+                  { name: 'Energia', color: 'purple', icon: '⚡' },
+                  { name: 'Morte', color: 'zinc', icon: '💀' },
+                  { name: 'Sangue', color: 'red', icon: '🩸' },
+                ].map((el) => {
+                  const isSelected = selectedElement === el.name
+                  const colorMap: Record<string, string> = {
+                    amber: 'bg-amber-500/20 border-amber-500 text-amber-300',
+                    purple: 'bg-purple-500/20 border-purple-500 text-purple-300',
+                    zinc: 'bg-zinc-500/20 border-zinc-400 text-zinc-300',
+                    red: 'bg-red-500/20 border-red-500 text-red-300',
+                  }
+                  const inactiveMap: Record<string, string> = {
+                    amber: 'border-amber-500/30 hover:border-amber-500/60 text-amber-400/60 hover:text-amber-400',
+                    purple: 'border-purple-500/30 hover:border-purple-500/60 text-purple-400/60 hover:text-purple-400',
+                    zinc: 'border-zinc-500/30 hover:border-zinc-500/60 text-zinc-400/60 hover:text-zinc-400',
+                    red: 'border-red-500/30 hover:border-red-500/60 text-red-400/60 hover:text-red-400',
+                  }
+                  return (
+                    <button
+                      key={el.name}
+                      onClick={() => setSelectedElement(el.name)}
+                      className={`p-4 rounded-lg border-2 transition-all font-bold text-sm flex items-center gap-2 ${isSelected ? colorMap[el.color] : `bg-zinc-950/50 ${inactiveMap[el.color]}`
+                        }`}
+                    >
+                      <span>{el.icon}</span>
+                      {el.name}
+                      {isSelected && <span className="ml-auto">✓</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )}
-        </ModalContent>
-      </Modal>
+
+      </BaseModal>
+
+      {/* Skill Menu Modal */}
+      <BaseModal
+        isOpen={isSkillMenuOpen}
+        onClose={onSkillMenuOpenChange}
+        title={selectedSkillName ?? ''}
+        description="Ações disponíveis para esta perícia"
+      >
+        {selectedSkillName && skillDescriptions[selectedSkillName] ? (
+          <div className="space-y-4">
+            {skillDescriptions[selectedSkillName].map((action, idx) => (
+              <div
+                key={idx}
+                className="p-4 bg-zinc-950/50 rounded-lg border border-cyan-500/30 hover:border-cyan-500/50 transition-all"
+              >
+                <h3 className="font-bold text-cyan-300 mb-2">{action.title}</h3>
+                <p className="text-sm text-zinc-300 leading-relaxed">
+                  {action.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-4 text-center text-zinc-400">
+            Nenhuma ação disponível para esta perícia
+          </div>
+        )}
+      </BaseModal>
+
+      {/* Class Ability Selection Modal */}
+      <BaseModal
+        isOpen={isAbilitySelectOpen}
+        onClose={onAbilitySelectOpenChange}
+        title="Escolher Habilidade de Classe"
+        description={`Escolhidas: ${chosenClassAbilities}/${maxClassAbilities}`}
+      >
+        <div className="pt-0">
+          {availableAbilities.length > 0 ? (
+            <div className="space-y-4">
+              {availableAbilities.map((ability) => (
+                <Card
+                  key={ability.id}
+                  isPressable
+                  onPress={() => addClassAbility(ability.id)}
+                  className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
+                >
+                  <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold text-amber-400">
+                          {ability.name}
+                        </h3>
+                        {ability.effects?.nex && (
+                          <p className="text-xs text-zinc-400 mt-1">
+                            Requer: NEX {ability.effects.nex}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {ability.description && (
+                      <p className="text-sm text-zinc-300">{ability.description}</p>
+                    )}
+                  </CardBody>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="p-6 text-center text-zinc-400">
+              <p className="text-sm">
+                Nenhuma habilidade disponível para escolher no momento
+              </p>
+            </div>
+          )}
+        </div>
+      </BaseModal>
+
+      {/* Trail Selection Modal */}
+      <TrailSelectModal
+        isOpen={isTrailModalOpen}
+        trails={classTrails}
+        onClose={onTrailModalOpenChange}
+        onConfirm={(trailId) => selectTrail(trailId)}
+      />
 
       {/* Add Item Modal - abas por tipo */}
-      <Modal
+      <BaseModal
         isOpen={isAddItemModalOpen}
-        onOpenChange={onAddItemModalOpenChange}
-        size="3xl"
-        scrollBehavior="inside"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'h-[65vh] flex flex-col overflow-hidden',
-        }}
+        onClose={onAddItemModalOpenChange}
+        maxWidth="max-w-5xl"
+        title="Adicionar Item ao Inventário"
+        description="Escolha um item por tipo e adicione ao personagem"
       >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">Adicionar Item ao Inventário</h2>
-                <p className="text-xs text-zinc-400">
-                  Escolha um item por tipo e adicione ao personagem
-                </p>
-              </ModalHeader>
-              <ModalBody>
-                <Tabs
-                  aria-label="Tipos de item"
-                  variant="underlined"
-                  classNames={{
-                    base: 'w-full',
-                    tabList: 'gap-2 border-b border-zinc-800 px-0 sticky top-0 bg-zinc-900 z-10',
-                    cursor: 'bg-orange-500',
-                    tab: 'text-zinc-400 data-[selected=true]:text-orange-500',
-                    panel: 'py-4 h-[55vh] overflow-y-auto',
-                  }}
-                >
-                  <Tab
-                    key="weapons"
-                    title={<span className="flex items-center gap-2">⚔️ Armas</span>}
-                  >
-                    <div className="space-y-3 pr-2">
-                      {catalogWeapons.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhuma arma cadastrada.</p>
-                      ) : (
-                        catalogWeapons.map((item) => {
-                          const key = `weapon-${item.id}`
-                          const isExpanded = expandedItemKey === key
-                          return (
-                            <div
-                              key={key}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => toggleItemExpanded(key)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  toggleItemExpanded(key)
-                                }
-                              }}
-                              className="cursor-pointer outline-none"
-                            >
-                              <Card
-                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                              >
-                                <CardBody className="py-3 px-4">
-                                  <div className="flex flex-row items-start justify-between gap-4">
-                                    <div className="min-w-0 flex-1">
-                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                      <p className="text-xs text-zinc-500 mt-0.5">
-                                        {item.type} · {item.weaponType ?? ''}
-                                        {!isExpanded && (
-                                          <>
-                                            {' '}
-                                            · Dano {item.damage}
-                                            {item.damageType ? ` (${item.damageType})` : ''}
-                                          </>
-                                        )}
-                                      </p>
-                                      {item.description && (
-                                        <p
-                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                        >
-                                          {item.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <span onClick={(e) => e.stopPropagation()}>
-                                      <Button
-                                        size="sm"
-                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                        onPress={() => addItemToCharacter('weapon', item.id)}
-                                      >
-                                        <Plus size={14} className="mr-1" /> Adicionar
-                                      </Button>
-                                    </span>
-                                  </div>
-                                  {isExpanded && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Dano
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.damage}
-                                          {item.damageType ? (
-                                            <span className="text-sm font-normal text-orange-200/90">
-                                              {' '}
-                                              ({item.damageType})
-                                            </span>
-                                          ) : null}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Categoria
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {categoryLabels[item.category as number] ?? item.category}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Alcance
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.range ?? '—'}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Margem de crítico
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.critical ?? '—'}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Multiplicador de crítico
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.criticalMultiplier ?? '—'}
-                                        </p>
-                                      </div>
-                                      {(item.ammoCapacity != null || item.ammoType) && (
-                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                            Munição
-                                          </p>
-                                          <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                            {item.ammoCapacity != null
-                                              ? `${item.ammoCapacity}`
-                                              : '—'}
-                                            {item.ammoType ? ` · ${item.ammoType}` : ''}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </CardBody>
-                              </Card>
+        <Tabs
+          aria-label="Tipos de item"
+          variant="underlined"
+          classNames={{
+            base: 'w-full',
+            tabList: 'gap-2 border-b border-zinc-800 px-0 sticky top-0 bg-zinc-900 z-10',
+            cursor: 'bg-orange-500',
+            tab: 'text-zinc-400 data-[selected=true]:text-orange-500',
+            panel: 'py-4 h-[55vh] overflow-y-auto',
+          }}
+        >
+          <Tab
+            key="weapons"
+            title={<span className="flex items-center gap-2">⚔️ Armas</span>}
+          >
+            <div className="space-y-3 pr-2">
+              {catalogWeapons.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhuma arma cadastrada.</p>
+              ) : (
+                catalogWeapons.map((item) => {
+                  const key = `weapon-${item.id}`
+                  const isExpanded = expandedItemKey === key
+                  return (
+                    <div
+                      key={key}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleItemExpanded(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggleItemExpanded(key)
+                        }
+                      }}
+                      className="cursor-pointer outline-none"
+                    >
+                      <Card
+                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                      >
+                        <CardBody className="py-3 px-4">
+                          <div className="flex flex-row items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                {item.type} · {item.weaponType ?? ''}
+                                {!isExpanded && (
+                                  <>
+                                    {' '}
+                                    · Dano {item.damage}
+                                    {item.damageType ? ` (${item.damageType})` : ''}
+                                  </>
+                                )}
+                              </p>
+                              {item.description && (
+                                <p
+                                  className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                >
+                                  {item.description}
+                                </p>
+                              )}
                             </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </Tab>
-                  <Tab
-                    key="protections"
-                    title={<span className="flex items-center gap-2">🛡️ Proteções</span>}
-                  >
-                    <div className="space-y-3 pr-2">
-                      {catalogProtections.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhuma proteção cadastrada.</p>
-                      ) : (
-                        catalogProtections.map((item) => {
-                          const key = `protection-${item.id}`
-                          const isExpanded = expandedItemKey === key
-                          return (
-                            <div
-                              key={key}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => toggleItemExpanded(key)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  toggleItemExpanded(key)
-                                }
-                              }}
-                              className="cursor-pointer outline-none"
-                            >
-                              <Card
-                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                onPress={() => addItemToCharacter('weapon', item.id)}
                               >
-                                <CardBody className="py-3 px-4">
-                                  <div className="flex flex-row items-start justify-between gap-4">
-                                    <div className="min-w-0 flex-1">
-                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                      <p className="text-xs text-zinc-500 mt-0.5">
-                                        {item.type}
-                                        {!isExpanded && (
-                                          <>
-                                            {' '}
-                                            · Def +{item.defenseBonus}
-                                            {item.dodgePenalty !== 0
-                                              ? ` · Esquiva ${item.dodgePenalty}`
-                                              : ''}
-                                          </>
-                                        )}
-                                      </p>
-                                      {item.description && (
-                                        <p
-                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                        >
-                                          {item.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <span onClick={(e) => e.stopPropagation()}>
-                                      <Button
-                                        size="sm"
-                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                        onPress={() => addItemToCharacter('protection', item.id)}
-                                      >
-                                        <Plus size={14} className="mr-1" /> Adicionar
-                                      </Button>
+                                <Plus size={14} className="mr-1" /> Adicionar
+                              </Button>
+                            </span>
+                          </div>
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Dano
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.damage}
+                                  {item.damageType ? (
+                                    <span className="text-sm font-normal text-orange-200/90">
+                                      {' '}
+                                      ({item.damageType})
                                     </span>
-                                  </div>
-                                  {isExpanded && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Bônus de defesa
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          +{item.defenseBonus}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Penalidade de esquiva
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.dodgePenalty}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Categoria
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {categoryLabels[item.category as number] ?? item.category}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Tipo
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.type}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Espaços
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.spaces}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )}
-                                </CardBody>
-                              </Card>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </Tab>
-                  <Tab
-                    key="general"
-                    title={<span className="flex items-center gap-2">🎒 Itens Gerais</span>}
-                  >
-                    <div className="space-y-6 pr-2">
-                      {catalogGeneralItems.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhum item geral cadastrado.</p>
-                      ) : (
-                        (() => {
-                          // DT de Explosivos: 10 + Limite de PE/turno + Agilidade
-                          const explosiveDT = 10 + Math.floor(character.nex / 5) + agility
-                          return (['Acessório', 'Explosivo', 'Operacional', 'Paranormal'] as const).map((sectionType) => {
-                            const sectionItems = catalogGeneralItems.filter((i) => i.type === sectionType)
-                            if (sectionItems.length === 0) return null
-
-                            const sectionIcon = sectionType === 'Acessório' ? '🔧' : sectionType === 'Explosivo' ? '💥' : sectionType === 'Paranormal' ? '🔮' : '🎒'
-                            const sectionColor = sectionType === 'Acessório' ? 'text-blue-400' : sectionType === 'Explosivo' ? 'text-red-400' : sectionType === 'Paranormal' ? 'text-purple-400' : 'text-orange-400'
-                            const sectionBg = sectionType === 'Acessório' ? 'bg-blue-500/10 border-blue-500/20' : sectionType === 'Explosivo' ? 'bg-red-500/10 border-red-500/20' : sectionType === 'Paranormal' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-orange-500/10 border-orange-500/20'
-
-                            return (
-                              <div key={sectionType} className="space-y-2">
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${sectionBg}`}>
-                                  <span>{sectionIcon}</span>
-                                  <span className={`text-xs font-black uppercase tracking-widest ${sectionColor}`}>{sectionType}s</span>
-                                </div>
-                                {sectionItems.map((item) => {
-                                  const key = `general-${item.id}`
-                                  const isExpanded = expandedItemKey === key
-                                  return (
-                                    <div
-                                      key={key}
-                                      role="button"
-                                      tabIndex={0}
-                                      onClick={() => toggleItemExpanded(key)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          e.preventDefault()
-                                          toggleItemExpanded(key)
-                                        }
-                                      }}
-                                      className="cursor-pointer outline-none"
-                                    >
-                                      <Card
-                                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                                      >
-                                        <CardBody className="py-3 px-4">
-                                          <div className="flex flex-row items-start justify-between gap-4">
-                                            <div className="min-w-0 flex-1">
-                                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                              <p className="text-xs text-zinc-500 mt-0.5">
-                                                CAT {item.category === 0 ? '0' : ['I', 'II', 'III', 'IV'][parseInt(String(item.category)) - 1] ?? item.category}
-                                                {!isExpanded && <> · {item.spaces} espaço(s)</>}
-                                              </p>
-                                              {item.description && (
-                                                <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                                  {sectionType === 'Explosivo'
-                                                    ? item.description.replace(/DT Agi/g, `DT ${explosiveDT}`)
-                                                    : item.description}
-                                                </p>
-                                              )}
-                                            </div>
-                                            <span onClick={(e) => e.stopPropagation()}>
-                                              <Button
-                                                size="sm"
-                                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                                onPress={() => addItemToCharacter('general', item.id)}
-                                              >
-                                                <Plus size={14} className="mr-1" /> Adicionar
-                                              </Button>
-                                            </span>
-                                          </div>
-                                          {isExpanded && (
-                                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                                  Categoria
-                                                </p>
-                                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                                  {item.category === 0 ? '0' : categoryLabels[item.category as number] ?? item.category}
-                                                </p>
-                                              </div>
-                                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                                  Espaços
-                                                </p>
-                                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                                  {item.spaces}
-                                                </p>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </CardBody>
-                                      </Card>
-                                    </div>
-                                  )
-                                })}
+                                  ) : null}
+                                </p>
                               </div>
-                            )
-                          })
-                        })()
-                      )}
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Categoria
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {categoryLabels[item.category as number] ?? item.category}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Alcance
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.range ?? '—'}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Margem de crítico
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.critical ?? '—'}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Multiplicador de crítico
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.criticalMultiplier ?? '—'}
+                                </p>
+                              </div>
+                              {(item.ammoCapacity != null || item.ammoType) && (
+                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                    Munição
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
+                                    {item.ammoCapacity != null
+                                      ? `${item.ammoCapacity}`
+                                      : '—'}
+                                    {item.ammoType ? ` · ${item.ammoType}` : ''}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </CardBody>
+                      </Card>
                     </div>
-                  </Tab>
-                  <Tab
-                    key="cursed"
-                    title={<span className="flex items-center gap-2">👁️ Itens Amaldiçoados</span>}
-                  >
-                    <div className="space-y-3 pr-2">
-                      {catalogCursedItems.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhum item amaldiçoado cadastrado.</p>
-                      ) : (
-                        catalogCursedItems.map((item) => {
-                          const key = `cursed-${item.id}`
+                  )
+                })
+              )}
+            </div>
+          </Tab>
+          <Tab
+            key="protections"
+            title={<span className="flex items-center gap-2">🛡️ Proteções</span>}
+          >
+            <div className="space-y-3 pr-2">
+              {catalogProtections.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhuma proteção cadastrada.</p>
+              ) : (
+                catalogProtections.map((item) => {
+                  const key = `protection-${item.id}`
+                  const isExpanded = expandedItemKey === key
+                  return (
+                    <div
+                      key={key}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleItemExpanded(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggleItemExpanded(key)
+                        }
+                      }}
+                      className="cursor-pointer outline-none"
+                    >
+                      <Card
+                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                      >
+                        <CardBody className="py-3 px-4">
+                          <div className="flex flex-row items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                {item.type}
+                                {!isExpanded && (
+                                  <>
+                                    {' '}
+                                    · Def +{item.defenseBonus}
+                                    {item.dodgePenalty !== 0
+                                      ? ` · Esquiva ${item.dodgePenalty}`
+                                      : ''}
+                                  </>
+                                )}
+                              </p>
+                              {item.description && (
+                                <p
+                                  className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                >
+                                  {item.description}
+                                </p>
+                              )}
+                            </div>
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                onPress={() => addItemToCharacter('protection', item.id)}
+                              >
+                                <Plus size={14} className="mr-1" /> Adicionar
+                              </Button>
+                            </span>
+                          </div>
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Bônus de defesa
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  +{item.defenseBonus}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Penalidade de esquiva
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.dodgePenalty}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Categoria
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {categoryLabels[item.category as number] ?? item.category}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Tipo
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.type}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Espaços
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.spaces}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </CardBody>
+                      </Card>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </Tab>
+          <Tab
+            key="general"
+            title={<span className="flex items-center gap-2">🎒 Itens Gerais</span>}
+          >
+            <div className="space-y-6 pr-2">
+              {catalogGeneralItems.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhum item geral cadastrado.</p>
+              ) : (
+                (() => {
+                  // DT de Explosivos: 10 + Limite de PE/turno + Agilidade
+                  const explosiveDT = 10 + Math.floor(character.nex / 5) + agility
+                  return (['Acessório', 'Explosivo', 'Operacional', 'Paranormal'] as const).map((sectionType) => {
+                    const sectionItems = catalogGeneralItems.filter((i) => i.type === sectionType)
+                    if (sectionItems.length === 0) return null
+
+                    const sectionIcon = sectionType === 'Acessório' ? '🔧' : sectionType === 'Explosivo' ? '💥' : sectionType === 'Paranormal' ? '🔮' : '🎒'
+                    const sectionColor = sectionType === 'Acessório' ? 'text-blue-400' : sectionType === 'Explosivo' ? 'text-red-400' : sectionType === 'Paranormal' ? 'text-purple-400' : 'text-orange-400'
+                    const sectionBg = sectionType === 'Acessório' ? 'bg-blue-500/10 border-blue-500/20' : sectionType === 'Explosivo' ? 'bg-red-500/10 border-red-500/20' : sectionType === 'Paranormal' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-orange-500/10 border-orange-500/20'
+
+                    return (
+                      <div key={sectionType} className="space-y-2">
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${sectionBg}`}>
+                          <span>{sectionIcon}</span>
+                          <span className={`text-xs font-black uppercase tracking-widest ${sectionColor}`}>{sectionType}s</span>
+                        </div>
+                        {sectionItems.map((item) => {
+                          const key = `general-${item.id}`
                           const isExpanded = expandedItemKey === key
                           return (
                             <div
@@ -5294,14 +3516,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                     <div className="min-w-0 flex-1">
                                       <h4 className="font-semibold text-zinc-200">{item.name}</h4>
                                       <p className="text-xs text-zinc-500 mt-0.5">
-                                        {item.itemType ?? 'Item'}
+                                        CAT {item.category === 0 ? '0' : ['I', 'II', 'III', 'IV'][parseInt(String(item.category)) - 1] ?? item.category}
                                         {!isExpanded && <> · {item.spaces} espaço(s)</>}
                                       </p>
                                       {item.description && (
-                                        <p
-                                          className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                        >
-                                          {item.description}
+                                        <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                          {sectionType === 'Explosivo'
+                                            ? item.description.replace(/DT Agi/g, `DT ${explosiveDT}`)
+                                            : item.description}
                                         </p>
                                       )}
                                     </div>
@@ -5309,21 +3531,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                       <Button
                                         size="sm"
                                         className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                        isDisabled
-                                        title="Em breve"
+                                        onPress={() => addItemToCharacter('general', item.id)}
                                       >
-                                        <Plus size={14} className="mr-1" /> Em breve
+                                        <Plus size={14} className="mr-1" /> Adicionar
                                       </Button>
                                     </span>
                                   </div>
                                   {isExpanded && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
                                       <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
                                         <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Tipo
+                                          Categoria
                                         </p>
                                         <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.itemType ?? '—'}
+                                          {item.category === 0 ? '0' : categoryLabels[item.category as number] ?? item.category}
                                         </p>
                                       </div>
                                       <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
@@ -5334,685 +3555,701 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                           {item.spaces}
                                         </p>
                                       </div>
-                                      {item.benefits && (
-                                        <div className="bg-emerald-500/15 border border-emerald-500/40 rounded-lg p-3 sm:col-span-2">
-                                          <p className="text-[10px] uppercase tracking-wider text-emerald-400/90 font-bold">
-                                            Benefícios
-                                          </p>
-                                          <p className="text-sm text-zinc-300 mt-0.5">
-                                            {typeof item.benefits === 'object'
-                                              ? JSON.stringify(item.benefits)
-                                              : String(item.benefits)}
-                                          </p>
-                                        </div>
-                                      )}
-                                      {item.curses && (
-                                        <div className="bg-red-500/15 border border-red-500/40 rounded-lg p-3 sm:col-span-2">
-                                          <p className="text-[10px] uppercase tracking-wider text-red-400/90 font-bold">
-                                            Maldições
-                                          </p>
-                                          <p className="text-sm text-zinc-300 mt-0.5">
-                                            {typeof item.curses === 'object'
-                                              ? JSON.stringify(item.curses)
-                                              : String(item.curses)}
-                                          </p>
-                                        </div>
-                                      )}
                                     </div>
                                   )}
                                 </CardBody>
                               </Card>
                             </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </Tab>
-                  <Tab
-                    key="ammunitions"
-                    title={<span className="flex items-center gap-2">🔫 Munições</span>}
-                  >
-                    <div className="space-y-3 pr-2">
-                      {catalogAmmunitions.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhuma munição cadastrada.</p>
-                      ) : (
-                        catalogAmmunitions.map((item) => {
-                          const key = `ammunition-${item.id}`
-                          const isExpanded = expandedItemKey === key
-                          return (
-                            <div
-                              key={key}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => toggleItemExpanded(key)}
-                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItemExpanded(key) } }}
-                              className="cursor-pointer outline-none"
-                            >
-                              <Card
-                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                              >
-                                <CardBody className="py-3 px-4">
-                                  <div className="flex flex-row items-start justify-between gap-4">
-                                    <div className="min-w-0 flex-1">
-                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                      <p className="text-xs text-zinc-500 mt-0.5">
-                                        {item.type} · Categoria {item.category}
-                                        {!isExpanded && (
-                                          <> · {item.description || 'Sem descrição'}</>
-                                        )}
-                                      </p>
-                                      {item.description && (
-                                        <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                          {item.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <span onClick={(e) => e.stopPropagation()}>
-                                      <Button
-                                        size="sm"
-                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                        onPress={() => addItemToCharacter('ammunition', item.id)}
-                                      >
-                                        <Plus size={14} className="mr-1" /> Adicionar
-                                      </Button>
-                                    </span>
-                                  </div>
-                                  {isExpanded && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Categoria</p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.category}</p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo</p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">{item.type}</p>
-                                      </div>
-                                      {item.damageBonus && (
-                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de dano</p>
-                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageBonus}</p>
-                                        </div>
-                                      )}
-                                      {item.damageTypeOverride && (
-                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo de dano</p>
-                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageTypeOverride}</p>
-                                        </div>
-                                      )}
-                                      {item.criticalBonus && (
-                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de crítico</p>
-                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalBonus}</p>
-                                        </div>
-                                      )}
-                                      {item.criticalMultiplierBonus && (
-                                        <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                          <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Mult. de crítico</p>
-                                          <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalMultiplierBonus}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </CardBody>
-                              </Card>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </Tab>
-                </Tabs>
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Transcend Choice Modal */}
-      <Modal
-        isOpen={isTranscendChoiceOpen}
-        onOpenChange={() => setIsTranscendChoiceOpen(false)}
-        size="md"
-        placement="center"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-        }}
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">Transcender</h2>
-                <p className="text-xs text-zinc-400">Escolha como deseja transcender</p>
-              </ModalHeader>
-              <ModalBody>
-                <div className="grid grid-cols-1 gap-4">
-                  <Button
-                    className="h-24 text-xl font-bold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 shadow-lg shadow-blue-500/10 transition-all border border-blue-500/30"
-                    onPress={() => {
-                      setIsTranscendChoiceOpen(false)
-                      setIsParanormalSelectOpen(true)
-                    }}
-                  >
-                    Aprender Poder Paranormal
-                  </Button>
-                  <Button
-                    className="h-24 text-xl font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 shadow-lg shadow-purple-500/10 transition-all border border-purple-500/30"
-                    onPress={() => {
-                      setIsTranscendChoiceOpen(false)
-                      setIsRitualSelectOpen(true)
-                    }}
-                  >
-                    Aprender Ritual
-                  </Button>
-                </div>
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Paranormal Power Selection Modal (Dedicated) */}
-      <Modal
-        isOpen={isParanormalSelectOpen}
-        onOpenChange={() => setIsParanormalSelectOpen(false)}
-        size="2xl"
-        placement="center"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-        }}
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">Escolher Poder Paranormal</h2>
-                <p className="text-xs text-zinc-400 text-amber-500 font-bold uppercase tracking-tighter">
-                  Vínculo com o outro lado
-                </p>
-              </ModalHeader>
-              <ModalBody>
-                <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-                  {catalogParanormalPowers && catalogParanormalPowers.length > 0 ? (
-                    catalogParanormalPowers.map((power) => {
-                      const isAcquired = character.paranormalPowers?.some(
-                        (p: any) => p.paranormalPowerId === power.id
-                      )
-                      const elementColor = {
-                        Conhecimento: 'text-amber-400',
-                        Energia: 'text-purple-400',
-                        Morte: 'text-zinc-400',
-                        Sangue: 'text-red-400',
-                        Varia: 'text-blue-400',
-                      }[power.element || ''] || 'text-zinc-400'
-
-                      return (
-                        <Card
-                          key={power.id}
-                          isPressable={!isAcquired && !isAddingAbility}
-                          onPress={() => !isAcquired && !isAddingAbility && addParanormalPower(power.id)}
-                          className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
-                        >
-                          <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-lg font-bold text-zinc-100">{power.name}</h3>
-                                  {isAcquired && (
-                                    <Chip size="sm" color="success" variant="flat">
-                                      Adquirido
-                                    </Chip>
-                                  )}
-                                </div>
-                                <p className={`text-xs font-bold uppercase ${elementColor}`}>
-                                  {power.element}
-                                </p>
-                                {power.requirements && (
-                                  <p className="text-[10px] text-zinc-500 mt-1 uppercase">
-                                    Requisito: {power.requirements}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            {power.description && (
-                              <p className="text-sm text-zinc-300 italic">{power.description}</p>
-                            )}
-                            <div className="space-y-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
-                              {power.effects?.main && (
-                                <div>
-                                  <p className="text-[10px] font-bold text-zinc-500 uppercase">
-                                    Efeito:
-                                  </p>
-                                  <p className="text-xs text-zinc-300">{power.effects.main}</p>
-                                </div>
-                              )}
-                              {power.effects?.affinity && (
-                                <div>
-                                  <p className="text-[10px] font-bold text-amber-500/70 uppercase">
-                                    Afinidade:
-                                  </p>
-                                  <p className="text-xs text-amber-200/70">
-                                    {power.effects.affinity}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </CardBody>
-                        </Card>
-                      )
-                    })
-                  ) : (
-                    <p className="text-center text-zinc-500 py-8">Nenhum poder encontrado</p>
-                  )}
-                </div>
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-
-      {/* Ritual Selection Modal */}
-      <Modal
-        isOpen={isRitualSelectOpen}
-        onOpenChange={() => setIsRitualSelectOpen(false)}
-        size="2xl"
-        placement="center"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-        }}
-      >
-        <ModalContent>
-          {() => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">Aprender Ritual</h2>
-                <p className="text-xs text-zinc-400">Desvende os segredos do ocultismo</p>
-                {/* Badges de crédito e círculo */}
-                <div className="flex items-center gap-2 mt-2 flex-wrap">
-                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-[11px] font-bold text-violet-300 whitespace-nowrap">
-                    🔮 Créditos: <span className={creditosRestantes > 0 ? 'text-violet-200' : 'text-zinc-500'}>{creditosRestantes}</span> / {creditosGanhos}
-                  </span>
-                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] font-bold text-amber-300 whitespace-nowrap">
-                    ⭕ Círculo máx: {circuloMaximo}º
-                  </span>
-                </div>
-
-                {/* Search and Filters UI */}
-                <div className="flex flex-col sm:flex-row gap-3 mt-4">
-                  <Input
-                    placeholder="Buscar ritual pelo nome..."
-                    value={ritualSearch}
-                    onValueChange={setRitualSearch}
-                    startContent={<Filter size={16} className="text-zinc-500" />}
-                    className="flex-1"
-                    size="sm"
-                    classNames={{
-                      inputWrapper: 'bg-zinc-950 border-zinc-800'
-                    }}
-                  />
-                  <div className="flex gap-2">
-                    <select
-                      value={elementFilter}
-                      onChange={(e) => setElementFilter(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
-                    >
-                      <option value="Todos">Todos Elementos</option>
-                      <option value="Conhecimento">Conhecimento</option>
-                      <option value="Energia">Energia</option>
-                      <option value="Morte">Morte</option>
-                      <option value="Sangue">Sangue</option>
-                      <option value="Medo">Medo</option>
-                    </select>
-                    <select
-                      value={circleFilter}
-                      onChange={(e) => setCircleFilter(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
-                    >
-                      <option value="Todos">Todos Círculos</option>
-                      <option value="1">1º Círculo</option>
-                      <option value="2">2º Círculo</option>
-                      <option value="3">3º Círculo</option>
-                      <option value="4">4º Círculo</option>
-                    </select>
-                  </div>
-                </div>
-              </ModalHeader>
-              <ModalBody>
-                <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-                  {filteredRituals && filteredRituals.length > 0 ? (
-                    filteredRituals.map((ritual) => {
-                      const isAcquired = character.rituals?.some(
-                        (r: any) => r.ritualId === ritual.id
-                      )
-                      const isBlocked = Number((ritual as any).circle) > circuloMaximo
-                      const elementColor = ((({
-                        CONHECIMENTO: 'text-amber-400',
-                        ENERGIA: 'text-purple-400',
-                        MORTE: 'text-zinc-400',
-                        SANGUE: 'text-red-400',
-                        MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
-                      } as Record<string, string>)[(ritual.element || '').toUpperCase()])) || 'text-zinc-400'
-
-                      return (
-                        <Card
-                          key={ritual.id}
-                          isPressable={!isAcquired && !isAddingAbility && !isBlocked}
-                          onPress={() => !isAcquired && !isAddingAbility && !isBlocked && addRitual(ritual.id)}
-                          className={`bg-zinc-950 border transition-colors ${isBlocked ? 'border-zinc-800 opacity-40 grayscale cursor-not-allowed' : 'border-zinc-700 hover:border-amber-500/50 cursor-pointer'} ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
-                        >
-                          <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
-                                  <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
-                                    {ritual.circle}º Círculo
-                                  </Chip>
-                                  {isBlocked && (
-                                    <Chip size="sm" variant="flat" className="bg-red-950 text-red-400 border border-red-900">
-                                      🔒 NEX insuficiente
-                                    </Chip>
-                                  )}
-                                  {isAcquired && (
-                                    <Chip size="sm" color="success" variant="flat">
-                                      Aprendido
-                                    </Chip>
-                                  )}
-                                </div>
-                                <p className={`text-xs font-bold uppercase ${elementColor}`}>
-                                  {ritual.element}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 uppercase font-bold">
-                              <div>
-                                <span className="text-zinc-600">Execução:</span> {ritual.execution}
-                              </div>
-                              <div>
-                                <span className="text-zinc-600">Alcance:</span> {ritual.range}
-                              </div>
-                              <div>
-                                <span className="text-zinc-600 text-xs">Duração:</span> {ritual.duration}
-                              </div>
-                              {ritual.resistance && (
-                                <div>
-                                  <span className="text-zinc-600 text-xs">Resistência:</span> {ritual.resistance}
-                                </div>
-                              )}
-                            </div>
-                            {ritual.description && (
-                              <p className="text-xs text-zinc-300 italic line-clamp-2">
-                                {ritual.description}
-                              </p>
-                            )}
-
-                            {(ritual.discente || ritual.verdadeiro) && (
-                              <div className="flex flex-col gap-0.5 mt-auto text-[11px]">
-                                {ritual.discente && (
-                                  <div className="text-zinc-400 truncate">
-                                    <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
-                                    {ritual.discente}
-                                  </div>
-                                )}
-                                {ritual.verdadeiro && (
-                                  <div className="text-zinc-400 truncate">
-                                    <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
-                                    {ritual.verdadeiro}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </CardBody>
-                        </Card>
-                      )
-                    })
-                  ) : (
-                    <div className="p-8 text-center text-zinc-500 bg-zinc-950/20 border border-dashed border-zinc-800 rounded-xl">
-                      <p>Nenhum ritual encontrado com esses filtros.</p>
-                      <button
-                        onClick={() => {
-                          setRitualSearch('')
-                          setElementFilter('Todos')
-                          setCircleFilter('Todos')
-                        }}
-                        className="text-xs text-amber-500 hover:text-amber-400 mt-2 font-bold uppercase"
-                      >
-                        Limpar Filtros
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </ModalBody>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
-      {/* Modal de Modificação de Arma */}
-      <Modal
-        isOpen={isModifyWeaponModalOpen}
-        onOpenChange={onModifyWeaponModalOpenChange}
-        className="bg-zinc-900 border border-zinc-800 text-zinc-100"
-        size="2xl"
-        scrollBehavior="inside"
-      >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1 border-b border-zinc-800 pb-4">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-                    <Edit3 size={20} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold">Modificar {modifyingWeapon?.name}</h2>
-                    <p className="text-xs text-zinc-500 font-normal">
-                      Melhorias, Acessórios e Maldições
-                    </p>
-                  </div>
-                </div>
-              </ModalHeader>
-              <ModalBody className="py-6">
-                <div className="space-y-6">
-                  {/* Modificações Atuais */}
-                  <div>
-                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3">
-                      Modificações Atuais
-                    </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {modifyingWeapon?.modifications && modifyingWeapon.modifications.length > 0 ? (
-                        modifyingWeapon.modifications.map((mod: any) => (
-                          <Chip
-                            key={mod.id}
-                            variant="flat"
-                            color={mod.type === 'Maldição' ? 'danger' : 'primary'}
-                            onClose={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
-                            className={mod.type === 'Maldição'
-                              ? mod.element === 'Sangue' ? 'bg-red-500/10 text-red-300 border border-red-500/20' :
-                                mod.element === 'Morte' ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20' :
-                                  mod.element === 'Energia' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' :
-                                    mod.element === 'Conhecimento' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
-                                      'bg-red-500/10 text-red-300 border border-red-500/20'
-                              : "bg-blue-500/10 text-blue-300 border border-blue-500/20"}
-                          >
-                            {mod.name}
-                          </Chip>
-                        ))
-                      ) : (
-                        <span className="text-sm text-zinc-600 italic">
-                          Nenhuma modificação aplicada.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <Divider className="bg-zinc-800" />
-
-                  {/* Catálogo de Modificações */}
-                  <div>
-                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3 flex items-center justify-between">
-                      Disponíveis no Catálogo
-                      <div className="flex bg-zinc-800/50 p-1 rounded-xl border border-zinc-800">
-                        {['Melhoria', 'Maldição'].map((type) => {
-                          const isActive = modTypeFilter === type
-                          const activeBg = type === 'Melhoria' ? 'bg-blue-600' : 'bg-red-600'
-
-                          return (
-                            <button
-                              key={type}
-                              onClick={() => setModTypeFilter(type as any)}
-                              className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${isActive
-                                ? `${activeBg} text-white shadow-md`
-                                : 'text-zinc-500 hover:text-zinc-300'
-                                }`}
-                            >
-                              {type}
-                            </button>
                           )
                         })}
                       </div>
-                    </h3>
-                    <div className="space-y-6 pr-2">
-                      {modTypeFilter === 'Maldição' ? (
-                        ['Sangue', 'Morte', 'Energia', 'Conhecimento'].map((element) => {
-                          const elementMods = catalogAmmunitions.filter(m => m.type === 'Maldição' && m.element === element)
-                          if (elementMods.length === 0) return null
-
-                          const elementColor =
-                            element === 'Sangue' ? 'text-red-500' :
-                              element === 'Morte' ? 'text-zinc-400' :
-                                element === 'Energia' ? 'text-purple-500' :
-                                  'text-amber-500' // Conhecimento
-
-                          const elementBg =
-                            element === 'Sangue' ? 'bg-red-500/10' :
-                              element === 'Morte' ? 'bg-zinc-500/10' :
-                                element === 'Energia' ? 'bg-purple-500/10' :
-                                  'bg-amber-500/10'
-
-                          const elementBorder =
-                            element === 'Sangue' ? 'border-red-500/20 font-red-glow' :
-                              element === 'Morte' ? 'border-zinc-500/20 font-death-glow' :
-                                element === 'Energia' ? 'border-purple-500/20 font-energy-glow' :
-                                  'border-amber-500/20 font-knowledge-glow'
-
-                          return (
-                            <div key={element} className="space-y-3">
-                              <h4 className={`text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 ${elementColor}`}>
-                                <div className={`w-2 h-2 rounded-full ${elementBg.replace('/10', '')} animate-pulse`} />
-                                {element}
-                              </h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {elementMods.map((mod) => {
-                                  const isActive = modifyingWeapon?.modifications?.some(
-                                    (m: any) => m.modificationId === mod.id
-                                  )
-                                  const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
-                                  const isBlocked = !isActive && !validation.allowed
-                                  return (
-                                    <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
-                                      <Card
-                                        className={`w-full border transition-all ${isBlocked
-                                          ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                                          : isActive
-                                            ? `${elementBg} ${elementBorder.split(' ')[0]}`
-                                            : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                          }`}
-                                      >
-                                        <CardBody className="p-3">
-                                          <div className="flex justify-between items-start mb-1">
-                                            <span className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}>
-                                              {mod.name}
-                                            </span>
-                                            <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
-                                              +{mod.category} CAT
-                                            </Chip>
-                                          </div>
-                                          <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
-                                            {mod.description}
-                                          </p>
-                                          <div className="mt-2 flex items-center justify-between">
-                                            <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : isActive ? elementColor : 'text-zinc-600'
-                                              }`}>
-                                              {isBlocked ? validation.reason : 'MALDIÇÃO'}
-                                            </span>
-                                            {isActive && <Check size={12} className={elementColor} />}
-                                          </div>
-                                        </CardBody>
-                                      </Card>
-                                    </div>
-                                  )
-                                })}
-                              </div>
+                    )
+                  })
+                })()
+              )}
+            </div>
+          </Tab>
+          <Tab
+            key="cursed"
+            title={<span className="flex items-center gap-2">👁️ Itens Amaldiçoados</span>}
+          >
+            <div className="space-y-3 pr-2">
+              {catalogCursedItems.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhum item amaldiçoado cadastrado.</p>
+              ) : (
+                catalogCursedItems.map((item) => {
+                  const key = `cursed-${item.id}`
+                  const isExpanded = expandedItemKey === key
+                  return (
+                    <div
+                      key={key}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleItemExpanded(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          toggleItemExpanded(key)
+                        }
+                      }}
+                      className="cursor-pointer outline-none"
+                    >
+                      <Card
+                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                      >
+                        <CardBody className="py-3 px-4">
+                          <div className="flex flex-row items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                {item.itemType ?? 'Item'}
+                                {!isExpanded && <> · {item.spaces} espaço(s)</>}
+                              </p>
+                              {item.description && (
+                                <p
+                                  className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
+                                >
+                                  {item.description}
+                                </p>
+                              )}
                             </div>
-                          )
-                        })
-                      ) : (
-                        <div className="grid grid-cols-1 gap-3">
-                          {catalogAmmunitions
-                            .filter((m) => m.type === 'Melhoria')
-                            .map((mod) => {
-                              const isActive = modifyingWeapon?.modifications?.some(
-                                (m: any) => m.modificationId === mod.id
-                              )
-                              const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
-                              const isBlocked = !isActive && !validation.allowed
-                              return (
-                                <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
-                                  <Card
-                                    isPressable={!isBlocked}
-                                    onPress={isBlocked ? undefined : () => toggleModification(modifyingWeapon.id, mod.id, isActive ? 'remove' : 'add')}
-                                    className={`w-full border transition-all ${isBlocked
-                                      ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                                      : isActive
-                                        ? 'bg-blue-500/10 border-blue-500/50'
-                                        : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                      }`}
-                                  >
-                                    <CardBody className="p-3">
-                                      <div className="flex justify-between items-start mb-1">
-                                        <span className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}>
-                                          {mod.name}
-                                        </span>
-                                        <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
-                                          +{mod.category} CAT
-                                        </Chip>
-                                      </div>
-                                      <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
-                                        {mod.description}
-                                      </p>
-                                      <div className="mt-2 flex items-center justify-between">
-                                        <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'
-                                          }`}>
-                                          {isBlocked ? validation.reason : 'MELHORIA'}
-                                        </span>
-                                        {isActive && <Check size={12} className="text-blue-400" />}
-                                      </div>
-                                    </CardBody>
-                                  </Card>
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                isDisabled
+                                title="Em breve"
+                              >
+                                <Plus size={14} className="mr-1" /> Em breve
+                              </Button>
+                            </span>
+                          </div>
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Tipo
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.itemType ?? '—'}
+                                </p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
+                                  Espaços
+                                </p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">
+                                  {item.spaces}
+                                </p>
+                              </div>
+                              {item.benefits && (
+                                <div className="bg-emerald-500/15 border border-emerald-500/40 rounded-lg p-3 sm:col-span-2">
+                                  <p className="text-[10px] uppercase tracking-wider text-emerald-400/90 font-bold">
+                                    Benefícios
+                                  </p>
+                                  <p className="text-sm text-zinc-300 mt-0.5">
+                                    {typeof item.benefits === 'object'
+                                      ? JSON.stringify(item.benefits)
+                                      : String(item.benefits)}
+                                  </p>
                                 </div>
-                              )
-                            })}
+                              )}
+                              {item.curses && (
+                                <div className="bg-red-500/15 border border-red-500/40 rounded-lg p-3 sm:col-span-2">
+                                  <p className="text-[10px] uppercase tracking-wider text-red-400/90 font-bold">
+                                    Maldições
+                                  </p>
+                                  <p className="text-sm text-zinc-300 mt-0.5">
+                                    {typeof item.curses === 'object'
+                                      ? JSON.stringify(item.curses)
+                                      : String(item.curses)}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </CardBody>
+                      </Card>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </Tab>
+          <Tab
+            key="ammunitions"
+            title={<span className="flex items-center gap-2">🔫 Munições</span>}
+          >
+            <div className="space-y-3 pr-2">
+              {catalogAmmunitions.length === 0 ? (
+                <p className="text-sm text-zinc-500">Nenhuma munição cadastrada.</p>
+              ) : (
+                catalogAmmunitions.map((item) => {
+                  const key = `ammunition-${item.id}`
+                  const isExpanded = expandedItemKey === key
+                  return (
+                    <div
+                      key={key}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggleItemExpanded(key)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItemExpanded(key) } }}
+                      className="cursor-pointer outline-none"
+                    >
+                      <Card
+                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
+                      >
+                        <CardBody className="py-3 px-4">
+                          <div className="flex flex-row items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
+                              <p className="text-xs text-zinc-500 mt-0.5">
+                                {item.type} · Categoria {item.category}
+                                {!isExpanded && (
+                                  <> · {item.description || 'Sem descrição'}</>
+                                )}
+                              </p>
+                              {item.description && (
+                                <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                  {item.description}
+                                </p>
+                              )}
+                            </div>
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
+                                onPress={() => addItemToCharacter('ammunition', item.id)}
+                              >
+                                <Plus size={14} className="mr-1" /> Adicionar
+                              </Button>
+                            </span>
+                          </div>
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Categoria</p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">{item.category}</p>
+                              </div>
+                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo</p>
+                                <p className="text-lg font-bold text-orange-300 mt-0.5">{item.type}</p>
+                              </div>
+                              {item.damageBonus && (
+                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de dano</p>
+                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageBonus}</p>
+                                </div>
+                              )}
+                              {item.damageTypeOverride && (
+                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo de dano</p>
+                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageTypeOverride}</p>
+                                </div>
+                              )}
+                              {item.criticalBonus && (
+                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de crítico</p>
+                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalBonus}</p>
+                                </div>
+                              )}
+                              {item.criticalMultiplierBonus && (
+                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
+                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Mult. de crítico</p>
+                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalMultiplierBonus}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </CardBody>
+                      </Card>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </Tab>
+        </Tabs>
+      </BaseModal>
+
+      {/* Transcend Choice Modal */}
+      <BaseModal
+        isOpen={isTranscendChoiceOpen}
+        onClose={() => setIsTranscendChoiceOpen(false)}
+        maxWidth="max-w-sm"
+        title="Transcender"
+        description="Escolha como deseja transcender"
+      >
+        <div className="grid grid-cols-1 gap-4">
+          <button
+            className="h-24 text-xl font-bold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 shadow-lg shadow-blue-500/10 transition-all border border-blue-500/30 rounded-xl"
+            onClick={() => { setIsTranscendChoiceOpen(false); setIsParanormalSelectOpen(true) }}
+          >
+            Aprender Poder Paranormal
+          </button>
+          <button
+            className="h-24 text-xl font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 shadow-lg shadow-purple-500/10 transition-all border border-purple-500/30 rounded-xl"
+            onClick={() => { setIsTranscendChoiceOpen(false); setIsRitualSelectOpen(true) }}
+          >
+            Aprender Ritual
+          </button>
+        </div>
+      </BaseModal>
+
+      {/* Paranormal Power Selection Modal (Dedicated) */}
+      <BaseModal
+        isOpen={isParanormalSelectOpen}
+        onClose={() => setIsParanormalSelectOpen(false)}
+        title="Escolher Poder Paranormal"
+        description={<span className="text-amber-500 font-bold uppercase tracking-tighter">Vínculo com o outro lado</span>}
+      >
+        <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+          {catalogParanormalPowers && catalogParanormalPowers.length > 0 ? (
+            catalogParanormalPowers.map((power) => {
+              const isAcquired = character.paranormalPowers?.some(
+                (p: any) => p.paranormalPowerId === power.id
+              )
+              const elementColor = {
+                Conhecimento: 'text-amber-400',
+                Energia: 'text-purple-400',
+                Morte: 'text-zinc-400',
+                Sangue: 'text-red-400',
+                Varia: 'text-blue-400',
+              }[power.element || ''] || 'text-zinc-400'
+
+              return (
+                <Card
+                  key={power.id}
+                  isPressable={!isAcquired && !isAddingAbility}
+                  onPress={() => !isAcquired && !isAddingAbility && addParanormalPower(power.id)}
+                  className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-bold text-zinc-100">{power.name}</h3>
+                          {isAcquired && (
+                            <Chip size="sm" color="success" variant="flat">
+                              Adquirido
+                            </Chip>
+                          )}
+                        </div>
+                        <p className={`text-xs font-bold uppercase ${elementColor}`}>
+                          {power.element}
+                        </p>
+                        {power.requirements && (
+                          <p className="text-[10px] text-zinc-500 mt-1 uppercase">
+                            Requisito: {power.requirements}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {power.description && (
+                      <p className="text-sm text-zinc-300 italic">{power.description}</p>
+                    )}
+                    <div className="space-y-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
+                      {power.effects?.main && (
+                        <div>
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase">
+                            Efeito:
+                          </p>
+                          <p className="text-xs text-zinc-300">{power.effects.main}</p>
+                        </div>
+                      )}
+                      {power.effects?.affinity && (
+                        <div>
+                          <p className="text-[10px] font-bold text-amber-500/70 uppercase">
+                            Afinidade:
+                          </p>
+                          <p className="text-xs text-amber-200/70">
+                            {power.effects.affinity}
+                          </p>
                         </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              </ModalBody>
-              <ModalFooter className="border-t border-zinc-800 pt-4">
-                <Button color="danger" variant="light" onPress={onClose} size="sm">
-                  Fechar
-                </Button>
-              </ModalFooter>
-            </>
+                  </CardBody>
+                </Card>
+              )
+            })
+          ) : (
+            <p className="text-center text-zinc-500 py-8">Nenhum poder encontrado</p>
           )}
-        </ModalContent>
-      </Modal>
-    </div>
+        </div>
+      </BaseModal>
+
+      {/* Ritual Selection Modal */}
+      <BaseModal
+        isOpen={isRitualSelectOpen}
+        onClose={() => setIsRitualSelectOpen(false)}
+        title={
+          <div className="space-y-3">
+            <div>
+              <div className="text-xl font-bold text-white">Aprender Ritual</div>
+              <div className="text-xs text-zinc-400">Desvende os segredos do ocultismo</div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-[11px] font-bold text-violet-300 whitespace-nowrap">
+                🔮 Créditos: <span className={creditosRestantes > 0 ? 'text-violet-200' : 'text-zinc-500'}>{creditosRestantes}</span> / {creditosGanhos}
+              </span>
+              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] font-bold text-amber-300 whitespace-nowrap">
+                ⭕ Círculo máx: {circuloMaximo}º
+              </span>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Input
+                placeholder="Buscar ritual pelo nome..."
+                value={ritualSearch}
+                onValueChange={setRitualSearch}
+                startContent={<Filter size={16} className="text-zinc-500" />}
+                className="flex-1"
+                size="sm"
+                classNames={{ inputWrapper: 'bg-zinc-950 border-zinc-800' }}
+              />
+              <div className="flex gap-2">
+                <select
+                  value={elementFilter}
+                  onChange={(e) => setElementFilter(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
+                >
+                  <option value="Todos">Todos Elementos</option>
+                  <option value="Conhecimento">Conhecimento</option>
+                  <option value="Energia">Energia</option>
+                  <option value="Morte">Morte</option>
+                  <option value="Sangue">Sangue</option>
+                  <option value="Medo">Medo</option>
+                </select>
+                <select
+                  value={circleFilter}
+                  onChange={(e) => setCircleFilter(e.target.value)}
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
+                >
+                  <option value="Todos">Todos Círculos</option>
+                  <option value="1">1º Círculo</option>
+                  <option value="2">2º Círculo</option>
+                  <option value="3">3º Círculo</option>
+                  <option value="4">4º Círculo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        }
+      >
+        <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
+          {filteredRituals && filteredRituals.length > 0 ? (
+            filteredRituals.map((ritual) => {
+              const isAcquired = character.rituals?.some(
+                (r: any) => r.ritualId === ritual.id
+              )
+              const isBlocked = Number((ritual as any).circle) > circuloMaximo
+              const elementColor = ((({
+                CONHECIMENTO: 'text-amber-400',
+                ENERGIA: 'text-purple-400',
+                MORTE: 'text-zinc-400',
+                SANGUE: 'text-red-400',
+                MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
+              } as Record<string, string>)[(ritual.element || '').toUpperCase()])) || 'text-zinc-400'
+
+              return (
+                <Card
+                  key={ritual.id}
+                  isPressable={!isAcquired && !isAddingAbility && !isBlocked}
+                  onPress={() => !isAcquired && !isAddingAbility && !isBlocked && addRitual(ritual.id)}
+                  className={`bg-zinc-950 border transition-colors ${isBlocked ? 'border-zinc-800 opacity-40 grayscale cursor-not-allowed' : 'border-zinc-700 hover:border-amber-500/50 cursor-pointer'} ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
+                >
+                  <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
+                          <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
+                            {ritual.circle}º Círculo
+                          </Chip>
+                          {isBlocked && (
+                            <Chip size="sm" variant="flat" className="bg-red-950 text-red-400 border border-red-900">
+                              🔒 NEX insuficiente
+                            </Chip>
+                          )}
+                          {isAcquired && (
+                            <Chip size="sm" color="success" variant="flat">
+                              Aprendido
+                            </Chip>
+                          )}
+                        </div>
+                        <p className={`text-xs font-bold uppercase ${elementColor}`}>
+                          {ritual.element}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 uppercase font-bold">
+                      <div>
+                        <span className="text-zinc-600">Execução:</span> {ritual.execution}
+                      </div>
+                      <div>
+                        <span className="text-zinc-600">Alcance:</span> {ritual.range}
+                      </div>
+                      <div>
+                        <span className="text-zinc-600 text-xs">Duração:</span> {ritual.duration}
+                      </div>
+                      {ritual.resistance && (
+                        <div>
+                          <span className="text-zinc-600 text-xs">Resistência:</span> {ritual.resistance}
+                        </div>
+                      )}
+                    </div>
+                    {ritual.description && (
+                      <p className="text-xs text-zinc-300 italic line-clamp-2">
+                        {ritual.description}
+                      </p>
+                    )}
+
+                    {(ritual.discente || ritual.verdadeiro) && (
+                      <div className="flex flex-col gap-0.5 mt-auto text-[11px]">
+                        {ritual.discente && (
+                          <div className="text-zinc-400 truncate">
+                            <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
+                            {ritual.discente}
+                          </div>
+                        )}
+                        {ritual.verdadeiro && (
+                          <div className="text-zinc-400 truncate">
+                            <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
+                            {ritual.verdadeiro}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardBody>
+                </Card>
+              )
+            })
+          ) : (
+            <div className="p-8 text-center text-zinc-500 bg-zinc-950/20 border border-dashed border-zinc-800 rounded-xl">
+              <p>Nenhum ritual encontrado com esses filtros.</p>
+              <button
+                onClick={() => {
+                  setRitualSearch('')
+                  setElementFilter('Todos')
+                  setCircleFilter('Todos')
+                }}
+                className="text-xs text-amber-500 hover:text-amber-400 mt-2 font-bold uppercase"
+              >
+                Limpar Filtros
+              </button>
+            </div>
+          )}
+        </div>
+      </BaseModal>
+      {/* Modal de Modificação de Arma */}
+      <BaseModal
+        isOpen={isModifyWeaponModalOpen}
+        onClose={onModifyWeaponModalOpenChange}
+        title={
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+              <Edit3 size={20} />
+            </div>
+            <div>
+              <div className="text-xl font-bold text-white">Modificar {modifyingWeapon?.name}</div>
+              <div className="text-xs text-zinc-500">Melhorias, Acessórios e Maldições</div>
+            </div>
+          </div>
+        }
+        footer={
+          <button
+            onClick={onModifyWeaponModalOpenChange}
+            className="ml-auto px-5 py-2 rounded-md font-medium text-red-400 hover:bg-red-500/10 transition-colors text-sm"
+          >
+            Fechar
+          </button>
+        }
+      >
+        <div className="space-y-6">
+          {/* Modificações Atuais */}
+          <div>
+            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3">
+              Modificações Atuais
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {modifyingWeapon?.modifications && modifyingWeapon.modifications.length > 0 ? (
+                modifyingWeapon.modifications.map((mod: any) => (
+                  <Chip
+                    key={mod.id}
+                    variant="flat"
+                    color={mod.type === 'Maldição' ? 'danger' : 'primary'}
+                    onClose={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
+                    className={mod.type === 'Maldição'
+                      ? mod.element === 'Sangue' ? 'bg-red-500/10 text-red-300 border border-red-500/20' :
+                        mod.element === 'Morte' ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20' :
+                          mod.element === 'Energia' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' :
+                            mod.element === 'Conhecimento' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
+                              'bg-red-500/10 text-red-300 border border-red-500/20'
+                      : "bg-blue-500/10 text-blue-300 border border-blue-500/20"}
+                  >
+                    {mod.name}
+                  </Chip>
+                ))
+              ) : (
+                <span className="text-sm text-zinc-600 italic">
+                  Nenhuma modificação aplicada.
+                </span>
+              )}
+            </div>
+          </div>
+
+          <Divider className="bg-zinc-800" />
+
+          {/* Catálogo de Modificações */}
+          <div>
+            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3 flex items-center justify-between">
+              Disponíveis no Catálogo
+              <div className="flex bg-zinc-800/50 p-1 rounded-xl border border-zinc-800">
+                {['Melhoria', 'Maldição'].map((type) => {
+                  const isActive = modTypeFilter === type
+                  const activeBg = type === 'Melhoria' ? 'bg-blue-600' : 'bg-red-600'
+
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setModTypeFilter(type as any)}
+                      className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${isActive
+                        ? `${activeBg} text-white shadow-md`
+                        : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                    >
+                      {type}
+                    </button>
+                  )
+                })}
+              </div>
+            </h3>
+            <div className="space-y-6 pr-2">
+              {modTypeFilter === 'Maldição' ? (
+                ['Sangue', 'Morte', 'Energia', 'Conhecimento'].map((element) => {
+                  const elementMods = catalogAmmunitions.filter(m => m.type === 'Maldição' && m.element === element)
+                  if (elementMods.length === 0) return null
+
+                  const elementColor =
+                    element === 'Sangue' ? 'text-red-500' :
+                      element === 'Morte' ? 'text-zinc-400' :
+                        element === 'Energia' ? 'text-purple-500' :
+                          'text-amber-500' // Conhecimento
+
+                  const elementBg =
+                    element === 'Sangue' ? 'bg-red-500/10' :
+                      element === 'Morte' ? 'bg-zinc-500/10' :
+                        element === 'Energia' ? 'bg-purple-500/10' :
+                          'bg-amber-500/10'
+
+                  const elementBorder =
+                    element === 'Sangue' ? 'border-red-500/20 font-red-glow' :
+                      element === 'Morte' ? 'border-zinc-500/20 font-death-glow' :
+                        element === 'Energia' ? 'border-purple-500/20 font-energy-glow' :
+                          'border-amber-500/20 font-knowledge-glow'
+
+                  return (
+                    <div key={element} className="space-y-3">
+                      <h4 className={`text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 ${elementColor}`}>
+                        <div className={`w-2 h-2 rounded-full ${elementBg.replace('/10', '')} animate-pulse`} />
+                        {element}
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {elementMods.map((mod) => {
+                          const isActive = modifyingWeapon?.modifications?.some(
+                            (m: any) => m.modificationId === mod.id
+                          )
+                          const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                          const isBlocked = !isActive && !validation.allowed
+                          return (
+                            <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
+                              <Card
+                                className={`w-full border transition-all ${isBlocked
+                                  ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                  : isActive
+                                    ? `${elementBg} ${elementBorder.split(' ')[0]}`
+                                    : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                                  }`}
+                              >
+                                <CardBody className="p-3">
+                                  <div className="flex justify-between items-start mb-1">
+                                    <span className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}>
+                                      {mod.name}
+                                    </span>
+                                    <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                      +{mod.category} CAT
+                                    </Chip>
+                                  </div>
+                                  <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
+                                    {mod.description}
+                                  </p>
+                                  <div className="mt-2 flex items-center justify-between">
+                                    <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : isActive ? elementColor : 'text-zinc-600'
+                                      }`}>
+                                      {isBlocked ? validation.reason : 'MALDIÇÃO'}
+                                    </span>
+                                    {isActive && <Check size={12} className={elementColor} />}
+                                  </div>
+                                </CardBody>
+                              </Card>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {catalogAmmunitions
+                    .filter((m) => m.type === 'Melhoria')
+                    .map((mod) => {
+                      const isActive = modifyingWeapon?.modifications?.some(
+                        (m: any) => m.modificationId === mod.id
+                      )
+                      const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                      const isBlocked = !isActive && !validation.allowed
+                      return (
+                        <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
+                          <Card
+                            isPressable={!isBlocked}
+                            onPress={isBlocked ? undefined : () => toggleModification(modifyingWeapon.id, mod.id, isActive ? 'remove' : 'add')}
+                            className={`w-full border transition-all ${isBlocked
+                              ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                              : isActive
+                                ? 'bg-blue-500/10 border-blue-500/50'
+                                : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                              }`}
+                          >
+                            <CardBody className="p-3">
+                              <div className="flex justify-between items-start mb-1">
+                                <span className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}>
+                                  {mod.name}
+                                </span>
+                                <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                  +{mod.category} CAT
+                                </Chip>
+                              </div>
+                              <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
+                                {mod.description}
+                              </p>
+                              <div className="mt-2 flex items-center justify-between">
+                                <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'
+                                  }`}>
+                                  {isBlocked ? validation.reason : 'MELHORIA'}
+                                </span>
+                                {isActive && <Check size={12} className="text-blue-400" />}
+                              </div>
+                            </CardBody>
+                          </Card>
+                        </div>
+                      )
+                    })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </BaseModal>
+    </div >
   )
 }
