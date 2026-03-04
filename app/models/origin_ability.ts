@@ -16,6 +16,26 @@ export default class OriginAbility extends BaseModel {
   @column()
   declare description: string | null
 
+  // Tipo: 'ativa' | 'passiva' | 'reação' | 'livre' | null
+  @column()
+  declare type: string | null
+
+  // Campos de mecânica (opcionais)
+  @column()
+  declare peCost: string | null
+
+  @column()
+  declare range: string | null
+
+  @column()
+  declare castTime: string | null
+
+  @column()
+  declare duration: string | null
+
+  @column()
+  declare target: string | null
+
   @column({ prepare: (value: any) => JSON.stringify(value) })
   declare effects: any | null
 

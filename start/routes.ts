@@ -34,6 +34,7 @@ router.group(() => {
     router.put('/characters/:id/skills', [CharactersController, 'updateSkills'])
     router.post('/characters/:id/items', [CharactersController, 'addItem'])
     router.delete('/characters/:id/items/:itemId', [CharactersController, 'removeItem'])
+    router.patch('/characters/:id/items/:itemId/equip', [CharactersController, 'equipItem'])
 
     // Weapon Modifications
     router.post('/characters/:id/weapons/:characterWeaponId/modifications', [CharactersController, 'addWeaponModification'])

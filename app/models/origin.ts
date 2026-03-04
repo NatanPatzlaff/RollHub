@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { BaseModel, column, hasMany } from '@adonisjs/lucid/orm'
 import type { HasMany } from '@adonisjs/lucid/types/relations'
 import OriginBenefit from '#models/origin_benefit'
+import OriginAbility from '#models/origin_ability'
 import Character from '#models/character'
 
 export default class Origin extends BaseModel {
@@ -25,7 +26,7 @@ export default class Origin extends BaseModel {
 
   @column({
     prepare: (value: any) => JSON.stringify(value),
-    consume: (value: string) => typeof value === 'string' ? JSON.parse(value) : value
+    consume: (value: string) => (typeof value === 'string' ? JSON.parse(value) : value),
   })
   declare trainedSkills: string[] | null
 
@@ -37,6 +38,9 @@ export default class Origin extends BaseModel {
 
   @hasMany(() => OriginBenefit)
   declare benefits: HasMany<typeof OriginBenefit>
+
+  @hasMany(() => OriginAbility)
+  declare abilities: HasMany<typeof OriginAbility>
 
   @hasMany(() => Character)
   declare characters: HasMany<typeof Character>

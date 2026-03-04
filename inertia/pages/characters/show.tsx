@@ -1,40 +1,28 @@
-import {
+﻿import {
   Card,
-  CardHeader,
   CardBody,
   Button,
   Progress,
-  Tab,
-  Tabs,
   Chip,
   Divider,
   Dropdown,
   DropdownTrigger,
   DropdownMenu,
   DropdownItem,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
   useDisclosure,
-  Slider,
   Input,
 } from '@heroui/react'
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getOriginIcon } from '../../utils/originIcons'
 import { skillDescriptions } from '../../utils/skillDescriptions'
 import {
-  Shield,
   Zap,
   Activity,
   Trash2,
   Plus,
   Filter,
-  Dices,
   Dumbbell,
   Brain,
   Wind,
@@ -49,12 +37,19 @@ import {
   ChevronDown,
   Sparkles,
   Sword,
+  Search,
 } from 'lucide-react'
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts'
 import TrailSelectModal from './components/TrailSelectModal'
+import RitualSelectModal from './components/RitualSelectModal'
 import BaseModal from './components/BaseModal'
+import AttributesDiceTrayCard, {
+  type AttributesDiceTrayCardHandle,
+} from './components/AttributesDiceTrayCard'
+import CombatDefensesCard from './components/CombatDefensesCard'
+import AddItemModal from './components/AddItemModal'
 import SkillsCard from './components/SkillsCard'
 import CharacterTabsCard from './components/CharacterTabsCard'
+import CreateCharacterModal from '../home/CreateCharacterModal'
 
 interface Origin {
   id: number
@@ -63,6 +58,20 @@ interface Origin {
   trainedSkills: string[] | string | null
   abilityName: string | null
   abilityDescription: string | null
+}
+
+interface OriginAbilityData {
+  id: number
+  originId: number
+  name: string
+  description: string | null
+  type: string | null
+  peCost: string | null
+  range: string | null
+  castTime: string | null
+  duration: string | null
+  target: string | null
+  effects: any | null
 }
 
 interface CharacterClass {
@@ -196,7 +205,13 @@ interface CharacterProps {
     trailId?: number
     trail?: { id: number; name: string }
     class?: { id: number; name: string }
-    origin?: { id: number; name: string; trainedSkills?: string[] | string | null }
+    origin?: {
+      id: number
+      name: string
+      trainedSkills?: string[] | string | null
+      abilityName?: string | null
+      abilityDescription?: string | null
+    }
     attributes?: {
       strength: number
       agility: number
@@ -227,6 +242,7 @@ interface CharacterProps {
     paranormalPowers?: Array<{
       id: number
       paranormalPowerId: number
+      characterClassAbilityId?: number | null
       paranormalPower?: {
         id: number
         name: string
@@ -239,6 +255,7 @@ interface CharacterProps {
     rituals?: Array<{
       id: number
       ritualId: number
+      characterClassAbilityId?: number | null
       ritual?: Ritual
     }>
   }
@@ -287,6 +304,7 @@ interface CharacterProps {
   inventoryProtections?: any[]
   inventoryGeneralItems?: any[]
   catalogAmmunitions?: CatalogAmmunition[]
+  originAbilities?: OriginAbilityData[]
 }
 
 export default function CharacterShow(initialProps: CharacterProps) {
@@ -310,7 +328,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
     catalogAmmunitions = [],
     trailProgressions = [],
     catalogRituals = [],
-  } = ({ ...initialProps, ...pageProps } as CharacterProps)
+    originAbilities = [],
+  } = { ...initialProps, ...pageProps } as CharacterProps
 
   // Normalize classTrails: backend may send camelCase (classTrails) or snake_case (class_trails)
   const classTrails: Trail[] =
@@ -318,14 +337,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   const catalogParanormalPowers: ParanormalPower[] = catalogParanormalPowersProp || []
 
-
-
   // Personagem sem trilha: considerar trailId ou trail_id (serialização pode vir em snake_case)
   const characterTrailId = character.trailId ?? (character as { trail_id?: number | null }).trail_id
   const hasNoTrail = characterTrailId == null || characterTrailId === undefined
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState({
+    originAbility: true,
     classAbilities: true,
     chosenAbilities: true,
     trailAbilities: true,
@@ -374,10 +392,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [damageToPe, setDamageToPe] = useState('')
   const [damageToSan, setDamageToSan] = useState('')
 
-  // Defense and Dodge bonuses
-  const [defenseEquipBonus, setDefenseEquipBonus] = useState(0)
-  const [dodgeReflexBonus, setDodgeReflexBonus] = useState(0)
-
   // Edit modal state
   const { isOpen: isEditOpen, onOpen: onEditOpen, onOpenChange: onEditOpenChange } = useDisclosure()
   const [editStep, setEditStep] = useState(1)
@@ -385,19 +399,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [editClassId, setEditClassId] = useState<number | null>(character.class?.id || null)
   const [editOriginId, setEditOriginId] = useState<number | null>(character.origin?.id || null)
   const [editName, setEditName] = useState(character.name)
-  const [focusedOrigin, setFocusedOrigin] = useState<Origin | null>(null)
-  const [originSearch, setOriginSearch] = useState('')
-  const [isUpdating, setIsUpdating] = useState(false)
   const [isAddingAbility, setIsAddingAbility] = useState(false)
+  const [abilitySearch, setAbilitySearch] = useState('')
   const [isTranscendChoiceOpen, setIsTranscendChoiceOpen] = useState(false)
   const [isParanormalSelectOpen, setIsParanormalSelectOpen] = useState(false)
   const [isRitualSelectOpen, setIsRitualSelectOpen] = useState(false)
   const [lastTranscendAbilityId, setLastTranscendAbilityId] = useState<number | null>(null)
-
-  // Ritual filters state
-  const [ritualSearch, setRitualSearch] = useState('')
-  const [elementFilter, setElementFilter] = useState('Todos')
-  const [circleFilter, setCircleFilter] = useState('Todos')
 
   // ─── Detecção automática de habilidades ──────────────────────────────────
   const hasAbility = (name: string) =>
@@ -439,14 +446,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [usarPeritoSkill, setUsarPeritoSkill] = useState<string | null>(null)
 
   // ─── Cálculo de PE ajustado para um ritual ───────────────────────────────
-  const calcPeAjustado = (ritual: Ritual | undefined): { base: number; ajustado: number; reducoes: string[] } => {
+  const calcPeAjustado = (
+    ritual: Ritual | undefined
+  ): { base: number; ajustado: number; reducoes: string[] } => {
     if (!ritual) return { base: 0, ajustado: 0, reducoes: [] }
     const base = ritual.circle * 2
     let ajustado = base
     const reducoes: string[] = []
 
-    if (hasRitualPredileto && ritualPrediletoConfig &&
-      ritual.name.toLowerCase() === ritualPrediletoConfig.toLowerCase()) {
+    if (
+      hasRitualPredileto &&
+      ritualPrediletoConfig &&
+      ritual.name.toLowerCase() === ritualPrediletoConfig.toLowerCase()
+    ) {
       ajustado -= 1
       reducoes.push('Ritual Predileto –1')
     }
@@ -454,8 +466,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
       ajustado -= 1
       reducoes.push('Tatuagem Ritualística –1')
     }
-    if (hasMestreEmElemento && mestreElementoConfig &&
-      ritual.element?.toLowerCase() === mestreElementoConfig.toLowerCase()) {
+    if (
+      hasMestreEmElemento &&
+      mestreElementoConfig &&
+      ritual.element?.toLowerCase() === mestreElementoConfig.toLowerCase()
+    ) {
       ajustado -= 1
       reducoes.push('Mestre em Elemento –1')
     }
@@ -477,14 +492,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   // Perícias configuradas no Perito
   const peritoSkills = useMemo(() => {
-    const ca = (character.classAbilities || []).find(
-      (ca) => ca.classAbility?.name === 'Perito'
-    )
+    const ca = (character.classAbilities || []).find((ca) => ca.classAbility?.name === 'Perito')
     return (ca?.config?.selectedSkills as string[] | undefined) || []
   }, [character.classAbilities])
-
-
-
 
   // Ability configuration modal state
   const {
@@ -525,10 +535,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
     onOpen: onAddItemModalOpen,
     onOpenChange: onAddItemModalOpenChange,
   } = useDisclosure()
-  const [expandedItemKey, setExpandedItemKey] = useState<string | null>(null)
-  const toggleItemExpanded = (key: string) => {
-    setExpandedItemKey((prev) => (prev === key ? null : key))
-  }
 
   // Weapon Modification Modal state
   const {
@@ -539,23 +545,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [modifyingWeapon, setModifyingWeapon] = useState<any>(null)
   const [isUpdatingModifications, setIsUpdatingModifications] = useState(false)
   const [modTypeFilter, setModTypeFilter] = useState<'Melhoria' | 'Maldição'>('Melhoria')
-
-  // Filtered and sorted rituals
-  const filteredRituals = useMemo(() => {
-    if (!catalogRituals) return []
-
-    return catalogRituals
-      .filter((ritual) => {
-        const matchesSearch = ritual.name.toLowerCase().includes(ritualSearch.toLowerCase())
-        const matchesElement =
-          elementFilter === 'Todos' ||
-          (ritual.element && ritual.element.toUpperCase().includes(elementFilter.toUpperCase()))
-        const matchesCircle = circleFilter === 'Todos' || ritual.circle.toString() === circleFilter
-
-        return matchesSearch && matchesElement && matchesCircle
-      })
-      .sort((a, b) => a.circle - b.circle) // Order by circle (ascending)
-  }, [catalogRituals, ritualSearch, elementFilter, circleFilter])
 
   // RANK AND CATEGORY LIMITS
   const [rank, setRank] = useState(character.rank || 'Recruta')
@@ -569,24 +558,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
     'Agente de Elite',
   ]
 
-  // ─── Bandeja de Dados ────────────────────────────────────────────────────
-  const [isDiceTray, setIsDiceTray] = useState(false)
-  const [isRolling, setIsRolling] = useState(false)
-  const [diceResult, setDiceResult] = useState<{ label: string; total: number; rolls: number[] } | null>(null)
-  const [weaponRollResult, setWeaponRollResult] = useState<{
-    weapon: string
-    attack: { total: number; rolls: number[]; label: string; skill: string }
-    damage: { total: number; rolls: number[]; label: string }
-  } | null>(null)
-  const [diceHistory, setDiceHistory] = useState<Array<{ label: string; total: number }>>([])
-  const diceCanvasRef = useRef<HTMLCanvasElement>(null)
-  const dddiceRef = useRef<any>(null)
-  const diceThemeRef = useRef<string | undefined>(undefined) // cache do tema — fetch só na 1a vez
-  const DDDICE_API_KEY = import.meta.env.VITE_DDDICE_API_KEY as string | undefined
-
   const RANK_LIMITS: Record<string, Record<number, number>> = {
-    Recruta: { 1: 2, 2: 0, 3: 0, 4: 0 },
-    Operador: { 1: 3, 2: 1, 3: 0, 4: 0 },
+    'Recruta': { 1: 2, 2: 0, 3: 0, 4: 0 },
+    'Operador': { 1: 3, 2: 1, 3: 0, 4: 0 },
     'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
     'Oficial de Operações': { 1: 3, 2: 3, 3: 2, 4: 1 },
     'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
@@ -613,15 +587,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }, [rank])
 
   // Check if adding a modification to a weapon would exceed the rank's category limits
-  const canApplyModification = (weapon: any, modCategory: number): { allowed: boolean; reason?: string } => {
+  const canApplyModification = (
+    weapon: any,
+    modCategory: number
+  ): { allowed: boolean; reason?: string } => {
     if (!weapon) return { allowed: false, reason: 'Nenhuma arma selecionada.' }
     const limits = RANK_LIMITS[rank] || {}
 
     // Calculate the final category of the weapon if we add this modification
-    const baseCategory = typeof weapon.category === 'string'
-      ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weapon.category) + 1
-      : (weapon.category || 0)
-    const currentModSum = weapon.modifications?.reduce((sum: number, m: any) => sum + (m.category || 0), 0) || 0
+    const baseCategory =
+      typeof weapon.category === 'string'
+        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weapon.category) + 1
+        : weapon.category || 0
+    const currentModSum =
+      weapon.modifications?.reduce((sum: number, m: any) => sum + (m.category || 0), 0) || 0
     const newFinalCategory = baseCategory + currentModSum + modCategory
 
     if (newFinalCategory > 4) {
@@ -655,8 +634,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
   } = useDisclosure()
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null)
 
-
-
   // Calculate max PE that can be spent for Perito based on NEX
   const getMaxPeritoPe = () => {
     if (character.nex >= 85) return 5 // NEX 85%+: +1d12
@@ -688,75 +665,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   const creditosRestantes = creditosGanhos - creditosUsados
 
-  // Function to format ability descriptions with paragraph breaks
-  const formatAbilityDescription = (text: string | null) => {
-    if (!text) return []
-    const sentences = text.split(/(?<=[.!?])\s+/)
-    const paragraphs = []
-    for (let i = 0; i < sentences.length; i += 3) {
-      paragraphs.push(sentences.slice(i, i + 3).join(' '))
-    }
-    return paragraphs
-  }
-
   const openEditModal = (step: number) => {
     setEditStep(step)
     setEditNex(character.nex)
     setEditClassId(character.class?.id || null)
     setEditOriginId(character.origin?.id || null)
     setEditName(character.name)
-    setFocusedOrigin(null)
-    setOriginSearch('')
     onEditOpen()
-  }
-
-  const handleEditNextStep = () => {
-    if (editStep === 3) setOriginSearch('')
-    setEditStep(editStep + 1)
-  }
-
-  const handleEditSelectClass = (classId: number) => {
-    setEditClassId(classId)
-    handleEditNextStep()
-  }
-
-  const confirmEditOrigin = (originId: number) => {
-    setEditOriginId(originId)
-    setFocusedOrigin(null)
-    handleEditNextStep()
-  }
-
-  const submitEditCharacter = () => {
-    // PREVENT MUNDANO (0%) FROM RISING TO 5% WITHOUT CHOOSING A CLASS
-    const isMundano = character.class?.name === 'Mundano'
-    const newClassIsMundano = classes.find((c) => c.id === editClassId)?.name === 'Mundano'
-
-    if (isMundano && editNex >= 5 && (newClassIsMundano || !editClassId)) {
-      // Force user to pick a class by moving them to step 2
-      setEditStep(2)
-      return
-    }
-
-    setIsUpdating(true)
-    router.put(
-      `/characters/${character.id}`,
-      {
-        nex: editNex,
-        classId: editClassId,
-        originId: editOriginId,
-        name: editName,
-      },
-      {
-        onSuccess: () => {
-          onEditOpenChange()
-          setIsUpdating(false)
-        },
-        onError: (errors) => {
-          console.error('Character update failed:', errors)
-          setIsUpdating(false)
-        },
-      }
-    )
   }
 
   // Configure ability functions
@@ -799,7 +714,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
       return
     }
     // Validate for element abilities
-    if ((abilityName === 'Mestre em Elemento' || abilityName === 'Especialista em Elemento') && !selectedElement) {
+    if (
+      (abilityName === 'Mestre em Elemento' || abilityName === 'Especialista em Elemento') &&
+      !selectedElement
+    ) {
       alert('Por favor, selecione um elemento')
       return
     }
@@ -814,20 +732,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
 
     setIsConfiguringAbility(true)
-    router.put(
-      `/characters/${character.id}/abilities/${configuringAbility.id}`,
-      configPayload,
-      {
-        onSuccess: () => {
-          setIsConfiguringAbility(false)
-          onAbilityConfigOpenChange()
-        },
-        onError: (errors) => {
-          console.error('Ability configuration failed:', errors)
-          setIsConfiguringAbility(false)
-        },
-      }
-    )
+    router.put(`/characters/${character.id}/abilities/${configuringAbility.id}`, configPayload, {
+      onSuccess: () => {
+        setIsConfiguringAbility(false)
+        onAbilityConfigOpenChange()
+      },
+      onError: (errors) => {
+        console.error('Ability configuration failed:', errors)
+        setIsConfiguringAbility(false)
+      },
+    })
   }
 
   const toggleSkillSelection = (skill: string) => {
@@ -846,199 +760,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }
 
-  // ─── Inicialização do dddice ─────────────────────────────────────────────
-  const DDDICE_ROOM_SLUG = import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined
-
-  // Helper: aguarda o dddice ficar pronto (máx. 3s) — centralizado para não duplicar
-  const waitForDddice = useCallback(() =>
-    new Promise<void>((resolve) => {
-      if (dddiceRef.current) { resolve(); return }
-      const start = Date.now()
-      const check = () => {
-        if (dddiceRef.current || Date.now() - start > 3000) resolve()
-        else setTimeout(check, 50)
-      }
-      check()
-    })
-    , [])
-
-  useEffect(() => {
-    if (!isDiceTray || !DDDICE_API_KEY) return
-    let mounted = true
-    let rafId: number
-
-    const init = async (canvas: HTMLCanvasElement) => {
-      const { ThreeDDice } = await import('dddice-js')
-      if (!mounted) return
-      const instance = new ThreeDDice(canvas, DDDICE_API_KEY, { autoClear: 2000 })
-      await instance.initialize()
-      // Move a câmera para mais perto dos dados (sem afetar a física)
-      try {
-        const cam = (instance as any).camera
-        if (cam?.position) {
-          cam.position.z *= 0.2  // muito mais perto → dados ~5x maiores
-          console.log('[dddice] Câmera ajustada — dados ampliados')
-        } else {
-          console.warn('[dddice] Câmera não encontrada, posição não ajustada')
-        }
-      } catch (e) {
-        console.warn('[dddice] Erro ao ajustar câmera:', e)
-      }
-      if (!mounted) return
-      if (DDDICE_ROOM_SLUG) {
-        try {
-          await (instance as any).connect(DDDICE_ROOM_SLUG)
-          console.log('[dddice] Conectado à room:', DDDICE_ROOM_SLUG)
-        } catch (e) {
-          console.warn('[dddice] Erro ao conectar à room:', e)
-        }
-      }
-      if (mounted) {
-        dddiceRef.current = instance
-        // Pré-carrega o tema para eliminar o delay na primeira rolagem
-        if (!diceThemeRef.current) {
-          try {
-            const res = await fetch('https://dddice.com/api/1.0/dice-box', {
-              headers: { Authorization: `Bearer ${DDDICE_API_KEY}` },
-            })
-            const data = await res.json()
-            diceThemeRef.current = data?.data?.[0]?.id
-            console.log('[dddice] Tema pré-carregado:', diceThemeRef.current)
-          } catch (_) {
-            console.warn('[dddice] Não foi possível pré-carregar o tema')
-          }
-        }
-      }
-    }
-
-    // Aguarda o canvas estar disponível no DOM
-    const tryInit = () => {
-      if (diceCanvasRef.current) {
-        init(diceCanvasRef.current).catch(console.error)
-      } else {
-        rafId = requestAnimationFrame(tryInit)
-      }
-    }
-    rafId = requestAnimationFrame(tryInit)
-
-    return () => {
-      mounted = false
-      cancelAnimationFrame(rafId)
-      dddiceRef.current = null
-    }
-  }, [isDiceTray, DDDICE_API_KEY, DDDICE_ROOM_SLUG])
-
-
-  // ─── Função de rolagem ───────────────────────────────────────────────────
-  const rollDice = useCallback(async (
-    sides: number,
-    count = 1,
-    label?: string,
-    mode: 'sum' | 'highest' = 'sum',
-    bonus = 0
-  ) => {
-    const diceLabel = label || `${count}d${sides}${bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''}`
-    setIsRolling(true)
-    setDiceResult(null)
-
-    // Rolagem local sempre (base de verdade) — resultado instantâneo
-    const rolls = Array.from({ length: count }, () => Math.ceil(Math.random() * sides))
-    const baseValue = mode === 'highest' ? Math.max(...rolls) : rolls.reduce((a, b) => a + b, 0)
-    const total = baseValue + bonus
-
-    // Exibe o resultado imediatamente — sem esperar a animação 3D
-    const result = { label: diceLabel, total, rolls }
-    setWeaponRollResult(null)
-    setDiceResult(result)
-    setDiceHistory((prev) => [{ label: diceLabel, total }, ...prev].slice(0, 8))
-    setIsRolling(false)
-
-    // Animação 3D em paralelo (fire-and-forget): não bloqueia a UI
-    if (DDDICE_API_KEY) {
-      ; (async () => {
-        await waitForDddice()
-        if (!dddiceRef.current) return
-        try {
-          const diceType = `d${sides}`
-          const themeSlug = diceThemeRef.current
-          const diceArr = rolls.map((rollValue) =>
-            themeSlug
-              ? { type: diceType, theme: themeSlug, value: rollValue }
-              : { type: diceType, value: rollValue }
-          )
-          await (dddiceRef.current as any).roll(diceArr)
-        } catch (e: any) {
-          console.warn('[dddice] Erro ao rolar:', e?.message || e)
-        }
-      })()
-    }
-  }, [DDDICE_API_KEY, waitForDddice])
-
-  // ─── Rolagem de Arma (Ataque + Dano simultâneos) ─────────────────────────
-  const rollWeapon = useCallback(async (weapon: {
-    name: string; range: string; damage: string
-  }, str: number, agi: number) => {
-    setIsRolling(true)
-    setDiceResult(null)
-    setWeaponRollResult(null)
-
-    // Determina perícia e atributo pelo alcance
-    const isMelee = weapon.range === 'Corpo a corpo'
-    const skill = isMelee ? 'Luta' : 'Pontaria'
-    const attrVal = Math.max(1, isMelee ? str : agi)
-    const skillEntry = character.skills?.find((cs: any) => cs.skill?.name === skill)
-    const degree = skillEntry?.trainingDegree ?? 0
-    const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
-
-    // Ataque: rola Xd20, pega o maior, soma bônus
-    const attackRolls = Array.from({ length: attrVal }, () => Math.ceil(Math.random() * 20))
-    const attackBase = Math.max(...attackRolls)
-    const attackTotal = attackBase + trainingBonus
-
-    // Dano: faz parse de "NdM" e rola
-    const damageMatch = weapon.damage.match(/^(\d+)d(\d+)$/i)
-    const dmgCount = damageMatch ? parseInt(damageMatch[1]) : 1
-    const dmgSides = damageMatch ? parseInt(damageMatch[2]) : 6
-    const damageRolls = Array.from({ length: dmgCount }, () => Math.ceil(Math.random() * dmgSides))
-    const damageTotal = damageRolls.reduce((a, b) => a + b, 0)
-
-    // Exibe o resultado imediatamente — sem esperar a animação 3D
-    const attackLabel = `${skill} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
-    const damageLabel = weapon.damage
-    setWeaponRollResult({
-      weapon: weapon.name,
-      attack: { total: attackTotal, rolls: attackRolls, label: attackLabel, skill },
-      damage: { total: damageTotal, rolls: damageRolls, label: damageLabel },
-    })
-    setDiceHistory((prev) => [
-      { label: `${weapon.name} Ataque`, total: attackTotal },
-      { label: `${weapon.name} Dano`, total: damageTotal },
-      ...prev,
-    ].slice(0, 8))
-    setIsRolling(false)
-
-    // Animação 3D em paralelo (fire-and-forget): não bloqueia a UI
-    if (DDDICE_API_KEY) {
-      ; (async () => {
-        await waitForDddice()
-        if (!dddiceRef.current) return
-        try {
-          const theme = diceThemeRef.current
-          // Todos os dados juntos numa única chamada
-          const allDice = [
-            ...attackRolls.map((v) => theme ? { type: 'd20', theme, value: v } : { type: 'd20', value: v }),
-            ...damageRolls.map((v) => theme ? { type: `d${dmgSides}`, theme, value: v } : { type: `d${dmgSides}`, value: v }),
-          ]
-          await (dddiceRef.current as any).roll(allDice)
-        } catch (e: any) {
-          console.warn('[dddice] Erro ao rolar arma:', e?.message || e)
-        }
-      })()
-    }
-  }, [DDDICE_API_KEY, character.skills, waitForDddice])
-
   const addItemToCharacter = (
-
     type: 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition',
     itemId: number,
     quantity?: number
@@ -1079,7 +801,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       if (g) itemCategory = g.category
     } else if (type === 'cursed') {
       const c = catalogCursedItems.find((i) => i.id === itemId)
-      if (c) itemCategory = 0 // Maldições geralmente não têm categoria de patente, ou têm? 
+      if (c) itemCategory = 0 // Maldições geralmente não têm categoria de patente, ou têm?
       // Padronizaremos como cat 0 se não especificado
     } else if (type === 'ammunition') {
       const a = catalogAmmunitions.find((i) => i.id === itemId)
@@ -1179,9 +901,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
     )
   }
 
-  const removeParanormalPower = (powerId: number) => {
-    if (!confirm('Tem certeza que deseja remover este poder paranormal?')) return
-    router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`)
+  const removeParanormalPower = (powerId: number, characterClassAbilityId?: number | null) => {
+    const isTranscend = !!characterClassAbilityId
+    const msg = isTranscend
+      ? 'Este poder foi adquirido via Transcender. Removê-lo também irá remover o uso de Transcender e restaurar sua Sanidade Máxima. Confirmar?'
+      : 'Tem certeza que deseja remover este poder paranormal?'
+    if (!confirm(msg)) return
+    if (isTranscend) {
+      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`)
+    } else {
+      router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`)
+    }
   }
 
   const addRitual = (ritualId: number) => {
@@ -1200,9 +930,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
     )
   }
 
-  const removeRitual = (ritualId: number) => {
-    if (!confirm('Tem certeza que deseja remover este ritual?')) return
-    router.delete(`/characters/${character.id}/rituals/${ritualId}`)
+  const removeRitual = (ritualId: number, characterClassAbilityId?: number | null) => {
+    const isTranscend = !!characterClassAbilityId
+    const msg = isTranscend
+      ? 'Este ritual foi aprendido via Transcender. Removê-lo também irá remover o uso de Transcender e restaurar sua Sanidade Máxima. Confirmar?'
+      : 'Tem certeza que deseja remover este ritual?'
+    if (!confirm(msg)) return
+    if (isTranscend) {
+      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`)
+    } else {
+      router.delete(`/characters/${character.id}/rituals/${ritualId}`)
+    }
   }
 
   // Toggle Weapon Modification
@@ -1260,29 +998,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [vigor, setVigor] = useState(initialAttrs.vigor)
   const [presence, setPresence] = useState(initialAttrs.presence)
   const [isSaving, setIsSaving] = useState(false)
-
-  // Calculate Reflexos bonus automatically from trained skills
-  const reflexosBonus = useMemo(() => {
-    const reflexosSkill = character.skills?.find((cs: any) => cs.skill?.name === 'Reflexos')
-    if (!reflexosSkill) return 0
-    // Treinado (5) = +5, Veterano (10) = +10, Expert (15) = +15
-    const degree = reflexosSkill.trainingDegree || 0
-    if (degree >= 15) return 15
-    if (degree >= 10) return 10
-    if (degree >= 5) return 5
-    return 0
-  }, [character.skills])
-
-  // Calculate Defense and Dodge dynamically
-  // Defesa = 10 + Agilidade + Equipamentos
-  // Esquiva = 10 + Equipamentos + Agilidade + Reflexos
-  const { defense, dodge } = useMemo(
-    () => ({
-      defense: 10 + agility + defenseEquipBonus,
-      dodge: 10 + defenseEquipBonus + agility + reflexosBonus + dodgeReflexBonus,
-    }),
-    [agility, defenseEquipBonus, reflexosBonus, dodgeReflexBonus]
-  )
+  // Ref para expor rollDice / rollWeapon / openDiceTray ao SkillsCard e CharacterTabsCard
+  const diceTrayRef = useRef<AttributesDiceTrayCardHandle>(null)
 
   // Calculate max HP, PE, and Sanity dynamically based on class, NEX, and attributes
   // Formula: base + level * attribute + (level - 1) * perLevel
@@ -1303,14 +1020,30 @@ export default function CharacterShow(initialProps: CharacterProps) {
     // Sanity calculation: baseSanity + (level - 1) * sanityPerLevel
     const baseSanity = classInfo?.baseSanity || 12
     const sanityPerLevel = classInfo?.sanityPerLevel || 3
-    const calculatedMaxSan = baseSanity + (level - 1) * sanityPerLevel
+    let calculatedMaxSan = baseSanity + (level - 1) * sanityPerLevel
+
+    // Cada uso de Transcender subtrai sanityPerLevel da sanidade máxima
+    const transcendCount = (character.classAbilities || []).filter(
+      (ca) => ca.classAbility?.name === 'Transcender'
+    ).length
+    calculatedMaxSan -= transcendCount * sanityPerLevel
+
+    // Subtrair perda permanente de sanidade
+    calculatedMaxSan -= calculatedStats?.permanentSanityLoss || 0
 
     return {
       maxHp: calculatedMaxHp,
       maxPe: calculatedMaxPe,
-      maxSan: calculatedMaxSan,
+      maxSan: Math.max(0, calculatedMaxSan),
     }
-  }, [character.nex, vigor, presence, classInfo])
+  }, [
+    character.nex,
+    vigor,
+    presence,
+    classInfo,
+    character.classAbilities,
+    calculatedStats?.permanentSanityLoss,
+  ])
 
   // Filter trail progressions by current NEX
   const { currentTrailAbilities, futureTrailAbilities } = useMemo(() => {
@@ -1431,25 +1164,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
     intellect !== initialAttrs.intellect ||
     vigor !== initialAttrs.vigor ||
     presence !== initialAttrs.presence
-
-  // Save attributes function
-  const saveAttributes = () => {
-    setIsSaving(true)
-    router.put(
-      `/characters/${character.id}/attributes`,
-      {
-        strength,
-        agility,
-        intellect,
-        vigor,
-        presence,
-      },
-      {
-        preserveScroll: true,
-        onFinish: () => setIsSaving(false),
-      }
-    )
-  }
 
   // Combined attrs object for display
 
@@ -1782,11 +1496,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
   }[] = useMemo(() => {
     const weapons = inventoryWeapons.map((w, index) => {
       // Calcula a Categoria (+1 por Melhoria, +2 por Maldição via mod.category)
-      const baseCategory = typeof w.category === 'string'
-        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(w.category) + 1
-        : (w.category || 0)
+      const baseCategory =
+        typeof w.category === 'string'
+          ? ['I', 'II', 'III', 'IV', 'V'].indexOf(w.category) + 1
+          : w.category || 0
 
-      const modsCategorySum = w.modifications?.reduce((sum: number, mod: any) => sum + (mod.category || 0), 0) || 0
+      const modsCategorySum =
+        w.modifications?.reduce((sum: number, mod: any) => sum + (mod.category || 0), 0) || 0
       const finalCategory = baseCategory + modsCategorySum
 
       return {
@@ -1806,8 +1522,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
         criticalMultiplier: w.criticalMultiplier,
         range: w.range,
         weaponType: w.weaponType,
+        equipped: w.equipped ?? false,
+        itemKind: 'weapon' as const,
         uniqueId: `weapon-${w.id}-${index}`,
-        modifications: w.modifications
+        modifications: w.modifications,
       }
     })
 
@@ -1820,6 +1538,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       weight: `${p.spaces} Espaços`,
       spaces: p.spaces || 0,
       type: 'Armadura',
+      equipped: p.equipped ?? false,
+      itemKind: 'protection' as const,
       uniqueId: `protection-${p.id}-${index}`,
     }))
 
@@ -1832,6 +1552,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       weight: `${g.spaces} Espaços`,
       spaces: g.spaces || 0,
       type: 'Consumível',
+      equipped: false as const,
+      itemKind: 'general' as const,
       uniqueId: `general-${g.id}-${index}`,
     }))
 
@@ -1892,7 +1614,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       maxCapacity,
       isOverloaded,
       percentage: Math.min((totalUsed / limit) * 100, 100),
-      overloadPercentage: totalUsed > limit ? Math.min(((totalUsed - limit) / limit) * 100, 100) : 0,
+      overloadPercentage:
+        totalUsed > limit ? Math.min(((totalUsed - limit) / limit) * 100, 100) : 0,
     }
   }, [character, inventory])
 
@@ -1920,6 +1643,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
         console.error('Erro ao remover item:', error)
         console.error('Resposta do servidor:', error.response?.data)
         alert('Erro ao remover item. Tente novamente.')
+      })
+  }
+
+  const toggleEquipItem = (itemId: number, currentEquipped: boolean) => {
+    axios
+      .patch(`/characters/${character.id}/items/${itemId}/equip`, { equipped: !currentEquipped })
+      .then(() => {
+        // @ts-ignore
+        router.reload({ preserveScroll: true })
+      })
+      .catch((error) => {
+        console.error('Erro ao equipar/desequipar item:', error)
+        alert('Erro ao atualizar item. Tente novamente.')
       })
   }
 
@@ -1955,7 +1691,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
     <div className="min-h-screen bg-black text-slate-100 font-sans selection:bg-blue-500/30">
       <Head title={`${character.name} - Escudo do Mestre`} />
 
-
       {/* Top Bar / Navigation */}
       <div className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
@@ -1976,14 +1711,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
               <div className="text-xs text-zinc-500 flex items-center gap-2">
                 <span
                   className="uppercase tracking-wider cursor-pointer hover:text-blue-400 transition-colors"
-                  onClick={() => openEditModal(2)}
+                  onClick={() => openEditModal(3)}
                 >
                   {character.class?.name || 'Classe Desconhecida'}
                 </span>
                 <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
                 <span
                   className="uppercase tracking-wider cursor-pointer hover:text-blue-400 transition-colors"
-                  onClick={() => openEditModal(3)}
+                  onClick={() => openEditModal(2)}
                 >
                   {character.origin?.name || 'Origem Desconhecida'}
                 </span>
@@ -2030,12 +1765,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onToggleSkill={toggleSkillTraining}
             onSkillContextMenu={handleSkillContextMenu}
             onRollSkill={(_skill, attrVal, trainingBonus, label) => {
-              setIsDiceTray(true)
-              rollDice(20, attrVal, label, 'highest', trainingBonus)
+              diceTrayRef.current?.openDiceTray()
+              diceTrayRef.current?.rollDice(20, attrVal, label, 'highest', trainingBonus)
             }}
             onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
           />
-
 
           {/* TABS SECTION */}
           <CharacterTabsCard
@@ -2048,8 +1782,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
             inventoryWeapons={inventoryWeapons}
             onAddItem={onAddItemModalOpen}
             onRankChange={setRank}
-            onModifyWeapon={(item) => { setModifyingWeapon(item); onModifyWeaponModalOpen() }}
+            onModifyWeapon={(item) => {
+              setModifyingWeapon(item)
+              onModifyWeaponModalOpen()
+            }}
             onRemoveItem={removeItem}
+            onEquipItem={toggleEquipItem}
             onExpandItem={setExpandedItemId}
             characterRituals={character.rituals || []}
             isOcultista={isOcultista}
@@ -2061,8 +1799,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
             strength={strength}
             peritoPeSpending={peritoPeSpending}
             maxPeritoPe={maxPeritoPe}
-            onRollWeapon={(w) => { setIsDiceTray(true); rollWeapon({ name: w.name, range: w.range, damage: w.damage }, strength, agility) }}
-            onPeritoSpendChange={(skill, value) => setPeritoPeSpending({ ...peritoPeSpending, [skill]: value })}
+            onRollWeapon={(w) => {
+              diceTrayRef.current?.openDiceTray()
+              diceTrayRef.current?.rollWeapon(
+                { name: w.name, range: w.range, damage: w.damage },
+                strength,
+                agility,
+                character.skills
+              )
+            }}
+            onPeritoSpendChange={(skill, value) =>
+              setPeritoPeSpending({ ...peritoPeSpending, [skill]: value })
+            }
             classAbilities={character.classAbilities || []}
             paranormalPowers={character.paranormalPowers || []}
             currentTrailAbilities={currentTrailAbilities}
@@ -2090,296 +1838,56 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onOpenTrailModal={onTrailModalOpen}
             onOpenAbilitySelect={onAbilitySelectOpen}
             onOpenAbilityConfig={openAbilityConfig}
-            onRemoveAbility={(charId, abilityId) => { if (confirm('Tem certeza que deseja remover esta habilidade?')) router.delete(`/characters/${charId}/abilities/${abilityId}`) }}
+            onRemoveAbility={(charId, abilityId) => {
+              if (confirm('Tem certeza que deseja remover esta habilidade?'))
+                router.delete(`/characters/${charId}/abilities/${abilityId}`)
+            }}
             onRemoveParanormalPower={removeParanormalPower}
             onSetUsarCamuflar={setUsarCamuflar}
             characterId={character.id}
+            originAbilityName={character.origin?.abilityName}
+            originAbilityDescription={character.origin?.abilityDescription}
+            originAbilities={originAbilities}
           />
         </div>
 
         {/* COLUNA DIREITA (Attributes & Stats) */}
         <div className="w-[350px] flex-shrink-0 space-y-6">
           {/* ATTRIBUTES SECTION */}
-          <Card className={`border shadow-none transition-colors duration-300 ${isDiceTray ? 'bg-zinc-900 border-amber-500/30' : 'bg-zinc-900 border-zinc-800'}`}>
-            <CardHeader className="pb-2 flex justify-between items-center border-b border-zinc-800/50">
-              <div className="flex items-center gap-2">
-                <div className={`text-lg font-bold transition-colors ${isDiceTray ? 'text-amber-400' : 'text-zinc-100'}`}>
-                  {isDiceTray ? '🎲 Bandeja de Dados' : 'Atributos'}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Toggle interruptor */}
-                <button
-                  onClick={() => {
-                    if (isDiceTray) diceThemeRef.current = undefined // limpa cache ao fechar
-                    setIsDiceTray(!isDiceTray)
-                    setDiceResult(null)
-                  }}
-                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${isDiceTray ? 'bg-amber-500' : 'bg-zinc-700'}`}
-                  title={isDiceTray ? 'Voltar para Atributos' : 'Abrir Bandeja de Dados'}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isDiceTray ? 'translate-x-5' : 'translate-x-1'}`} />
-                </button>
-                <Dices size={16} className={isDiceTray ? 'text-amber-400' : 'text-zinc-600'} />
-
-                {/* Controles de atributos (só no modo normal) */}
-                {!isDiceTray && (
-                  <>
-                    <Chip
-                      size="sm"
-                      className={`border ${availablePoints > 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : availablePoints < 0 ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'}`}
-                    >
-                      {availablePoints} pts
-                    </Chip>
-                    {hasChanges && (
-                      <Button
-                        size="sm"
-                        color="primary"
-                        isLoading={isSaving}
-                        onPress={saveAttributes}
-                        isDisabled={availablePoints < 0}
-                        className="font-bold"
-                      >
-                        <Save size={14} className="mr-1" />
-                        Salvar
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </CardHeader>
-
-            <CardBody>
-              {!isDiceTray ? (
-                /* ── Modo Atributos (original) ── */
-                <>
-                  <div className="text-xs text-zinc-500 mb-3 bg-zinc-950/50 p-2 rounded border border-zinc-800">
-                    <span className="text-zinc-400">{baseAttrPoints} pontos base</span>
-                    {!isMundano && attributeBonusFromNex > 0 && (
-                      <span className="text-blue-400"> +{attributeBonusFromNex} (NEX)</span>
-                    )}
-                    {[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length > 0 && (
-                      <span className="text-emerald-400">
-                        {' '}
-                        +{[strength, agility, intellect, vigor, presence].filter((v) => v === 0).length}{' '}
-                        (atributos em 0)
-                      </span>
-                    )}
-                    <span className="text-zinc-600"> | Usado: {usedPoints}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="w-[180px] h-[180px]">
-                      <ResponsiveContainer width={180} height={180}>
-                        <RadarChart cx="50%" cy="50%" outerRadius="70%" data={attributesData}>
-                          <PolarGrid stroke="#3f3f46" />
-                          <PolarAngleAxis
-                            dataKey="subject"
-                            tick={{ fill: '#a1a1aa', fontSize: 11, fontWeight: 'bold' }}
-                          />
-                          <Radar
-                            name="Atributos"
-                            dataKey="A"
-                            stroke="#f97316"
-                            strokeWidth={2}
-                            fill="#f97316"
-                            fillOpacity={0.2}
-                          />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="space-y-3 min-w-[120px]">
-                      {attributeInputs.map((attr) => (
-                        <div key={attr.label} className="flex items-center gap-3">
-                          <div className={`p-1.5 rounded bg-zinc-950 ${attr.color}`}>
-                            <attr.icon size={12} />
-                          </div>
-                          <span className="text-xs font-bold text-zinc-400 w-8 whitespace-nowrap">{attr.label}</span>
-                          <div className="flex items-center bg-zinc-950 rounded border border-zinc-800">
-                            <button
-                              onClick={() => attr.set(Math.max(0, attr.val - 1))}
-                              className="px-1.5 py-0.5 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded-l transition-colors"
-                            >
-                              -
-                            </button>
-                            <span className={`text-xs w-5 text-center font-mono ${attr.val === 0 ? 'text-emerald-400' : ''}`}>
-                              {attr.val}
-                            </span>
-                            <button
-                              onClick={() => attr.set(Math.min(maxAttrValue, attr.val + 1))}
-                              disabled={availablePoints <= 0 || attr.val >= maxAttrValue}
-                              className={`px-1.5 py-0.5 rounded-r transition-colors ${availablePoints <= 0 || attr.val >= maxAttrValue ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-600 hover:text-white hover:bg-zinc-800'}`}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* ── Modo Bandeja de Dados ── */
-                <div className="space-y-3">
-                  {/* Área preta — only the 3D dice animation */}
-                  <div className="relative rounded-xl overflow-hidden bg-black" style={{ height: '300px' }}>
-                    <canvas
-                      ref={diceCanvasRef}
-                      className="absolute inset-0 w-full h-full"
-                    />
-                    {/* Indicador de espera (só quando sem resultado) */}
-                    {!diceResult && !isRolling && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="text-center text-zinc-800">
-                          <Dices size={40} className="mx-auto mb-2 opacity-30" />
-                          <span className="text-xs">Aguardando rolagem</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Resultado abaixo da área dos dados */}
-                  {(diceResult || weaponRollResult || isRolling) && (
-                    <div className="px-1">
-                      {isRolling ? (
-                        <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
-                          <motion.span animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.5, ease: 'linear' }} style={{ display: 'inline-block' }}>⟳</motion.span>
-                          Rolando...
-                        </div>
-                      ) : weaponRollResult ? (
-                        /* Resultado de arma: ataque + dano lado a lado */
-                        <motion.div
-                          key={weaponRollResult.weapon + weaponRollResult.attack.total}
-                          initial={{ y: 6, opacity: 0 }}
-                          animate={{ y: 0, opacity: 1 }}
-                          className="space-y-1"
-                        >
-                          <div className="text-[10px] font-bold uppercase text-zinc-600 tracking-wider truncate">{weaponRollResult.weapon}</div>
-                          <div className="flex items-stretch gap-3">
-                            {/* Ataque */}
-                            <div className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2">
-                              <div className="text-[9px] uppercase font-bold text-zinc-600 tracking-wider mb-0.5">Ataque · {weaponRollResult.attack.skill}</div>
-                              <div className="text-3xl font-black text-amber-400 leading-none">{weaponRollResult.attack.total}</div>
-                              <div className="text-[10px] text-zinc-600 mt-0.5">{weaponRollResult.attack.label} → [{weaponRollResult.attack.rolls.join(', ')}]</div>
-                            </div>
-                            {/* Dano */}
-                            <div className="flex-1 bg-zinc-950 border border-red-900/30 rounded-lg px-3 py-2">
-                              <div className="text-[9px] uppercase font-bold text-red-900/80 tracking-wider mb-0.5">Dano · {weaponRollResult.damage.label}</div>
-                              <div className="text-3xl font-black text-red-400 leading-none">{weaponRollResult.damage.total}</div>
-                              <div className="text-[10px] text-zinc-600 mt-0.5">[{weaponRollResult.damage.rolls.join(', ')}]</div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ) : diceResult ? (
-                        /* Resultado de perícia simples */
-                        <motion.div
-                          key={diceResult.total + diceResult.label}
-                          initial={{ y: 6, opacity: 0 }}
-                          animate={{ y: 0, opacity: 1 }}
-                          className="flex items-baseline gap-3"
-                        >
-                          <span className="text-4xl font-black text-amber-400">{diceResult.total}</span>
-                          <span className="text-xs text-zinc-500">{diceResult.label} → [{diceResult.rolls.join(', ')}]</span>
-                        </motion.div>
-                      ) : null}
-                    </div>
-                  )}
-
-
-                  {/* Histórico compacto */}
-                  {diceHistory.length > 0 && (
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-wrap gap-1.5">
-                        {diceHistory.map((h, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-zinc-950 border border-zinc-800 rounded text-[11px] font-bold text-zinc-400">
-                            {h.label}: <span className="text-amber-400">{h.total}</span>
-                          </span>
-                        ))}
-                      </div>
-                      <button onClick={() => setDiceHistory([])} className="text-[10px] text-zinc-700 hover:text-zinc-400 shrink-0 ml-2">
-                        limpar
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-
+          <AttributesDiceTrayCard
+            ref={diceTrayRef}
+            strength={strength}
+            agility={agility}
+            intellect={intellect}
+            vigor={vigor}
+            presence={presence}
+            onStrengthChange={setStrength}
+            onAgilityChange={setAgility}
+            onIntellectChange={setIntellect}
+            onVigorChange={setVigor}
+            onPresenceChange={setPresence}
+            isMundano={isMundano}
+            baseAttrPoints={baseAttrPoints}
+            maxAttrValue={maxAttrValue}
+            attributeBonusFromNex={attributeBonusFromNex}
+            initialAttrs={initialAttrs}
+            isSaving={isSaving}
+            onSaveAttributes={(attrs) => {
+              setIsSaving(true)
+              router.put(`/characters/${character.id}/attributes`, attrs, {
+                preserveScroll: true,
+                onFinish: () => setIsSaving(false),
+              })
+            }}
+            dddiceApiKey={import.meta.env.VITE_DDDICE_API_KEY as string | undefined}
+            dddiceRoomSlug={import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined}
+          />
 
           {/* COMBAT DEFENSES */}
-          <Card className="bg-zinc-900 border border-zinc-800 shadow-none">
-            <CardHeader className="pb-2 flex justify-between items-center">
-              <div className="text-sm font-bold text-zinc-200">Defesas de Combate</div>
-              <div className="flex items-center gap-1 text-orange-500 text-xs font-bold uppercase tracking-wider">
-                <Shield size={12} /> Armadura Leve
-              </div>
-            </CardHeader>
-            <CardBody className="pt-0 pb-4 flex flex-col gap-4">
-              {/* Defenses Display */}
-              <div className="flex gap-4">
-                <div className="flex-1 bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex items-center justify-between group cursor-help transition-colors hover:border-zinc-700">
-                  <div>
-                    <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-1">
-                      Defesa
-                    </div>
-                    <div className="text-[10px] text-zinc-600">
-                      10 + AGI ({agility}) + Equip ({defenseEquipBonus})
-                    </div>
-                  </div>
-                  <div className="text-3xl font-bold text-white group-hover:text-blue-400 transition-colors">
-                    {defense}
-                  </div>
-                </div>
-                <div className="flex-1 bg-zinc-950 p-4 rounded-xl border border-zinc-800 flex items-center justify-between group cursor-help transition-colors hover:border-zinc-700">
-                  <div>
-                    <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mb-1">
-                      Esquiva
-                    </div>
-                    <div className="text-[10px] text-zinc-600">
-                      10 + Equip ({defenseEquipBonus}) + AGI ({agility}) + Reflexos ({reflexosBonus}
-                      ){dodgeReflexBonus > 0 ? ` + Bônus (+${dodgeReflexBonus})` : ''}
-                    </div>
-                  </div>
-                  <div className="text-3xl font-bold text-orange-500 group-hover:text-amber-400 transition-colors">
-                    {dodge}
-                  </div>
-                </div>
-              </div>
-
-              {/* Bonus Controls */}
-              <div className="bg-zinc-950 p-3 rounded-lg border border-zinc-800 space-y-3">
-                <div className="flex items-center gap-3">
-                  <label className="text-xs font-bold text-zinc-400 min-w-fit">
-                    Bônus Equipamentos
-                  </label>
-                  <input
-                    type="number"
-                    value={defenseEquipBonus}
-                    onChange={(e) => setDefenseEquipBonus(parseInt(e.target.value) || 0)}
-                    min={-5}
-                    max={10}
-                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white font-bold text-center"
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="text-xs font-bold text-zinc-400 min-w-fit">
-                    Bônus Adicional
-                  </label>
-                  <input
-                    type="number"
-                    value={dodgeReflexBonus}
-                    onChange={(e) => setDodgeReflexBonus(parseInt(e.target.value) || 0)}
-                    min={-5}
-                    max={10}
-                    className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white font-bold text-center"
-                  />
-                </div>
-              </div>
-            </CardBody>
-          </Card>
+          <CombatDefensesCard agility={agility} characterSkills={character.skills} />
 
           {/* VITALS STACK */}
-          <Card className="bg-zinc-900 border border-zinc-800 shadow-none">
+          <Card className="bg-zinc-900 border border-zinc-800 shadow-none rounded-xl">
             <CardBody className="p-5 space-y-6">
               {/* HP */}
               <div className="space-y-2">
@@ -2613,342 +2121,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
       </div>
 
       {/* Edit Character Modal */}
-      <Modal
-        isOpen={isEditOpen}
-        onOpenChange={onEditOpenChange}
-        size="3xl"
-        scrollBehavior="inside"
-        classNames={{
-          base: 'bg-zinc-900 border border-zinc-800',
-          header: 'border-b border-zinc-800',
-          body: 'py-6',
-          footer: 'border-t border-zinc-800',
-        }}
-      >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <h2 className="text-xl font-bold text-white">
-                  {editStep === 1 && 'Editar NEX'}
-                  {editStep === 2 && 'Editar Classe'}
-                  {editStep === 3 && 'Editar Origem'}
-                  {editStep === 4 && 'Editar Nome'}
-                </h2>
-                <div className="flex gap-2 mt-2">
-                  {[1, 2, 3, 4].map((s) => (
-                    <div
-                      key={s}
-                      className={`h-1 flex-1 rounded ${s <= editStep ? 'bg-blue-500' : 'bg-zinc-700'} cursor-pointer transition-colors`}
-                      onClick={() => setEditStep(s)}
-                    />
-                  ))}
-                </div>
-              </ModalHeader>
-              <ModalBody>
-                {/* Step 1: NEX */}
-                {editStep === 1 && (
-                  <div className="flex flex-col gap-6 items-center justify-center py-4">
-                    <h3 className="text-xl font-bold text-white">
-                      Nível de Exposição Paranormal (NEX)
-                    </h3>
-                    <p className="text-gray-400 text-center text-sm mb-4">
-                      Determine o quão exposto ao paranormal seu agente já foi.
-                    </p>
-                    <Slider
-                      label="NEX"
-                      step={1}
-                      maxValue={99}
-                      minValue={5}
-                      value={editNex}
-                      onChange={(v) => {
-                        let val = Array.isArray(v) ? v[0] : v
-                        if (val > 95) {
-                          val = 99
-                        } else {
-                          val = Math.round(val / 5) * 5
-                        }
-                        setEditNex(val)
-                      }}
-                      className="max-w-md w-full"
-                      color="primary"
-                      size="lg"
-                      classNames={{
-                        track: 'bg-zinc-800 h-2',
-                        filler: 'bg-blue-500',
-                        thumb: 'bg-blue-500',
-                      }}
-                    />
-                    <div className="text-4xl font-bold text-blue-500 mt-4">{editNex}%</div>
-                  </div>
-                )}
-
-                {/* Step 2: Class */}
-                {editStep === 2 && (
-                  <div className="flex flex-col gap-4">
-                    <h3 className="text-xl font-bold text-white mb-2">Escolha sua Classe</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {classes.map((c) => (
-                        <Card
-                          key={c.id}
-                          isPressable
-                          onPress={() => handleEditSelectClass(c.id)}
-                          className={`bg-zinc-900 border hover:border-blue-500 hover:bg-zinc-800 transition-all p-4 ${editClassId === c.id ? 'border-blue-500 bg-zinc-800' : 'border-zinc-700'}`}
-                        >
-                          <CardHeader className="pb-0 pt-2 px-4 flex-col items-start">
-                            <h4 className="font-bold text-large text-white">{c.name}</h4>
-                          </CardHeader>
-                          <CardBody className="overflow-visible py-2">
-                            <p className="text-tiny text-gray-400">{c.description}</p>
-                          </CardBody>
-                        </Card>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 3: Origin */}
-                {editStep === 3 &&
-                  (() => {
-                    const filteredOrigins = origins.filter(
-                      (origin) =>
-                        origin.name.toLowerCase().includes(originSearch.toLowerCase()) ||
-                        origin.description.toLowerCase().includes(originSearch.toLowerCase())
-                    )
-
-                    return (
-                      <div className="relative h-[60vh] w-full flex flex-col">
-                        <h3 className="text-xl font-bold text-white mb-4">Escolha sua Origem</h3>
-
-                        {/* Search Bar */}
-                        <div className="mb-4 w-full">
-                          <Input
-                            isClearable
-                            placeholder="Pesquisar origem..."
-                            value={originSearch}
-                            onValueChange={setOriginSearch}
-                            className="w-full"
-                            classNames={{
-                              input: 'text-white bg-zinc-800 border-zinc-700',
-                              inputWrapper:
-                                'bg-zinc-800 border border-zinc-700 hover:border-blue-500',
-                            }}
-                          />
-                        </div>
-
-                        {/* Backdrop quando card está expandido */}
-                        <AnimatePresence>
-                          {focusedOrigin && (
-                            <motion.div
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              onClick={() => setFocusedOrigin(null)}
-                              className="fixed inset-0 bg-black/50 z-20"
-                            />
-                          )}
-                        </AnimatePresence>
-
-                        {/* Grid of Origins */}
-                        <motion.div
-                          layout
-                          className={`grid grid-cols-3 gap-4 flex-1 pr-2 pb-20 content-start ${focusedOrigin ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'}`}
-                        >
-                          {filteredOrigins.length === 0 ? (
-                            <div className="col-span-3 text-center py-8">
-                              <p className="text-gray-400">Nenhuma origem encontrada</p>
-                            </div>
-                          ) : (
-                            filteredOrigins.map((origin) => {
-                              const Icon = getOriginIcon(origin.name)
-                              const isFocused = focusedOrigin?.id === origin.id
-                              const isSelected = editOriginId === origin.id
-
-                              if (isFocused) return null
-
-                              return (
-                                <motion.div
-                                  layout
-                                  key={origin.id}
-                                  onClick={() => setFocusedOrigin(origin)}
-                                  className={`
-                                    cursor-pointer rounded-xl overflow-hidden border bg-zinc-900 flex flex-col group transition-all
-                                    relative h-40 ${isSelected ? 'border-blue-500' : 'border-zinc-800 hover:border-blue-500'}
-                                  `}
-                                >
-                                  <motion.div className="bg-zinc-950 flex items-center justify-center p-3 transition-colors w-full flex-1 group-hover:bg-zinc-900">
-                                    <Icon
-                                      size={40}
-                                      className={`transition-all duration-500 ${isSelected ? 'text-blue-500' : 'text-zinc-600 group-hover:text-blue-500'}`}
-                                    />
-                                  </motion.div>
-                                  <div className="bg-zinc-800 h-12 px-3 flex items-center justify-between gap-1 border-t border-zinc-700 w-full">
-                                    <span className="text-xs font-bold text-gray-300 uppercase tracking-wider truncate group-hover:text-white">
-                                      {origin.name}
-                                    </span>
-                                    <div className="shrink-0 rounded-xl overflow-hidden">
-                                      <Button
-                                        color="primary"
-                                        radius="lg"
-                                        size="sm"
-                                        className="shadow-lg shadow-blue-500/20 font-bold text-xs min-w-0 px-2 h-7"
-                                        startContent={<Check size={12} />}
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          confirmEditOrigin(origin.id)
-                                        }}
-                                      >
-                                        OK
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              )
-                            })
-                          )}
-                        </motion.div>
-
-
-                        {/* Expanded Origin Card */}
-                        <AnimatePresence>
-                          {focusedOrigin &&
-                            (() => {
-                              const Icon = getOriginIcon(focusedOrigin.name)
-                              return (
-                                <motion.div
-                                  key="expanded-origin"
-                                  initial={{ opacity: 0, scale: 0.9 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  exit={{ opacity: 0, scale: 0.9 }}
-                                  transition={{ duration: 0.3 }}
-                                  className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[600px] h-auto max-h-[80vh] z-30 rounded-xl overflow-hidden border border-blue-500 bg-zinc-900 shadow-2xl flex flex-col"
-                                >
-                                  <div className="bg-zinc-950 flex items-center justify-center p-6 border-b border-zinc-700">
-                                    <Icon size={64} className="text-blue-500" />
-                                  </div>
-                                  <div className="px-6 pt-4 pb-2">
-                                    <h2 className="text-2xl font-bold text-white">
-                                      {focusedOrigin.name}
-                                    </h2>
-                                  </div>
-                                  <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6">
-                                    <div className="space-y-4">
-                                      <p className="text-gray-400 text-sm leading-relaxed border-b border-zinc-700 pb-4">
-                                        {focusedOrigin.description}
-                                      </p>
-                                      <div>
-                                        <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                          <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                          Perícias Treinadas
-                                        </h4>
-                                        <div className="flex flex-wrap gap-2">
-                                          {(() => {
-                                            const skills =
-                                              typeof focusedOrigin.trainedSkills === 'string'
-                                                ? JSON.parse(focusedOrigin.trainedSkills || '[]')
-                                                : focusedOrigin.trainedSkills || []
-                                            return skills.map((skillName: string, i: number) => (
-                                              <span
-                                                key={i}
-                                                className="px-2 py-1 bg-zinc-950 rounded text-xs text-gray-300 border border-zinc-700"
-                                              >
-                                                {skillName}
-                                              </span>
-                                            ))
-                                          })()}
-                                        </div>
-                                      </div>
-                                      {focusedOrigin.abilityName && (
-                                        <div>
-                                          <h4 className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                            Poder da Origem
-                                          </h4>
-                                          <div className="bg-zinc-950/50 p-4 rounded border border-zinc-700/50">
-                                            <strong className="block text-white text-sm mb-3">
-                                              {focusedOrigin.abilityName}
-                                            </strong>
-                                            <div className="text-gray-400 text-xs space-y-3 leading-relaxed">
-                                              {formatAbilityDescription(
-                                                focusedOrigin.abilityDescription
-                                              ).map((paragraph, idx) => (
-                                                <p key={idx}>{paragraph}</p>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="px-6 py-4 border-t border-zinc-700 bg-zinc-800/50 flex gap-2">
-                                    <Button
-                                      variant="bordered"
-                                      className="flex-1 border-zinc-700 text-zinc-400 hover:text-white"
-                                      onPress={() => setFocusedOrigin(null)}
-                                    >
-                                      Fechar
-                                    </Button>
-                                    <Button
-                                      color="primary"
-                                      className="flex-1 font-bold"
-                                      startContent={<Check size={18} />}
-                                      onClick={() => confirmEditOrigin(focusedOrigin.id)}
-                                    >
-                                      CONFIRMAR ORIGEM
-                                    </Button>
-                                  </div>
-                                </motion.div>
-                              )
-                            })()}
-                        </AnimatePresence>
-                      </div>
-                    )
-                  })()}
-
-                {/* Step 4: Name */}
-                {editStep === 4 && (
-                  <div className="flex flex-col gap-6 items-center justify-center py-4">
-                    <h3 className="text-xl font-bold text-white">Nome do Agente</h3>
-                    <p className="text-gray-400 text-center text-sm mb-4">
-                      Edite o nome do seu agente.
-                    </p>
-                    <Input
-                      aria-label="Nome do Agente"
-                      placeholder="Ex: Arthur Cervero"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      className="max-w-md w-full"
-                      size="lg"
-                      classNames={{
-                        input: 'text-white',
-                        inputWrapper:
-                          'bg-zinc-900 border-zinc-700 hover:border-blue-500 focus-within:!border-blue-500',
-                      }}
-                    />
-                  </div>
-                )}
-              </ModalBody>
-              <ModalFooter>
-                <Button
-                  variant="bordered"
-                  onPress={onClose}
-                  className="border-zinc-700 text-zinc-400"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  color="primary"
-                  onPress={submitEditCharacter}
-                  isLoading={isUpdating}
-                  className="font-bold"
-                >
-                  Salvar Alterações
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
+      <AnimatePresence>
+        {isEditOpen && (
+          <CreateCharacterModal
+            classes={classes}
+            origins={origins}
+            onClose={onEditOpenChange}
+            editData={{
+              characterId: character.id,
+              initialNex: editNex,
+              initialClassId: editClassId,
+              initialOriginId: editOriginId,
+              initialName: editName,
+              initialStep: editStep,
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Ability Configuration Modal */}
       <BaseModal
@@ -2966,7 +2155,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
             </button>
             <button
               onClick={saveAbilityConfig}
-              disabled={isConfiguringAbility || (configuringAbility?.classAbility?.name === 'Perito' && selectedSkills.length !== 2)}
+              disabled={
+                isConfiguringAbility ||
+                (configuringAbility?.classAbility?.name === 'Perito' && selectedSkills.length !== 2)
+              }
               className="flex items-center gap-2 px-5 py-2 rounded-md font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isConfiguringAbility ? 'Salvando...' : 'Salvar Configuração'}
@@ -2991,10 +2183,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     key={skill}
                     size="sm"
                     onPress={() => toggleSkillSelection(skill)}
-                    className={`font-semibold ${selectedSkills.includes(skill)
-                      ? 'bg-amber-500 text-white border-amber-400'
-                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
-                      } border`}
+                    className={`font-semibold ${
+                      selectedSkills.includes(skill)
+                        ? 'bg-amber-500 text-white border-amber-400'
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
+                    } border`}
                   >
                     {selectedSkills.includes(skill) && '✓ '}
                     {skill}
@@ -3034,26 +2227,30 @@ export default function CharacterShow(initialProps: CharacterProps) {
               <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
                 {character.rituals.map((cr, idx) => {
                   const r = cr.ritual
-                  const elementColor = {
-                    Conhecimento: 'border-amber-500/40 hover:border-amber-500',
-                    Energia: 'border-purple-500/40 hover:border-purple-500',
-                    Morte: 'border-zinc-500/40 hover:border-zinc-500',
-                    Sangue: 'border-red-500/40 hover:border-red-500',
-                  }[r?.element || ''] || 'border-zinc-700 hover:border-zinc-500'
+                  const elementColor =
+                    {
+                      Conhecimento: 'border-amber-500/40 hover:border-amber-500',
+                      Energia: 'border-purple-500/40 hover:border-purple-500',
+                      Morte: 'border-zinc-500/40 hover:border-zinc-500',
+                      Sangue: 'border-red-500/40 hover:border-red-500',
+                    }[r?.element || ''] || 'border-zinc-700 hover:border-zinc-500'
                   const isSelected = selectedRitual === r?.name
                   return (
                     <button
                       key={idx}
                       onClick={() => setSelectedRitual(r?.name || '')}
-                      className={`w-full text-left p-3 rounded-lg border transition-all ${isSelected
-                        ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/50'
-                        : `bg-zinc-950/50 ${elementColor}`
-                        }`}
+                      className={`w-full text-left p-3 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/50'
+                          : `bg-zinc-950/50 ${elementColor}`
+                      }`}
                     >
                       <div className="flex items-center gap-2">
                         {isSelected && <span className="text-blue-400 font-black">✓</span>}
                         <span className="font-bold text-white text-sm">{r?.name}</span>
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase">{r?.element}</span>
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                          {r?.element}
+                        </span>
                         <span className="text-[10px] text-zinc-500">{r?.circle}º Círculo</span>
                       </div>
                     </button>
@@ -3065,7 +2262,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
             )}
             {selectedRitual && (
               <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <p className="text-xs text-blue-400 font-bold">Selecionado: <span className="text-white">{selectedRitual}</span></p>
+                <p className="text-xs text-blue-400 font-bold">
+                  Selecionado: <span className="text-white">{selectedRitual}</span>
+                </p>
               </div>
             )}
           </div>
@@ -3074,49 +2273,51 @@ export default function CharacterShow(initialProps: CharacterProps) {
         {/* ── Mestre em Elemento / Especialista em Elemento: escolha o elemento ── */}
         {(configuringAbility?.classAbility?.name === 'Mestre em Elemento' ||
           configuringAbility?.classAbility?.name === 'Especialista em Elemento') && (
-            <div className="space-y-4">
-              <p className="text-sm text-zinc-400">
-                {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
-                  ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
-                  : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { name: 'Conhecimento', color: 'amber', icon: '📚' },
-                  { name: 'Energia', color: 'purple', icon: '⚡' },
-                  { name: 'Morte', color: 'zinc', icon: '💀' },
-                  { name: 'Sangue', color: 'red', icon: '🩸' },
-                ].map((el) => {
-                  const isSelected = selectedElement === el.name
-                  const colorMap: Record<string, string> = {
-                    amber: 'bg-amber-500/20 border-amber-500 text-amber-300',
-                    purple: 'bg-purple-500/20 border-purple-500 text-purple-300',
-                    zinc: 'bg-zinc-500/20 border-zinc-400 text-zinc-300',
-                    red: 'bg-red-500/20 border-red-500 text-red-300',
-                  }
-                  const inactiveMap: Record<string, string> = {
-                    amber: 'border-amber-500/30 hover:border-amber-500/60 text-amber-400/60 hover:text-amber-400',
-                    purple: 'border-purple-500/30 hover:border-purple-500/60 text-purple-400/60 hover:text-purple-400',
-                    zinc: 'border-zinc-500/30 hover:border-zinc-500/60 text-zinc-400/60 hover:text-zinc-400',
-                    red: 'border-red-500/30 hover:border-red-500/60 text-red-400/60 hover:text-red-400',
-                  }
-                  return (
-                    <button
-                      key={el.name}
-                      onClick={() => setSelectedElement(el.name)}
-                      className={`p-4 rounded-lg border-2 transition-all font-bold text-sm flex items-center gap-2 ${isSelected ? colorMap[el.color] : `bg-zinc-950/50 ${inactiveMap[el.color]}`
-                        }`}
-                    >
-                      <span>{el.icon}</span>
-                      {el.name}
-                      {isSelected && <span className="ml-auto">✓</span>}
-                    </button>
-                  )
-                })}
-              </div>
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">
+              {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
+                ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
+                : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { name: 'Conhecimento', color: 'amber', icon: '📚' },
+                { name: 'Energia', color: 'purple', icon: '⚡' },
+                { name: 'Morte', color: 'zinc', icon: '💀' },
+                { name: 'Sangue', color: 'red', icon: '🩸' },
+              ].map((el) => {
+                const isSelected = selectedElement === el.name
+                const colorMap: Record<string, string> = {
+                  amber: 'bg-amber-500/20 border-amber-500 text-amber-300',
+                  purple: 'bg-purple-500/20 border-purple-500 text-purple-300',
+                  zinc: 'bg-zinc-500/20 border-zinc-400 text-zinc-300',
+                  red: 'bg-red-500/20 border-red-500 text-red-300',
+                }
+                const inactiveMap: Record<string, string> = {
+                  amber:
+                    'border-amber-500/30 hover:border-amber-500/60 text-amber-400/60 hover:text-amber-400',
+                  purple:
+                    'border-purple-500/30 hover:border-purple-500/60 text-purple-400/60 hover:text-purple-400',
+                  zinc: 'border-zinc-500/30 hover:border-zinc-500/60 text-zinc-400/60 hover:text-zinc-400',
+                  red: 'border-red-500/30 hover:border-red-500/60 text-red-400/60 hover:text-red-400',
+                }
+                return (
+                  <button
+                    key={el.name}
+                    onClick={() => setSelectedElement(el.name)}
+                    className={`p-4 rounded-lg border-2 transition-all font-bold text-sm flex items-center gap-2 ${
+                      isSelected ? colorMap[el.color] : `bg-zinc-950/50 ${inactiveMap[el.color]}`
+                    }`}
+                  >
+                    <span>{el.icon}</span>
+                    {el.name}
+                    {isSelected && <span className="ml-auto">✓</span>}
+                  </button>
+                )
+              })}
             </div>
-          )}
-
+          </div>
+        )}
       </BaseModal>
 
       {/* Skill Menu Modal */}
@@ -3134,9 +2335,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 className="p-4 bg-zinc-950/50 rounded-lg border border-cyan-500/30 hover:border-cyan-500/50 transition-all"
               >
                 <h3 className="font-bold text-cyan-300 mb-2">{action.title}</h3>
-                <p className="text-sm text-zinc-300 leading-relaxed">
-                  {action.description}
-                </p>
+                <p className="text-sm text-zinc-300 leading-relaxed">{action.description}</p>
               </div>
             ))}
           </div>
@@ -3150,47 +2349,111 @@ export default function CharacterShow(initialProps: CharacterProps) {
       {/* Class Ability Selection Modal */}
       <BaseModal
         isOpen={isAbilitySelectOpen}
-        onClose={onAbilitySelectOpenChange}
+        onClose={() => {
+          onAbilitySelectOpenChange()
+          setAbilitySearch('')
+        }}
         title="Escolher Habilidade de Classe"
         description={`Escolhidas: ${chosenClassAbilities}/${maxClassAbilities}`}
+        maxWidth="max-w-3xl"
       >
-        <div className="pt-0">
-          {availableAbilities.length > 0 ? (
-            <div className="space-y-4">
-              {availableAbilities.map((ability) => (
-                <Card
-                  key={ability.id}
-                  isPressable
-                  onPress={() => addClassAbility(ability.id)}
-                  className="bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer"
-                >
-                  <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-bold text-amber-400">
-                          {ability.name}
-                        </h3>
-                        {ability.effects?.nex && (
-                          <p className="text-xs text-zinc-400 mt-1">
-                            Requer: NEX {ability.effects.nex}
-                          </p>
-                        )}
+        <div className="flex flex-col h-full -mt-6 -mx-6">
+          {/* Barra de busca sticky */}
+          <div className="sticky -top-6 bg-[#18181b] pt-6 px-6 pb-4 z-20 border-b border-zinc-800/80">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-zinc-500" />
+              </div>
+              <input
+                type="text"
+                placeholder="Buscar habilidade por nome ou descrição..."
+                value={abilitySearch}
+                onChange={(e) => setAbilitySearch(e.target.value)}
+                className="w-full bg-[#141417] border border-zinc-800 text-white rounded-lg pl-11 pr-4 py-3 focus:outline-none focus:border-yellow-500/50 focus:ring-1 focus:ring-yellow-500/50 transition-all shadow-sm"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-4 px-6 pb-2 pt-4">
+            {(() => {
+              const filtered = availableAbilities.filter(
+                (a) =>
+                  a.name.toLowerCase().includes(abilitySearch.toLowerCase()) ||
+                  (a.description || '').toLowerCase().includes(abilitySearch.toLowerCase())
+              )
+              return filtered.length > 0 ? (
+                filtered.map((ability) => {
+                  // Construir badge de custo a partir dos effects
+                  const eff =
+                    typeof ability.effects === 'string'
+                      ? JSON.parse(ability.effects || '{}')
+                      : ability.effects || {}
+                  const costParts: string[] = []
+                  if (eff.action) costParts.push(eff.action)
+                  if (eff.pe_cost) costParts.push(`${eff.pe_cost} PE`)
+                  if (!costParts.length) costParts.push('Passiva')
+                  const costLabel = costParts.join(' • ')
+
+                  return (
+                    <div
+                      key={ability.id}
+                      className="group bg-[#1a1a21] border border-zinc-800/80 rounded-lg p-5 hover:border-zinc-700 transition-all duration-200"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            <h3 className="text-yellow-500 font-bold text-lg tracking-wide">
+                              {ability.name}
+                            </h3>
+                            <span className="px-2.5 py-0.5 rounded-full bg-zinc-800/80 text-zinc-400 text-xs font-semibold border border-zinc-700/50">
+                              {costLabel}
+                            </span>
+                            {eff.nex && (
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-xs font-semibold border border-amber-500/30">
+                                NEX {eff.nex}
+                              </span>
+                            )}
+                          </div>
+                          {ability.description && (
+                            <p className="text-zinc-400 text-sm leading-relaxed">
+                              {ability.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => addClassAbility(ability.id)}
+                          disabled={isAddingAbility}
+                          className="shrink-0 mt-2 sm:mt-0 bg-zinc-800 hover:bg-yellow-500 hover:text-white text-zinc-300 px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-zinc-700 hover:border-yellow-400 w-full sm:w-auto disabled:opacity-50 disabled:cursor-wait"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Adicionar
+                        </button>
                       </div>
                     </div>
-                    {ability.description && (
-                      <p className="text-sm text-zinc-300">{ability.description}</p>
-                    )}
-                  </CardBody>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="p-6 text-center text-zinc-400">
-              <p className="text-sm">
-                Nenhuma habilidade disponível para escolher no momento
-              </p>
-            </div>
-          )}
+                  )
+                })
+              ) : (
+                <div className="text-center py-16 px-4">
+                  <Search className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-zinc-300 mb-1">
+                    Nenhuma habilidade encontrada
+                  </h3>
+                  <p className="text-zinc-500 text-sm">
+                    Tente buscar por outro termo ou limpe a pesquisa.
+                  </p>
+                  {abilitySearch && (
+                    <button
+                      onClick={() => setAbilitySearch('')}
+                      className="mt-4 text-yellow-500 hover:text-yellow-400 text-sm font-medium"
+                    >
+                      Limpar busca
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
         </div>
       </BaseModal>
 
@@ -3202,575 +2465,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
         onConfirm={(trailId) => selectTrail(trailId)}
       />
 
-      {/* Add Item Modal - abas por tipo */}
-      <BaseModal
+      {/* Add Item Modal */}
+      <AddItemModal
         isOpen={isAddItemModalOpen}
         onClose={onAddItemModalOpenChange}
-        maxWidth="max-w-5xl"
-        title="Adicionar Item ao Inventário"
-        description="Escolha um item por tipo e adicione ao personagem"
-      >
-        <Tabs
-          aria-label="Tipos de item"
-          variant="underlined"
-          classNames={{
-            base: 'w-full',
-            tabList: 'gap-2 border-b border-zinc-800 px-0 sticky top-0 bg-zinc-900 z-10',
-            cursor: 'bg-orange-500',
-            tab: 'text-zinc-400 data-[selected=true]:text-orange-500',
-            panel: 'py-4 h-[55vh] overflow-y-auto',
-          }}
-        >
-          <Tab
-            key="weapons"
-            title={<span className="flex items-center gap-2">⚔️ Armas</span>}
-          >
-            <div className="space-y-3 pr-2">
-              {catalogWeapons.length === 0 ? (
-                <p className="text-sm text-zinc-500">Nenhuma arma cadastrada.</p>
-              ) : (
-                catalogWeapons.map((item) => {
-                  const key = `weapon-${item.id}`
-                  const isExpanded = expandedItemKey === key
-                  return (
-                    <div
-                      key={key}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleItemExpanded(key)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          toggleItemExpanded(key)
-                        }
-                      }}
-                      className="cursor-pointer outline-none"
-                    >
-                      <Card
-                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                      >
-                        <CardBody className="py-3 px-4">
-                          <div className="flex flex-row items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                              <p className="text-xs text-zinc-500 mt-0.5">
-                                {item.type} · {item.weaponType ?? ''}
-                                {!isExpanded && (
-                                  <>
-                                    {' '}
-                                    · Dano {item.damage}
-                                    {item.damageType ? ` (${item.damageType})` : ''}
-                                  </>
-                                )}
-                              </p>
-                              {item.description && (
-                                <p
-                                  className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                >
-                                  {item.description}
-                                </p>
-                              )}
-                            </div>
-                            <span onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="sm"
-                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                onPress={() => addItemToCharacter('weapon', item.id)}
-                              >
-                                <Plus size={14} className="mr-1" /> Adicionar
-                              </Button>
-                            </span>
-                          </div>
-                          {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Dano
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.damage}
-                                  {item.damageType ? (
-                                    <span className="text-sm font-normal text-orange-200/90">
-                                      {' '}
-                                      ({item.damageType})
-                                    </span>
-                                  ) : null}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Categoria
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {categoryLabels[item.category as number] ?? item.category}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Alcance
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.range ?? '—'}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Margem de crítico
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.critical ?? '—'}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Multiplicador de crítico
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.criticalMultiplier ?? '—'}
-                                </p>
-                              </div>
-                              {(item.ammoCapacity != null || item.ammoType) && (
-                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                    Munição
-                                  </p>
-                                  <p className="text-sm font-bold text-orange-300 mt-0.5">
-                                    {item.ammoCapacity != null
-                                      ? `${item.ammoCapacity}`
-                                      : '—'}
-                                    {item.ammoType ? ` · ${item.ammoType}` : ''}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </CardBody>
-                      </Card>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </Tab>
-          <Tab
-            key="protections"
-            title={<span className="flex items-center gap-2">🛡️ Proteções</span>}
-          >
-            <div className="space-y-3 pr-2">
-              {catalogProtections.length === 0 ? (
-                <p className="text-sm text-zinc-500">Nenhuma proteção cadastrada.</p>
-              ) : (
-                catalogProtections.map((item) => {
-                  const key = `protection-${item.id}`
-                  const isExpanded = expandedItemKey === key
-                  return (
-                    <div
-                      key={key}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleItemExpanded(key)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          toggleItemExpanded(key)
-                        }
-                      }}
-                      className="cursor-pointer outline-none"
-                    >
-                      <Card
-                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                      >
-                        <CardBody className="py-3 px-4">
-                          <div className="flex flex-row items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                              <p className="text-xs text-zinc-500 mt-0.5">
-                                {item.type}
-                                {!isExpanded && (
-                                  <>
-                                    {' '}
-                                    · Def +{item.defenseBonus}
-                                    {item.dodgePenalty !== 0
-                                      ? ` · Esquiva ${item.dodgePenalty}`
-                                      : ''}
-                                  </>
-                                )}
-                              </p>
-                              {item.description && (
-                                <p
-                                  className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                >
-                                  {item.description}
-                                </p>
-                              )}
-                            </div>
-                            <span onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="sm"
-                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                onPress={() => addItemToCharacter('protection', item.id)}
-                              >
-                                <Plus size={14} className="mr-1" /> Adicionar
-                              </Button>
-                            </span>
-                          </div>
-                          {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Bônus de defesa
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  +{item.defenseBonus}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Penalidade de esquiva
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.dodgePenalty}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Categoria
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {categoryLabels[item.category as number] ?? item.category}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Tipo
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.type}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Espaços
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.spaces}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </CardBody>
-                      </Card>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </Tab>
-          <Tab
-            key="general"
-            title={<span className="flex items-center gap-2">🎒 Itens Gerais</span>}
-          >
-            <div className="space-y-6 pr-2">
-              {catalogGeneralItems.length === 0 ? (
-                <p className="text-sm text-zinc-500">Nenhum item geral cadastrado.</p>
-              ) : (
-                (() => {
-                  // DT de Explosivos: 10 + Limite de PE/turno + Agilidade
-                  const explosiveDT = 10 + Math.floor(character.nex / 5) + agility
-                  return (['Acessório', 'Explosivo', 'Operacional', 'Paranormal'] as const).map((sectionType) => {
-                    const sectionItems = catalogGeneralItems.filter((i) => i.type === sectionType)
-                    if (sectionItems.length === 0) return null
-
-                    const sectionIcon = sectionType === 'Acessório' ? '🔧' : sectionType === 'Explosivo' ? '💥' : sectionType === 'Paranormal' ? '🔮' : '🎒'
-                    const sectionColor = sectionType === 'Acessório' ? 'text-blue-400' : sectionType === 'Explosivo' ? 'text-red-400' : sectionType === 'Paranormal' ? 'text-purple-400' : 'text-orange-400'
-                    const sectionBg = sectionType === 'Acessório' ? 'bg-blue-500/10 border-blue-500/20' : sectionType === 'Explosivo' ? 'bg-red-500/10 border-red-500/20' : sectionType === 'Paranormal' ? 'bg-purple-500/10 border-purple-500/20' : 'bg-orange-500/10 border-orange-500/20'
-
-                    return (
-                      <div key={sectionType} className="space-y-2">
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${sectionBg}`}>
-                          <span>{sectionIcon}</span>
-                          <span className={`text-xs font-black uppercase tracking-widest ${sectionColor}`}>{sectionType}s</span>
-                        </div>
-                        {sectionItems.map((item) => {
-                          const key = `general-${item.id}`
-                          const isExpanded = expandedItemKey === key
-                          return (
-                            <div
-                              key={key}
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => toggleItemExpanded(key)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  toggleItemExpanded(key)
-                                }
-                              }}
-                              className="cursor-pointer outline-none"
-                            >
-                              <Card
-                                className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                              >
-                                <CardBody className="py-3 px-4">
-                                  <div className="flex flex-row items-start justify-between gap-4">
-                                    <div className="min-w-0 flex-1">
-                                      <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                                      <p className="text-xs text-zinc-500 mt-0.5">
-                                        CAT {item.category === 0 ? '0' : ['I', 'II', 'III', 'IV'][parseInt(String(item.category)) - 1] ?? item.category}
-                                        {!isExpanded && <> · {item.spaces} espaço(s)</>}
-                                      </p>
-                                      {item.description && (
-                                        <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                          {sectionType === 'Explosivo'
-                                            ? item.description.replace(/DT Agi/g, `DT ${explosiveDT}`)
-                                            : item.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <span onClick={(e) => e.stopPropagation()}>
-                                      <Button
-                                        size="sm"
-                                        className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                        onPress={() => addItemToCharacter('general', item.id)}
-                                      >
-                                        <Plus size={14} className="mr-1" /> Adicionar
-                                      </Button>
-                                    </span>
-                                  </div>
-                                  {isExpanded && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Categoria
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.category === 0 ? '0' : categoryLabels[item.category as number] ?? item.category}
-                                        </p>
-                                      </div>
-                                      <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                        <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                          Espaços
-                                        </p>
-                                        <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                          {item.spaces}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )}
-                                </CardBody>
-                              </Card>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })
-                })()
-              )}
-            </div>
-          </Tab>
-          <Tab
-            key="cursed"
-            title={<span className="flex items-center gap-2">👁️ Itens Amaldiçoados</span>}
-          >
-            <div className="space-y-3 pr-2">
-              {catalogCursedItems.length === 0 ? (
-                <p className="text-sm text-zinc-500">Nenhum item amaldiçoado cadastrado.</p>
-              ) : (
-                catalogCursedItems.map((item) => {
-                  const key = `cursed-${item.id}`
-                  const isExpanded = expandedItemKey === key
-                  return (
-                    <div
-                      key={key}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleItemExpanded(key)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          toggleItemExpanded(key)
-                        }
-                      }}
-                      className="cursor-pointer outline-none"
-                    >
-                      <Card
-                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                      >
-                        <CardBody className="py-3 px-4">
-                          <div className="flex flex-row items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                              <p className="text-xs text-zinc-500 mt-0.5">
-                                {item.itemType ?? 'Item'}
-                                {!isExpanded && <> · {item.spaces} espaço(s)</>}
-                              </p>
-                              {item.description && (
-                                <p
-                                  className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}
-                                >
-                                  {item.description}
-                                </p>
-                              )}
-                            </div>
-                            <span onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="sm"
-                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                isDisabled
-                                title="Em breve"
-                              >
-                                <Plus size={14} className="mr-1" /> Em breve
-                              </Button>
-                            </span>
-                          </div>
-                          {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Tipo
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.itemType ?? '—'}
-                                </p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">
-                                  Espaços
-                                </p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">
-                                  {item.spaces}
-                                </p>
-                              </div>
-                              {item.benefits && (
-                                <div className="bg-emerald-500/15 border border-emerald-500/40 rounded-lg p-3 sm:col-span-2">
-                                  <p className="text-[10px] uppercase tracking-wider text-emerald-400/90 font-bold">
-                                    Benefícios
-                                  </p>
-                                  <p className="text-sm text-zinc-300 mt-0.5">
-                                    {typeof item.benefits === 'object'
-                                      ? JSON.stringify(item.benefits)
-                                      : String(item.benefits)}
-                                  </p>
-                                </div>
-                              )}
-                              {item.curses && (
-                                <div className="bg-red-500/15 border border-red-500/40 rounded-lg p-3 sm:col-span-2">
-                                  <p className="text-[10px] uppercase tracking-wider text-red-400/90 font-bold">
-                                    Maldições
-                                  </p>
-                                  <p className="text-sm text-zinc-300 mt-0.5">
-                                    {typeof item.curses === 'object'
-                                      ? JSON.stringify(item.curses)
-                                      : String(item.curses)}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </CardBody>
-                      </Card>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </Tab>
-          <Tab
-            key="ammunitions"
-            title={<span className="flex items-center gap-2">🔫 Munições</span>}
-          >
-            <div className="space-y-3 pr-2">
-              {catalogAmmunitions.length === 0 ? (
-                <p className="text-sm text-zinc-500">Nenhuma munição cadastrada.</p>
-              ) : (
-                catalogAmmunitions.map((item) => {
-                  const key = `ammunition-${item.id}`
-                  const isExpanded = expandedItemKey === key
-                  return (
-                    <div
-                      key={key}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => toggleItemExpanded(key)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleItemExpanded(key) } }}
-                      className="cursor-pointer outline-none"
-                    >
-                      <Card
-                        className={`bg-zinc-950 border transition-all ${isExpanded ? 'border-orange-500/60 ring-1 ring-orange-500/30' : 'border-zinc-800'}`}
-                      >
-                        <CardBody className="py-3 px-4">
-                          <div className="flex flex-row items-start justify-between gap-4">
-                            <div className="min-w-0 flex-1">
-                              <h4 className="font-semibold text-zinc-200">{item.name}</h4>
-                              <p className="text-xs text-zinc-500 mt-0.5">
-                                {item.type} · Categoria {item.category}
-                                {!isExpanded && (
-                                  <> · {item.description || 'Sem descrição'}</>
-                                )}
-                              </p>
-                              {item.description && (
-                                <p className={`text-xs text-zinc-400 mt-1 ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                  {item.description}
-                                </p>
-                              )}
-                            </div>
-                            <span onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="sm"
-                                className="bg-orange-600 hover:bg-orange-700 text-white shrink-0"
-                                onPress={() => addItemToCharacter('ammunition', item.id)}
-                              >
-                                <Plus size={14} className="mr-1" /> Adicionar
-                              </Button>
-                            </span>
-                          </div>
-                          {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Categoria</p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">{item.category}</p>
-                              </div>
-                              <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo</p>
-                                <p className="text-lg font-bold text-orange-300 mt-0.5">{item.type}</p>
-                              </div>
-                              {item.damageBonus && (
-                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de dano</p>
-                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageBonus}</p>
-                                </div>
-                              )}
-                              {item.damageTypeOverride && (
-                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Tipo de dano</p>
-                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.damageTypeOverride}</p>
-                                </div>
-                              )}
-                              {item.criticalBonus && (
-                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Bônus de crítico</p>
-                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalBonus}</p>
-                                </div>
-                              )}
-                              {item.criticalMultiplierBonus && (
-                                <div className="bg-orange-500/15 border border-orange-500/40 rounded-lg p-3">
-                                  <p className="text-[10px] uppercase tracking-wider text-orange-400/90 font-bold">Mult. de crítico</p>
-                                  <p className="text-lg font-bold text-orange-300 mt-0.5">{item.criticalMultiplierBonus}</p>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </CardBody>
-                      </Card>
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </Tab>
-        </Tabs>
-      </BaseModal>
+        catalogWeapons={catalogWeapons}
+        catalogProtections={catalogProtections}
+        catalogGeneralItems={catalogGeneralItems}
+        catalogCursedItems={catalogCursedItems}
+        catalogAmmunitions={catalogAmmunitions}
+        explosiveDt={10 + Math.floor(character.nex / 5) + agility}
+        onAdd={addItemToCharacter}
+      />
 
       {/* Transcend Choice Modal */}
       <BaseModal
@@ -3783,13 +2489,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
         <div className="grid grid-cols-1 gap-4">
           <button
             className="h-24 text-xl font-bold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 shadow-lg shadow-blue-500/10 transition-all border border-blue-500/30 rounded-xl"
-            onClick={() => { setIsTranscendChoiceOpen(false); setIsParanormalSelectOpen(true) }}
+            onClick={() => {
+              setIsTranscendChoiceOpen(false)
+              setIsParanormalSelectOpen(true)
+            }}
           >
             Aprender Poder Paranormal
           </button>
           <button
             className="h-24 text-xl font-bold bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 shadow-lg shadow-purple-500/10 transition-all border border-purple-500/30 rounded-xl"
-            onClick={() => { setIsTranscendChoiceOpen(false); setIsRitualSelectOpen(true) }}
+            onClick={() => {
+              setIsTranscendChoiceOpen(false)
+              setIsRitualSelectOpen(true)
+            }}
           >
             Aprender Ritual
           </button>
@@ -3801,7 +2513,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
         isOpen={isParanormalSelectOpen}
         onClose={() => setIsParanormalSelectOpen(false)}
         title="Escolher Poder Paranormal"
-        description={<span className="text-amber-500 font-bold uppercase tracking-tighter">Vínculo com o outro lado</span>}
+        description={
+          <span className="text-amber-500 font-bold uppercase tracking-tighter">
+            Vínculo com o outro lado
+          </span>
+        }
       >
         <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
           {catalogParanormalPowers && catalogParanormalPowers.length > 0 ? (
@@ -3809,13 +2525,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
               const isAcquired = character.paranormalPowers?.some(
                 (p: any) => p.paranormalPowerId === power.id
               )
-              const elementColor = {
-                Conhecimento: 'text-amber-400',
-                Energia: 'text-purple-400',
-                Morte: 'text-zinc-400',
-                Sangue: 'text-red-400',
-                Varia: 'text-blue-400',
-              }[power.element || ''] || 'text-zinc-400'
+              const elementColor =
+                {
+                  Conhecimento: 'text-amber-400',
+                  Energia: 'text-purple-400',
+                  Morte: 'text-zinc-400',
+                  Sangue: 'text-red-400',
+                  Varia: 'text-blue-400',
+                }[power.element || ''] || 'text-zinc-400'
 
               return (
                 <Card
@@ -3851,9 +2568,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     <div className="space-y-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
                       {power.effects?.main && (
                         <div>
-                          <p className="text-[10px] font-bold text-zinc-500 uppercase">
-                            Efeito:
-                          </p>
+                          <p className="text-[10px] font-bold text-zinc-500 uppercase">Efeito:</p>
                           <p className="text-xs text-zinc-300">{power.effects.main}</p>
                         </div>
                       )}
@@ -3862,9 +2577,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           <p className="text-[10px] font-bold text-amber-500/70 uppercase">
                             Afinidade:
                           </p>
-                          <p className="text-xs text-amber-200/70">
-                            {power.effects.affinity}
-                          </p>
+                          <p className="text-xs text-amber-200/70">{power.effects.affinity}</p>
                         </div>
                       )}
                     </div>
@@ -3878,168 +2591,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
         </div>
       </BaseModal>
 
-      {/* Ritual Selection Modal */}
-      <BaseModal
+      {/* Modal de seleção e aprendizado de rituais */}
+      <RitualSelectModal
         isOpen={isRitualSelectOpen}
         onClose={() => setIsRitualSelectOpen(false)}
-        title={
-          <div className="space-y-3">
-            <div>
-              <div className="text-xl font-bold text-white">Aprender Ritual</div>
-              <div className="text-xs text-zinc-400">Desvende os segredos do ocultismo</div>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-[11px] font-bold text-violet-300 whitespace-nowrap">
-                🔮 Créditos: <span className={creditosRestantes > 0 ? 'text-violet-200' : 'text-zinc-500'}>{creditosRestantes}</span> / {creditosGanhos}
-              </span>
-              <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] font-bold text-amber-300 whitespace-nowrap">
-                ⭕ Círculo máx: {circuloMaximo}º
-              </span>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Input
-                placeholder="Buscar ritual pelo nome..."
-                value={ritualSearch}
-                onValueChange={setRitualSearch}
-                startContent={<Filter size={16} className="text-zinc-500" />}
-                className="flex-1"
-                size="sm"
-                classNames={{ inputWrapper: 'bg-zinc-950 border-zinc-800' }}
-              />
-              <div className="flex gap-2">
-                <select
-                  value={elementFilter}
-                  onChange={(e) => setElementFilter(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
-                >
-                  <option value="Todos">Todos Elementos</option>
-                  <option value="Conhecimento">Conhecimento</option>
-                  <option value="Energia">Energia</option>
-                  <option value="Morte">Morte</option>
-                  <option value="Sangue">Sangue</option>
-                  <option value="Medo">Medo</option>
-                </select>
-                <select
-                  value={circleFilter}
-                  onChange={(e) => setCircleFilter(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-lg p-2 focus:ring-amber-500/50 outline-none"
-                >
-                  <option value="Todos">Todos Círculos</option>
-                  <option value="1">1º Círculo</option>
-                  <option value="2">2º Círculo</option>
-                  <option value="3">3º Círculo</option>
-                  <option value="4">4º Círculo</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        }
-      >
-        <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-          {filteredRituals && filteredRituals.length > 0 ? (
-            filteredRituals.map((ritual) => {
-              const isAcquired = character.rituals?.some(
-                (r: any) => r.ritualId === ritual.id
-              )
-              const isBlocked = Number((ritual as any).circle) > circuloMaximo
-              const elementColor = ((({
-                CONHECIMENTO: 'text-amber-400',
-                ENERGIA: 'text-purple-400',
-                MORTE: 'text-zinc-400',
-                SANGUE: 'text-red-400',
-                MEDO: 'text-white p-0.5 bg-zinc-800 rounded border border-white/20',
-              } as Record<string, string>)[(ritual.element || '').toUpperCase()])) || 'text-zinc-400'
-
-              return (
-                <Card
-                  key={ritual.id}
-                  isPressable={!isAcquired && !isAddingAbility && !isBlocked}
-                  onPress={() => !isAcquired && !isAddingAbility && !isBlocked && addRitual(ritual.id)}
-                  className={`bg-zinc-950 border transition-colors ${isBlocked ? 'border-zinc-800 opacity-40 grayscale cursor-not-allowed' : 'border-zinc-700 hover:border-amber-500/50 cursor-pointer'} ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
-                >
-                  <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-lg font-bold text-zinc-100">{ritual.name}</h3>
-                          <Chip size="sm" variant="flat" className="bg-zinc-900 text-zinc-400">
-                            {ritual.circle}º Círculo
-                          </Chip>
-                          {isBlocked && (
-                            <Chip size="sm" variant="flat" className="bg-red-950 text-red-400 border border-red-900">
-                              🔒 NEX insuficiente
-                            </Chip>
-                          )}
-                          {isAcquired && (
-                            <Chip size="sm" color="success" variant="flat">
-                              Aprendido
-                            </Chip>
-                          )}
-                        </div>
-                        <p className={`text-xs font-bold uppercase ${elementColor}`}>
-                          {ritual.element}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-[10px] text-zinc-500 uppercase font-bold">
-                      <div>
-                        <span className="text-zinc-600">Execução:</span> {ritual.execution}
-                      </div>
-                      <div>
-                        <span className="text-zinc-600">Alcance:</span> {ritual.range}
-                      </div>
-                      <div>
-                        <span className="text-zinc-600 text-xs">Duração:</span> {ritual.duration}
-                      </div>
-                      {ritual.resistance && (
-                        <div>
-                          <span className="text-zinc-600 text-xs">Resistência:</span> {ritual.resistance}
-                        </div>
-                      )}
-                    </div>
-                    {ritual.description && (
-                      <p className="text-xs text-zinc-300 italic line-clamp-2">
-                        {ritual.description}
-                      </p>
-                    )}
-
-                    {(ritual.discente || ritual.verdadeiro) && (
-                      <div className="flex flex-col gap-0.5 mt-auto text-[11px]">
-                        {ritual.discente && (
-                          <div className="text-zinc-400 truncate">
-                            <span className="text-blue-400 font-bold uppercase mr-1">Discente:</span>
-                            {ritual.discente}
-                          </div>
-                        )}
-                        {ritual.verdadeiro && (
-                          <div className="text-zinc-400 truncate">
-                            <span className="text-purple-400 font-bold uppercase mr-1">Verdadeiro:</span>
-                            {ritual.verdadeiro}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </CardBody>
-                </Card>
-              )
-            })
-          ) : (
-            <div className="p-8 text-center text-zinc-500 bg-zinc-950/20 border border-dashed border-zinc-800 rounded-xl">
-              <p>Nenhum ritual encontrado com esses filtros.</p>
-              <button
-                onClick={() => {
-                  setRitualSearch('')
-                  setElementFilter('Todos')
-                  setCircleFilter('Todos')
-                }}
-                className="text-xs text-amber-500 hover:text-amber-400 mt-2 font-bold uppercase"
-              >
-                Limpar Filtros
-              </button>
-            </div>
-          )}
-        </div>
-      </BaseModal>
+        rituals={(catalogRituals ?? []).slice().sort((a, b) => a.circle - b.circle)}
+        acquiredRitualIds={(character.rituals ?? []).map((r: any) => r.ritualId)}
+        circuloMaximo={circuloMaximo}
+        creditosRestantes={creditosRestantes}
+        creditosGanhos={creditosGanhos}
+        isLoading={isAddingAbility}
+        onConfirm={(id) => addRitual(id)}
+      />
       {/* Modal de Modificação de Arma */}
       <BaseModal
         isOpen={isModifyWeaponModalOpen}
@@ -4077,22 +2640,28 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     key={mod.id}
                     variant="flat"
                     color={mod.type === 'Maldição' ? 'danger' : 'primary'}
-                    onClose={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
-                    className={mod.type === 'Maldição'
-                      ? mod.element === 'Sangue' ? 'bg-red-500/10 text-red-300 border border-red-500/20' :
-                        mod.element === 'Morte' ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20' :
-                          mod.element === 'Energia' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' :
-                            mod.element === 'Conhecimento' ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20' :
-                              'bg-red-500/10 text-red-300 border border-red-500/20'
-                      : "bg-blue-500/10 text-blue-300 border border-blue-500/20"}
+                    onClose={() =>
+                      toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')
+                    }
+                    className={
+                      mod.type === 'Maldição'
+                        ? mod.element === 'Sangue'
+                          ? 'bg-red-500/10 text-red-300 border border-red-500/20'
+                          : mod.element === 'Morte'
+                            ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20'
+                            : mod.element === 'Energia'
+                              ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
+                              : mod.element === 'Conhecimento'
+                                ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                                : 'bg-red-500/10 text-red-300 border border-red-500/20'
+                        : 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
+                    }
                   >
                     {mod.name}
                   </Chip>
                 ))
               ) : (
-                <span className="text-sm text-zinc-600 italic">
-                  Nenhuma modificação aplicada.
-                </span>
+                <span className="text-sm text-zinc-600 italic">Nenhuma modificação aplicada.</span>
               )}
             </div>
           </div>
@@ -4112,10 +2681,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     <button
                       key={type}
                       onClick={() => setModTypeFilter(type as any)}
-                      className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${isActive
-                        ? `${activeBg} text-white shadow-md`
-                        : 'text-zinc-500 hover:text-zinc-300'
-                        }`}
+                      className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
+                        isActive
+                          ? `${activeBg} text-white shadow-md`
+                          : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
                     >
                       {type}
                     </button>
@@ -4126,31 +2696,46 @@ export default function CharacterShow(initialProps: CharacterProps) {
             <div className="space-y-6 pr-2">
               {modTypeFilter === 'Maldição' ? (
                 ['Sangue', 'Morte', 'Energia', 'Conhecimento'].map((element) => {
-                  const elementMods = catalogAmmunitions.filter(m => m.type === 'Maldição' && m.element === element)
+                  const elementMods = catalogAmmunitions.filter(
+                    (m) => m.type === 'Maldição' && m.element === element
+                  )
                   if (elementMods.length === 0) return null
 
                   const elementColor =
-                    element === 'Sangue' ? 'text-red-500' :
-                      element === 'Morte' ? 'text-zinc-400' :
-                        element === 'Energia' ? 'text-purple-500' :
-                          'text-amber-500' // Conhecimento
+                    element === 'Sangue'
+                      ? 'text-red-500'
+                      : element === 'Morte'
+                        ? 'text-zinc-400'
+                        : element === 'Energia'
+                          ? 'text-purple-500'
+                          : 'text-amber-500' // Conhecimento
 
                   const elementBg =
-                    element === 'Sangue' ? 'bg-red-500/10' :
-                      element === 'Morte' ? 'bg-zinc-500/10' :
-                        element === 'Energia' ? 'bg-purple-500/10' :
-                          'bg-amber-500/10'
+                    element === 'Sangue'
+                      ? 'bg-red-500/10'
+                      : element === 'Morte'
+                        ? 'bg-zinc-500/10'
+                        : element === 'Energia'
+                          ? 'bg-purple-500/10'
+                          : 'bg-amber-500/10'
 
                   const elementBorder =
-                    element === 'Sangue' ? 'border-red-500/20 font-red-glow' :
-                      element === 'Morte' ? 'border-zinc-500/20 font-death-glow' :
-                        element === 'Energia' ? 'border-purple-500/20 font-energy-glow' :
-                          'border-amber-500/20 font-knowledge-glow'
+                    element === 'Sangue'
+                      ? 'border-red-500/20 font-red-glow'
+                      : element === 'Morte'
+                        ? 'border-zinc-500/20 font-death-glow'
+                        : element === 'Energia'
+                          ? 'border-purple-500/20 font-energy-glow'
+                          : 'border-amber-500/20 font-knowledge-glow'
 
                   return (
                     <div key={element} className="space-y-3">
-                      <h4 className={`text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 ${elementColor}`}>
-                        <div className={`w-2 h-2 rounded-full ${elementBg.replace('/10', '')} animate-pulse`} />
+                      <h4
+                        className={`text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 ${elementColor}`}
+                      >
+                        <div
+                          className={`w-2 h-2 rounded-full ${elementBg.replace('/10', '')} animate-pulse`}
+                        />
                         {element}
                       </h4>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -4158,24 +2743,37 @@ export default function CharacterShow(initialProps: CharacterProps) {
                           const isActive = modifyingWeapon?.modifications?.some(
                             (m: any) => m.modificationId === mod.id
                           )
-                          const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                          const validation = !isActive
+                            ? canApplyModification(modifyingWeapon, mod.category)
+                            : { allowed: true }
                           const isBlocked = !isActive && !validation.allowed
                           return (
-                            <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
+                            <div
+                              key={mod.id}
+                              className="w-full"
+                              title={isBlocked ? validation.reason : undefined}
+                            >
                               <Card
-                                className={`w-full border transition-all ${isBlocked
-                                  ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                                  : isActive
-                                    ? `${elementBg} ${elementBorder.split(' ')[0]}`
-                                    : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                  }`}
+                                className={`w-full border transition-all ${
+                                  isBlocked
+                                    ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                    : isActive
+                                      ? `${elementBg} ${elementBorder.split(' ')[0]}`
+                                      : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                                }`}
                               >
                                 <CardBody className="p-3">
                                   <div className="flex justify-between items-start mb-1">
-                                    <span className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}>
+                                    <span
+                                      className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}
+                                    >
                                       {mod.name}
                                     </span>
-                                    <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                    <Chip
+                                      size="sm"
+                                      variant="flat"
+                                      className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300"
+                                    >
                                       +{mod.category} CAT
                                     </Chip>
                                   </div>
@@ -4183,8 +2781,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                     {mod.description}
                                   </p>
                                   <div className="mt-2 flex items-center justify-between">
-                                    <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : isActive ? elementColor : 'text-zinc-600'
-                                      }`}>
+                                    <span
+                                      className={`text-[9px] uppercase font-bold ${
+                                        isBlocked
+                                          ? 'text-red-600'
+                                          : isActive
+                                            ? elementColor
+                                            : 'text-zinc-600'
+                                      }`}
+                                    >
                                       {isBlocked ? validation.reason : 'MALDIÇÃO'}
                                     </span>
                                     {isActive && <Check size={12} className={elementColor} />}
@@ -4206,26 +2811,48 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       const isActive = modifyingWeapon?.modifications?.some(
                         (m: any) => m.modificationId === mod.id
                       )
-                      const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                      const validation = !isActive
+                        ? canApplyModification(modifyingWeapon, mod.category)
+                        : { allowed: true }
                       const isBlocked = !isActive && !validation.allowed
                       return (
-                        <div key={mod.id} className="w-full" title={isBlocked ? validation.reason : undefined}>
+                        <div
+                          key={mod.id}
+                          className="w-full"
+                          title={isBlocked ? validation.reason : undefined}
+                        >
                           <Card
                             isPressable={!isBlocked}
-                            onPress={isBlocked ? undefined : () => toggleModification(modifyingWeapon.id, mod.id, isActive ? 'remove' : 'add')}
-                            className={`w-full border transition-all ${isBlocked
-                              ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                              : isActive
-                                ? 'bg-blue-500/10 border-blue-500/50'
-                                : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                              }`}
+                            onPress={
+                              isBlocked
+                                ? undefined
+                                : () =>
+                                    toggleModification(
+                                      modifyingWeapon.id,
+                                      mod.id,
+                                      isActive ? 'remove' : 'add'
+                                    )
+                            }
+                            className={`w-full border transition-all ${
+                              isBlocked
+                                ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                : isActive
+                                  ? 'bg-blue-500/10 border-blue-500/50'
+                                  : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                            }`}
                           >
                             <CardBody className="p-3">
                               <div className="flex justify-between items-start mb-1">
-                                <span className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}>
+                                <span
+                                  className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}
+                                >
                                   {mod.name}
                                 </span>
-                                <Chip size="sm" variant="flat" className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300">
+                                <Chip
+                                  size="sm"
+                                  variant="flat"
+                                  className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300"
+                                >
                                   +{mod.category} CAT
                                 </Chip>
                               </div>
@@ -4233,8 +2860,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
                                 {mod.description}
                               </p>
                               <div className="mt-2 flex items-center justify-between">
-                                <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'
-                                  }`}>
+                                <span
+                                  className={`text-[9px] uppercase font-bold ${
+                                    isBlocked ? 'text-red-600' : 'text-zinc-600'
+                                  }`}
+                                >
                                   {isBlocked ? validation.reason : 'MELHORIA'}
                                 </span>
                                 {isActive && <Check size={12} className="text-blue-400" />}
@@ -4250,6 +2880,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
           </div>
         </div>
       </BaseModal>
-    </div >
+    </div>
   )
 }
