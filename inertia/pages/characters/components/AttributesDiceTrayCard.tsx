@@ -81,6 +81,17 @@ export interface AttributesDiceTrayCardHandle {
     agi: number,
     characterSkills?: any[]
   ) => void
+  /** Rola o teste de Ocultismo de um ritual e exibe na bandeja */
+  rollRitual: (params: {
+    name: string
+    version: 'base' | 'discente' | 'verdadeiro'
+    diceCount: number
+    trainingBonus: number
+    dt: number
+    totalPe: number
+    damageDice: string | undefined
+    onResult: (r: { rolls: number[]; best: number; total: number; damageResult: number | undefined; damageRolls: number[] | undefined }) => void
+  }) => void
   /** Abre o modo bandeja de dados */
   openDiceTray: () => void
 }
@@ -126,6 +137,21 @@ const AttributesDiceTrayCard = forwardRef<
     weapon: string
     attack: { total: number; rolls: number[]; label: string; skill: string }
     damage: { total: number; rolls: number[]; label: string }
+  } | null>(null)
+  const [ritualRollResult, setRitualRollResult] = useState<{
+    name: string
+    version: string
+    rolls: number[]
+    best: number
+    trainingBonus: number
+    total: number
+    dt: number
+    totalPe: number
+    success: boolean
+    diceCount: number
+    damageDice: string | undefined
+    damageTotal: number | undefined
+    damageRolls: number[] | undefined
   } | null>(null)
   const [diceHistory, setDiceHistory] = useState<Array<{ label: string; total: number }>>([])
 
@@ -352,15 +378,97 @@ const AttributesDiceTrayCard = forwardRef<
     [dddiceApiKey, waitForDddice]
   )
 
+  // ── rollRitual ─────────────────────────────────────────────────────────────
+  const rollRitual = useCallback(
+    async (params: {
+      name: string
+      version: 'base' | 'discente' | 'verdadeiro'
+      diceCount: number
+      trainingBonus: number
+      dt: number
+      totalPe: number
+      damageDice: string | undefined
+      onResult: (r: { rolls: number[]; best: number; total: number; damageResult: number | undefined; damageRolls: number[] | undefined }) => void
+    }) => {
+      const { name, version, diceCount, trainingBonus, dt, totalPe, damageDice, onResult } = params
+
+      setIsRolling(true)
+      setDiceResult(null)
+      setWeaponRollResult(null)
+      setRitualRollResult(null)
+
+      // Roll d20s (take best)
+      const rollArr = Array.from({ length: Math.max(1, diceCount) }, () =>
+        Math.ceil(Math.random() * 20)
+      )
+      const best = Math.max(...rollArr)
+      const total = best + trainingBonus
+      const success = total >= dt
+
+      // Roll damage if applicable
+      let damageResult: number | undefined
+      let damageRolls: number[] | undefined
+      if (damageDice) {
+        const m = /^(\d+)d(\d+)(?:([+-])(\d+))?$/i.exec(damageDice)
+        if (m) {
+          const cnt = Number.parseInt(m[1])
+          const sides = Number.parseInt(m[2])
+          const mod = m[3] ? (m[3] === '+' ? Number.parseInt(m[4]) : -Number.parseInt(m[4])) : 0
+          damageRolls = Array.from({ length: cnt }, () => Math.ceil(Math.random() * sides))
+          damageResult = damageRolls.reduce((a, b) => a + b, 0) + mod
+        }
+      }
+
+      const versionLabel = version === 'discente' ? 'Discente' : version === 'verdadeiro' ? 'Verdadeiro' : 'Base'
+
+      setRitualRollResult({ name, version: versionLabel, diceCount, rolls: rollArr, best, trainingBonus, total, dt, totalPe, success, damageDice, damageTotal: damageResult, damageRolls })
+      setDiceHistory((prev) => {
+        const entries: Array<{ label: string; total: number }> = [
+          { label: `${name} (${versionLabel})`, total },
+        ]
+        if (damageResult !== undefined) entries.push({ label: `${name} Dano`, total: damageResult })
+        return [...entries, ...prev].slice(0, 8)
+      })
+      setIsRolling(false)
+
+      // Callback with raw results so caller can apply game effects
+      onResult({ rolls: rollArr, best, total, damageResult, damageRolls })
+
+      // 3D animation in parallel
+      if (dddiceApiKey) {
+        ;(async () => {
+          await waitForDddice()
+          if (!dddiceRef.current) return
+          try {
+            const theme = diceThemeRef.current
+            const allDice: any[] = rollArr.map((v) =>
+              theme ? { type: 'd20', theme, value: v } : { type: 'd20', value: v }
+            )
+            if (damageRolls && damageDice) {
+              const m2 = /^(\d+)d(\d+)/i.exec(damageDice)
+              const sides = m2 ? m2[2] : '6'
+              for (const v of damageRolls) {
+                allDice.push(theme ? { type: `d${sides}`, theme, value: v } : { type: `d${sides}`, value: v })
+              }
+            }
+            await (dddiceRef.current as any).roll(allDice)
+          } catch (_) {}
+        })()
+      }
+    },
+    [dddiceApiKey, waitForDddice]
+  )
+
   // ── Expõe API ao pai ───────────────────────────────────────────────────────
   useImperativeHandle(
     ref,
     () => ({
       rollDice,
       rollWeapon,
+      rollRitual,
       openDiceTray: () => setIsDiceTray(true),
     }),
-    [rollDice, rollWeapon]
+    [rollDice, rollWeapon, rollRitual]
   )
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -387,6 +495,7 @@ const AttributesDiceTrayCard = forwardRef<
               if (isDiceTray) diceThemeRef.current = undefined
               setIsDiceTray((prev) => !prev)
               setDiceResult(null)
+              setRitualRollResult(null)
             }}
             className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
               isDiceTray ? 'bg-amber-500' : 'bg-zinc-700'
@@ -538,7 +647,7 @@ const AttributesDiceTrayCard = forwardRef<
             </div>
 
             {/* Resultado */}
-            {(diceResult || weaponRollResult || isRolling) && (
+            {(diceResult || weaponRollResult || ritualRollResult || isRolling) && (
               <div className="px-1">
                 {isRolling ? (
                   <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
@@ -587,6 +696,54 @@ const AttributesDiceTrayCard = forwardRef<
                           [{weaponRollResult.damage.rolls.join(', ')}]
                         </div>
                       </div>
+                    </div>
+                  </motion.div>
+                ) : ritualRollResult ? (
+                  /* Resultado de ritual */
+                  <motion.div
+                    key={ritualRollResult.name + ritualRollResult.total}
+                    initial={{ y: 6, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider truncate">
+                        {ritualRollResult.name} · {ritualRollResult.version} · DT {ritualRollResult.dt}
+                      </div>
+                      <span className={`text-[11px] font-black ${ritualRollResult.success ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {ritualRollResult.success ? '✓ Sucesso' : '✗ Falhou'}
+                      </span>
+                    </div>
+                    <div className="flex items-stretch gap-2">
+                      {/* Ocultismo roll */}
+                      <div className={`flex-1 rounded-lg px-3 py-2 border ${ritualRollResult.success ? 'bg-zinc-950 border-zinc-800' : 'bg-red-950/30 border-red-900/40'}`}>
+                        <div className="text-[9px] uppercase font-bold text-zinc-600 tracking-wider mb-0.5">
+                          Ocultismo ({ritualRollResult.diceCount}d20{ritualRollResult.trainingBonus > 0 ? `+${ritualRollResult.trainingBonus}` : ''})
+                        </div>
+                        <div className={`text-3xl font-black leading-none ${ritualRollResult.success ? 'text-purple-400' : 'text-red-400'}`}>
+                          {ritualRollResult.total}
+                        </div>
+                        <div className="text-[10px] text-zinc-600 mt-0.5">
+                          [{ritualRollResult.rolls.join(', ')}] melhor: {ritualRollResult.best}
+                        </div>
+                      </div>
+                      {/* PE gasto */}
+                      <div className="rounded-lg px-3 py-2 bg-amber-950/20 border border-amber-900/30">
+                        <div className="text-[9px] uppercase font-bold text-amber-900/80 tracking-wider mb-0.5">−PE</div>
+                        <div className="text-3xl font-black text-amber-400 leading-none">{ritualRollResult.totalPe}</div>
+                      </div>
+                      {/* Dano (sucesso) */}
+                      {ritualRollResult.damageTotal !== undefined && (
+                        <div className="rounded-lg px-3 py-2 bg-orange-950/20 border border-orange-900/30">
+                          <div className="text-[9px] uppercase font-bold text-orange-900/80 tracking-wider mb-0.5">
+                            Dano · {ritualRollResult.damageDice}
+                          </div>
+                          <div className="text-3xl font-black text-orange-400 leading-none">{ritualRollResult.damageTotal}</div>
+                          {ritualRollResult.damageRolls && (
+                            <div className="text-[10px] text-zinc-600 mt-0.5">[{ritualRollResult.damageRolls.join(', ')}]</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ) : diceResult ? (

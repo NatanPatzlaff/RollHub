@@ -796,7 +796,13 @@ export default class CharactersController {
 
     // Update basic info
     if (name) character.name = name
-    if (nex !== undefined) character.nex = nex
+    if (nex !== undefined) {
+      character.nex = nex
+      // If NEX drops below 50, affinity is lost
+      if (nex < 50 && character.affinity) {
+        character.affinity = null
+      }
+    }
     if (rank) character.rank = rank
     if (classId) character.classId = classId
 

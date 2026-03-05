@@ -1,4 +1,4 @@
-﻿import {
+import {
   Card,
   CardBody,
   Button,
@@ -41,6 +41,8 @@ import {
 } from 'lucide-react'
 import TrailSelectModal from './components/TrailSelectModal'
 import RitualSelectModal from './components/RitualSelectModal'
+import ParanormalPowerModal from './components/ParanormalPowerModal'
+import AffinityModal from './components/AffinityModal'
 import BaseModal from './components/BaseModal'
 import AttributesDiceTrayCard, {
   type AttributesDiceTrayCardHandle,
@@ -199,6 +201,7 @@ interface CharacterProps {
     id: number
     name: string
     nex: number
+    affinity?: string | null
     rank?: string
     classId?: number
     originId?: number
@@ -335,7 +338,26 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const classTrails: Trail[] =
     initialProps.classTrails ?? pageProps.classTrails ?? pageProps.class_trails ?? []
 
-  const catalogParanormalPowers: ParanormalPower[] = catalogParanormalPowersProp || []
+  const catalogParanormalPowers: ParanormalPower[] = (catalogParanormalPowersProp || []).filter((power) => {
+    if (!power.requirements) return true
+    // Parse requirements like 'Conhecimento 1', 'Energia 2', etc.
+    const match = power.requirements.trim().match(/^([A-Za-zÀ-ž]+)\s+(\d+)$/i)
+    if (!match) return true
+    const reqElement = match[1].toUpperCase()
+    const reqCircle = parseInt(match[2], 10)
+    // Score = sum of ritual circles + 1 per paranormal power (same element)
+    // must reach reqCircle (e.g. "Conhecimento 3" needs score >= 3)
+    let score = 0
+    for (const cr of (character.rituals || []) as any[]) {
+      const ritual = cr.ritual
+      if (ritual && ritual.element?.toUpperCase() === reqElement) score += ritual.circle
+    }
+    for (const cp of (character.paranormalPowers || []) as any[]) {
+      const pp = cp.paranormalPower
+      if (pp && pp.element?.toUpperCase() === reqElement) score += 1
+    }
+    return score >= reqCircle
+  })
 
   // Personagem sem trilha: considerar trailId ou trail_id (serialização pode vir em snake_case)
   const characterTrailId = character.trailId ?? (character as { trail_id?: number | null }).trail_id
@@ -365,6 +387,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [hp, setHp] = useState(calculatedStats?.currentHp || 21)
   const [pe, setPe] = useState(calculatedStats?.currentPe || 3)
   const [san, setSan] = useState(calculatedStats?.currentSanity || 12)
+  const [permSanLoss, setPermSanLoss] = useState(calculatedStats?.permanentSanityLoss || 0)
 
   // Persistir HP no backend
   useEffect(() => {
@@ -387,6 +410,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }, [san])
 
+  // Persistir perda permanente de sanidade no backend
+  useEffect(() => {
+    if (characterId) {
+      axios.put(`/characters/${characterId}/stats`, { permanentSanityLoss: permSanLoss })
+    }
+  }, [permSanLoss])
+
   // Damage taken inputs
   const [damageToHp, setDamageToHp] = useState('')
   const [damageToPe, setDamageToPe] = useState('')
@@ -402,11 +432,31 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [isAddingAbility, setIsAddingAbility] = useState(false)
   const [abilitySearch, setAbilitySearch] = useState('')
   const [isTranscendChoiceOpen, setIsTranscendChoiceOpen] = useState(false)
+  const [isAffinityModalOpen, setIsAffinityModalOpen] = useState(false)
+  const [isAffinityLoading, setIsAffinityLoading] = useState(false)
   const [isParanormalSelectOpen, setIsParanormalSelectOpen] = useState(false)
+
+  // --- Affinity selection ---------------------------------------------------
+  const selectAffinity = (affinity: string) => {
+    setIsAffinityLoading(true)
+    router.put(
+      `/characters/${character.id}/affinity`,
+      { affinity },
+      {
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => {
+          setIsAffinityModalOpen(false)
+          setIsAffinityLoading(false)
+        },
+        onError: () => setIsAffinityLoading(false),
+      }
+    )
+  }
   const [isRitualSelectOpen, setIsRitualSelectOpen] = useState(false)
   const [lastTranscendAbilityId, setLastTranscendAbilityId] = useState<number | null>(null)
 
-  // ─── Detecção automática de habilidades ──────────────────────────────────
+  // --- Detecção automática de habilidades ----------------------------------
   const hasAbility = (name: string) =>
     (character.classAbilities || []).some((ca) => ca.classAbility?.name === name)
 
@@ -425,7 +475,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   // Combatente
   const hasTiroCerteiro = hasAbility('Tiro Certeiro')
 
-  // ─── Configuração de Ritual Predileto (nome do ritual configurado) ────────
+  // --- Configuração de Ritual Predileto (nome do ritual configurado) --------
   const ritualPrediletoConfig = useMemo(() => {
     const ca = (character.classAbilities || []).find(
       (ca) => ca.classAbility?.name === 'Ritual Predileto'
@@ -441,16 +491,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
     return (ca?.config as { element?: string } | undefined)?.element || null
   }, [character.classAbilities])
 
-  // ─── Toggles opcionais de uso de habilidades ─────────────────────────────
+  // --- Toggles opcionais de uso de habilidades -----------------------------
   const [usarCamuflar, setUsarCamuflar] = useState(false)
   const [usarPeritoSkill, setUsarPeritoSkill] = useState<string | null>(null)
 
-  // ─── Cálculo de PE ajustado para um ritual ───────────────────────────────
+  // --- Cálculo de PE ajustado para um ritual -------------------------------
   const calcPeAjustado = (
     ritual: Ritual | undefined
   ): { base: number; ajustado: number; reducoes: string[] } => {
     if (!ritual) return { base: 0, ajustado: 0, reducoes: [] }
-    const base = ritual.circle * 2
+    const circlePeCost: Record<number, number> = { 1: 1, 2: 3, 3: 6, 4: 10 }
+    const base = circlePeCost[ritual.circle] ?? ritual.circle * 2
     let ajustado = base
     const reducoes: string[] = []
 
@@ -460,11 +511,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
       ritual.name.toLowerCase() === ritualPrediletoConfig.toLowerCase()
     ) {
       ajustado -= 1
-      reducoes.push('Ritual Predileto –1')
+      reducoes.push('Ritual Predileto 1')
     }
     if (hasTatuagemRitualistica && ritual.range?.toLowerCase().includes('pessoal')) {
       ajustado -= 1
-      reducoes.push('Tatuagem Ritualística –1')
+      reducoes.push('Tatuagem Ritualística 1')
     }
     if (
       hasMestreEmElemento &&
@@ -472,7 +523,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       ritual.element?.toLowerCase() === mestreElementoConfig.toLowerCase()
     ) {
       ajustado -= 1
-      reducoes.push('Mestre em Elemento –1')
+      reducoes.push('Mestre em Elemento 1')
     }
     if (hasCamuflarOcultismo && usarCamuflar) {
       ajustado += 2
@@ -482,7 +533,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     return { base, ajustado: Math.max(1, ajustado), reducoes }
   }
 
-  // ─── Cálculo de dado do Perito conforme NEX ───────────────────────────────
+  // --- Cálculo de dado do Perito conforme NEX -------------------------------
   const peritoBonus = useMemo(() => {
     if (character.nex >= 85) return { dice: '1d12', cost: 4 }
     if (character.nex >= 55) return { dice: '1d10', cost: 3 }
@@ -644,15 +695,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   const maxPeritoPe = getMaxPeritoPe()
 
-  // ─── Ocultista: créditos de rituais ────────────────────────────────────
+  // --- Ocultista: créditos de rituais ------------------------------------
   const isOcultista = character.class?.name === 'Ocultista'
 
-  const circuloMaximo = (() => {
-    if (character.nex >= 85) return 4
-    if (character.nex >= 55) return 3
-    if (character.nex >= 25) return 2
-    return 1
-  })()
+    const circuloMaximo = isOcultista
+    ? (character.nex >= 85 ? 4 : character.nex >= 55 ? 3 : character.nex >= 25 ? 2 : 1)
+    : (character.nex >= 75 ? 3 : character.nex >= 45 ? 2 : 1)
 
   // Créditos ganhos: 3 iniciais + 1 por nível acima do 1 (level = floor(nex/5))
   const nexLevel = Math.floor(character.nex / 5)
@@ -832,6 +880,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       `/characters/${character.id}/items`,
       { type, itemId, quantity: qty },
       {
+        preserveState: true,
+        preserveScroll: true,
         onSuccess: () => {
           onAddItemModalOpenChange()
         },
@@ -848,6 +898,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       `/characters/${character.id}/trail`,
       { trailId },
       {
+        preserveState: true,
+        preserveScroll: true,
         onSuccess: () => {
           onTrailModalOpenChange()
         },
@@ -873,6 +925,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       `/characters/${character.id}/abilities`,
       { abilityId },
       {
+        preserveState: true,
+        preserveScroll: true,
         onSuccess: () => {
           setIsAddingAbility(false)
           onAbilitySelectOpenChange()
@@ -891,6 +945,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       `/characters/${character.id}/paranormal-powers`,
       { powerId, transcendAbilityId: lastTranscendAbilityId },
       {
+        preserveState: true,
+        preserveScroll: true,
         onSuccess: () => {
           setIsAddingAbility(false)
           setIsParanormalSelectOpen(false) // Close the specific modal
@@ -908,9 +964,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
       : 'Tem certeza que deseja remover este poder paranormal?'
     if (!confirm(msg)) return
     if (isTranscend) {
-      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`)
+      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`, { preserveState: true, preserveScroll: true })
     } else {
-      router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`)
+      router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`, { preserveState: true, preserveScroll: true })
     }
   }
 
@@ -920,6 +976,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       `/characters/${character.id}/rituals`,
       { ritualId, transcendAbilityId: lastTranscendAbilityId },
       {
+        preserveState: true,
+        preserveScroll: true,
         onSuccess: () => {
           setIsAddingAbility(false)
           setIsRitualSelectOpen(false) // Close the specific modal
@@ -937,9 +995,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
       : 'Tem certeza que deseja remover este ritual?'
     if (!confirm(msg)) return
     if (isTranscend) {
-      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`)
+      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`, { preserveState: true, preserveScroll: true })
     } else {
-      router.delete(`/characters/${character.id}/rituals/${ritualId}`)
+      router.delete(`/characters/${character.id}/rituals/${ritualId}`, { preserveState: true, preserveScroll: true })
     }
   }
 
@@ -962,6 +1020,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           },
           onError: () => setIsUpdatingModifications(false),
           preserveScroll: true,
+          preserveState: true,
         }
       )
     } else {
@@ -973,6 +1032,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           },
           onError: () => setIsUpdatingModifications(false),
           preserveScroll: true,
+          preserveState: true,
         }
       )
     }
@@ -1029,7 +1089,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     calculatedMaxSan -= transcendCount * sanityPerLevel
 
     // Subtrair perda permanente de sanidade
-    calculatedMaxSan -= calculatedStats?.permanentSanityLoss || 0
+    calculatedMaxSan -= permSanLoss
 
     return {
       maxHp: calculatedMaxHp,
@@ -1042,8 +1102,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
     presence,
     classInfo,
     character.classAbilities,
-    calculatedStats?.permanentSanityLoss,
+    permSanLoss,
   ])
+
+  // Ocultismo training degree for ritual roll bonus
+  const ocultismoDegree = ((): number => {
+    const cs = ((character.skills || []) as any[]).find((s) => s.skill?.name === 'Ocultismo')
+    return cs?.trainingDegree ?? 0
+  })()
+
+  // Ritual roll deduction callbacks
+  const handleDeductPe = (amount: number) => setPe((prev) => Math.max(0, prev - amount))
+  const handleDeductSan = (amount: number) => setSan((prev) => Math.max(0, prev - amount))
+  const handleDeductPermSan = (amount: number) => setPermSanLoss((prev) => prev + amount)
 
   // Filter trail progressions by current NEX
   const { currentTrailAbilities, futureTrailAbilities } = useMemo(() => {
@@ -1340,6 +1411,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
         veteranSkills,
       },
       {
+        preserveState: true,
+        preserveScroll: true,
         onError: (errors) => {
           console.error('Skill save failed:', errors)
           setIsSavingSkills(false)
@@ -1637,7 +1710,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       .then(() => {
         setExpandedItemId(null)
         // @ts-ignore
-        router.reload({ preserveScroll: true })
+        router.reload({ preserveScroll: true, preserveState: true })
       })
       .catch((error) => {
         console.error('Erro ao remover item:', error)
@@ -1651,7 +1724,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       .patch(`/characters/${character.id}/items/${itemId}/equip`, { equipped: !currentEquipped })
       .then(() => {
         // @ts-ignore
-        router.reload({ preserveScroll: true })
+        router.reload({ preserveScroll: true, preserveState: true })
       })
       .catch((error) => {
         console.error('Erro ao equipar/desequipar item:', error)
@@ -1729,6 +1802,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 >
                   {character.nex}% NEX
                 </span>
+                {character.affinity && (
+                  <>
+                    <span className="w-1 h-1 rounded-full bg-zinc-700"></span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+                      {character.affinity}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1739,6 +1820,28 @@ export default function CharacterShow(initialProps: CharacterProps) {
           </div>
         </div>
       </div>
+
+      {/* Affinity selection banner */}
+      {character.nex >= 50 && !character.affinity && (
+        <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">
+          <button
+            onClick={() => setIsAffinityModalOpen(true)}
+            className="w-full flex items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-500/5 px-5 py-4 text-left transition-all hover:border-amber-500/70 hover:bg-amber-500/10"
+          >
+            <div>
+              <p className="text-sm font-bold text-amber-400 uppercase tracking-wider">
+                NEX 50% atingido — Escolha sua Afinidade
+              </p>
+              <p className="mt-0.5 text-xs text-amber-400/60">
+                Clique para vincular seu personagem permanentemente a um elemento do outro lado.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black">
+              Escolher
+            </span>
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-row gap-6 max-w-7xl mx-auto p-4 md:p-8">
         {/* COLUNA ESQUERDA (Skills & Inventory) */}
@@ -1791,6 +1894,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onExpandItem={setExpandedItemId}
             characterRituals={character.rituals || []}
             isOcultista={isOcultista}
+            characterAffinity={character.affinity}
             onLearnRitual={() => setIsRitualSelectOpen(true)}
             onRemoveRitual={removeRitual}
             nex={character.nex}
@@ -1840,7 +1944,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onOpenAbilityConfig={openAbilityConfig}
             onRemoveAbility={(charId, abilityId) => {
               if (confirm('Tem certeza que deseja remover esta habilidade?'))
-                router.delete(`/characters/${charId}/abilities/${abilityId}`)
+                router.delete(`/characters/${charId}/abilities/${abilityId}`, { preserveState: true, preserveScroll: true })
             }}
             onRemoveParanormalPower={removeParanormalPower}
             onSetUsarCamuflar={setUsarCamuflar}
@@ -1848,6 +1952,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
             originAbilityName={character.origin?.abilityName}
             originAbilityDescription={character.origin?.abilityDescription}
             originAbilities={originAbilities}
+            pe={pe}
+            ocultismoDegree={ocultismoDegree}
+            onDeductPe={handleDeductPe}
+            onDeductSan={handleDeductSan}
+            onDeductPermSan={handleDeductPermSan}
+            onRollRitual={(params) => {
+              diceTrayRef.current?.openDiceTray()
+              diceTrayRef.current?.rollRitual(params)
+            }}
           />
         </div>
 
@@ -1876,6 +1989,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
               setIsSaving(true)
               router.put(`/characters/${character.id}/attributes`, attrs, {
                 preserveScroll: true,
+                preserveState: true,
                 onFinish: () => setIsSaving(false),
               })
             }}
@@ -1884,7 +1998,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           />
 
           {/* COMBAT DEFENSES */}
-          <CombatDefensesCard agility={agility} characterSkills={character.skills} />
+          <CombatDefensesCard agility={agility} characterSkills={character.skills} inventoryProtections={inventoryProtections} />
 
           {/* VITALS STACK */}
           <Card className="bg-zinc-900 border border-zinc-800 shadow-none rounded-xl">
@@ -1987,7 +2101,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     min="0"
                   />
                   <span className="ml-1 flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-[11px]">
-                    ⚡ {Math.floor(character.nex / 5)} PE/turno
+                    {Math.floor(character.nex / 5)} PE/turno
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
@@ -2189,7 +2303,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                         : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-amber-500 hover:text-amber-400'
                     } border`}
                   >
-                    {selectedSkills.includes(skill) && '✓ '}
+                    {selectedSkills.includes(skill) && '? '}
                     {skill}
                   </Button>
                 ))}
@@ -2216,12 +2330,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
           </div>
         )}
 
-        {/* ── Ritual Predileto: escolha um ritual ── */}
+        {/* -- Ritual Predileto: escolha um ritual -- */}
         {configuringAbility?.classAbility?.name === 'Ritual Predileto' && (
           <div className="space-y-4">
             <p className="text-sm text-zinc-400">
               Escolha um ritual que você conhece. O custo desse ritual será reduzido em{' '}
-              <span className="text-emerald-400 font-bold">–1 PE</span>.
+              <span className="text-emerald-400 font-bold">1 PE</span>.
             </p>
             {character.rituals && character.rituals.length > 0 ? (
               <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
@@ -2246,7 +2360,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        {isSelected && <span className="text-blue-400 font-black">✓</span>}
+                        {isSelected && <span className="text-blue-400 font-black">?</span>}
                         <span className="font-bold text-white text-sm">{r?.name}</span>
                         <span className="text-[10px] font-bold text-zinc-400 uppercase">
                           {r?.element}
@@ -2270,21 +2384,21 @@ export default function CharacterShow(initialProps: CharacterProps) {
           </div>
         )}
 
-        {/* ── Mestre em Elemento / Especialista em Elemento: escolha o elemento ── */}
+        {/* -- Mestre em Elemento / Especialista em Elemento: escolha o elemento -- */}
         {(configuringAbility?.classAbility?.name === 'Mestre em Elemento' ||
           configuringAbility?.classAbility?.name === 'Especialista em Elemento') && (
           <div className="space-y-4">
             <p className="text-sm text-zinc-400">
               {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
-                ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
+                ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em 1 PE.'
                 : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
             </p>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { name: 'Conhecimento', color: 'amber', icon: '📚' },
-                { name: 'Energia', color: 'purple', icon: '⚡' },
-                { name: 'Morte', color: 'zinc', icon: '💀' },
-                { name: 'Sangue', color: 'red', icon: '🩸' },
+                { name: 'Conhecimento', color: 'amber', icon: '??' },
+                { name: 'Energia', color: 'purple', icon: '?' },
+                { name: 'Morte', color: 'zinc', icon: '??' },
+                { name: 'Sangue', color: 'red', icon: '??' },
               ].map((el) => {
                 const isSelected = selectedElement === el.name
                 const colorMap: Record<string, string> = {
@@ -2311,7 +2425,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   >
                     <span>{el.icon}</span>
                     {el.name}
-                    {isSelected && <span className="ml-auto">✓</span>}
+                    {isSelected && <span className="ml-auto">?</span>}
                   </button>
                 )
               })}
@@ -2392,7 +2506,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   if (eff.action) costParts.push(eff.action)
                   if (eff.pe_cost) costParts.push(`${eff.pe_cost} PE`)
                   if (!costParts.length) costParts.push('Passiva')
-                  const costLabel = costParts.join(' • ')
+                  const costLabel = costParts.join('  ')
 
                   return (
                     <div
@@ -2508,88 +2622,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
         </div>
       </BaseModal>
 
-      {/* Paranormal Power Selection Modal (Dedicated) */}
-      <BaseModal
+      {/* Paranormal Power Selection Modal */}
+      <ParanormalPowerModal
         isOpen={isParanormalSelectOpen}
         onClose={() => setIsParanormalSelectOpen(false)}
-        title="Escolher Poder Paranormal"
-        description={
-          <span className="text-amber-500 font-bold uppercase tracking-tighter">
-            Vínculo com o outro lado
-          </span>
-        }
-      >
-        <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-          {catalogParanormalPowers && catalogParanormalPowers.length > 0 ? (
-            catalogParanormalPowers.map((power) => {
-              const isAcquired = character.paranormalPowers?.some(
-                (p: any) => p.paranormalPowerId === power.id
-              )
-              const elementColor =
-                {
-                  Conhecimento: 'text-amber-400',
-                  Energia: 'text-purple-400',
-                  Morte: 'text-zinc-400',
-                  Sangue: 'text-red-400',
-                  Varia: 'text-blue-400',
-                }[power.element || ''] || 'text-zinc-400'
+        powers={catalogParanormalPowers}
+        acquiredPowerIds={(character.paranormalPowers ?? []).map((p: any) => p.paranormalPowerId)}
+        isLoading={isAddingAbility}
+        onConfirm={(powerId) => addParanormalPower(powerId)}
+      />
 
-              return (
-                <Card
-                  key={power.id}
-                  isPressable={!isAcquired && !isAddingAbility}
-                  onPress={() => !isAcquired && !isAddingAbility && addParanormalPower(power.id)}
-                  className={`bg-zinc-950 border border-zinc-700 hover:border-amber-500/50 transition-colors cursor-pointer ${isAcquired ? 'opacity-50 cursor-not-allowed grayscale' : ''} ${isAddingAbility ? 'opacity-70 cursor-wait' : ''}`}
-                >
-                  <CardBody className="h-36 overflow-hidden flex flex-col gap-1 py-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-zinc-100">{power.name}</h3>
-                          {isAcquired && (
-                            <Chip size="sm" color="success" variant="flat">
-                              Adquirido
-                            </Chip>
-                          )}
-                        </div>
-                        <p className={`text-xs font-bold uppercase ${elementColor}`}>
-                          {power.element}
-                        </p>
-                        {power.requirements && (
-                          <p className="text-[10px] text-zinc-500 mt-1 uppercase">
-                            Requisito: {power.requirements}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    {power.description && (
-                      <p className="text-sm text-zinc-300 italic">{power.description}</p>
-                    )}
-                    <div className="space-y-2 bg-zinc-900/50 p-3 rounded-lg border border-zinc-800">
-                      {power.effects?.main && (
-                        <div>
-                          <p className="text-[10px] font-bold text-zinc-500 uppercase">Efeito:</p>
-                          <p className="text-xs text-zinc-300">{power.effects.main}</p>
-                        </div>
-                      )}
-                      {power.effects?.affinity && (
-                        <div>
-                          <p className="text-[10px] font-bold text-amber-500/70 uppercase">
-                            Afinidade:
-                          </p>
-                          <p className="text-xs text-amber-200/70">{power.effects.affinity}</p>
-                        </div>
-                      )}
-                    </div>
-                  </CardBody>
-                </Card>
-              )
-            })
-          ) : (
-            <p className="text-center text-zinc-500 py-8">Nenhum poder encontrado</p>
-          )}
-        </div>
-      </BaseModal>
+      {/* Affinity Selection Modal */}
+      <AffinityModal
+        isOpen={isAffinityModalOpen}
+        onClose={() => setIsAffinityModalOpen(false)}
+        isLoading={isAffinityLoading}
+        onConfirm={selectAffinity}
+      />
 
       {/* Modal de seleção e aprendizado de rituais */}
       <RitualSelectModal
@@ -2600,6 +2649,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         circuloMaximo={circuloMaximo}
         creditosRestantes={creditosRestantes}
         creditosGanhos={creditosGanhos}
+        characterAffinity={character.affinity}
         isLoading={isAddingAbility}
         onConfirm={(id) => addRitual(id)}
       />

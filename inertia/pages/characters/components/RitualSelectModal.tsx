@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Filter, Sparkles, CircleDot, Check } from 'lucide-react'
 import BaseModal from './BaseModal'
+import { canUseRitualUpgrade } from '../../../utils/ritualReqs'
 
 /** Representação de um ritual do catálogo */
 export interface CatalogRitual {
@@ -33,6 +34,8 @@ export interface RitualSelectModalProps {
   /** Total de créditos ganhos */
   creditosGanhos: number
   /** Indica se uma requisição está em andamento */
+  /** Afinidade do personagem (elemento em caixa alta ou null) */
+  characterAffinity?: string | null
   isLoading?: boolean
   /** Chamada ao confirmar a seleção de um ritual */
   onConfirm: (ritualId: number) => void
@@ -60,6 +63,7 @@ export default function RitualSelectModal({
   creditosRestantes,
   creditosGanhos,
   isLoading = false,
+  characterAffinity,
   onConfirm,
 }: RitualSelectModalProps) {
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -318,7 +322,7 @@ export default function RitualSelectModal({
                     layout="position"
                     className="flex flex-col gap-1.5 border-t border-zinc-800/50 pt-3"
                   >
-                    {ritual.discente && (
+                    {ritual.discente && canUseRitualUpgrade(ritual.discente, ritual.element ?? '', circuloMaximo, characterAffinity) && (
                       <p
                         className={`text-sm text-zinc-400 leading-relaxed ${isSelected ? '' : 'line-clamp-1'}`}
                       >
@@ -326,7 +330,7 @@ export default function RitualSelectModal({
                         {ritual.discente}
                       </p>
                     )}
-                    {ritual.verdadeiro && (
+                    {ritual.verdadeiro && canUseRitualUpgrade(ritual.verdadeiro, ritual.element ?? '', circuloMaximo, characterAffinity) && (
                       <p
                         className={`text-sm text-zinc-400 leading-relaxed ${isSelected ? '' : 'line-clamp-1'}`}
                       >

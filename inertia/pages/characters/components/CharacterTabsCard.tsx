@@ -108,7 +108,31 @@ export interface CharacterTabsCardProps {
     target: string | null
     effects: any | null
   }>
+  characterAffinity?: string | null
+  pe: number
+  ocultismoDegree: number
+  onDeductPe: (amount: number) => void
+  onDeductSan: (amount: number) => void
+  onDeductPermSan: (amount: number) => void
+  onRollRitual: (params: {
+    name: string
+    version: 'base' | 'discente' | 'verdadeiro'
+    diceCount: number
+    trainingBonus: number
+    dt: number
+    totalPe: number
+    damageDice: string | undefined
+    onResult: (r: {
+      rolls: number[]
+      best: number
+      total: number
+      damageResult: number | undefined
+      damageRolls: number[] | undefined
+    }) => void
+  }) => void
 }
+
+import { canUseRitualUpgrade, circuloMaximoFromNex } from '../../../utils/ritualReqs'
 
 export default function CharacterTabsCard({
   inventory,
@@ -169,7 +193,14 @@ export default function CharacterTabsCard({
   onSetPeritoPeSpending,
   originAbilityName,
   originAbilityDescription,
+  characterAffinity,
   originAbilities = [],
+  pe,
+  ocultismoDegree,
+  onDeductPe,
+  onDeductSan,
+  onDeductPermSan,
+  onRollRitual,
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<string>('inventario')
 
@@ -177,6 +208,123 @@ export default function CharacterTabsCard({
   const activeOriginAbilities = originAbilities.filter(
     (a) => a.type === 'ativa' || a.type === 'reação'
   )
+
+  const circuloMaximo = circuloMaximoFromNex(nex, isOcultista)
+
+  // ── Ritual roll state & helpers ────────────────────────────────────────────
+  type RitualRollResult = {
+    charRitualId: number
+    version: 'base' | 'discente' | 'verdadeiro'
+    rolls: number[]
+    best: number
+    bonus: number
+    total: number
+    dt: number
+    peCost: number
+    success: boolean
+    failMargin: number
+    sanLoss: number
+    permSanLoss: number
+    damageDice?: string
+    damageResult?: number
+  }
+
+  const [ritualRollResults, setRitualRollResults] = useState<Record<number, RitualRollResult>>({})
+
+  function parseExtraPe(text: string): number {
+    const m = text.match(/\(\+(\d+)\s*PE\)/i)
+    return m ? parseInt(m[1]) : 0
+  }
+
+  function parseDamageDice(text: string): string | null {
+    const m = text.match(/\b(\d+d\d+(?:[+-]\d+)?)\b/i)
+    return m ? m[1] : null
+  }
+
+  function rollDiceExpr(expr: string): number {
+    const m = expr.match(/^(\d+)d(\d+)(?:([+-])(\d+))?$/)
+    if (!m) return 0
+    const count = parseInt(m[1])
+    const sides = parseInt(m[2])
+    const mod = m[3] ? (m[3] === '+' ? parseInt(m[4]) : -parseInt(m[4])) : 0
+    let result = 0
+    for (let i = 0; i < count; i++) result += Math.floor(Math.random() * sides) + 1
+    return result + mod
+  }
+
+  function handleRollRitual(charRitual: any, version: 'base' | 'discente' | 'verdadeiro') {
+    const ritual = charRitual.ritual
+    const peInfo = calcPeAjustado(ritual)
+    const versionText =
+      version === 'discente'
+        ? ritual.discente || ''
+        : version === 'verdadeiro'
+          ? ritual.verdadeiro || ''
+          : ''
+    const extraPe = parseExtraPe(versionText)
+    const totalPe = peInfo.ajustado + extraPe
+    const dt = 20 + totalPe
+
+    const trainingBonus =
+      ocultismoDegree >= 15 ? 15 : ocultismoDegree >= 10 ? 10 : ocultismoDegree >= 5 ? 5 : 0
+    const diceCount = Math.max(1, intellect)
+    const damageDice: string | undefined =
+      version === 'discente'
+        ? ritual.discenteDamage ||
+          parseDamageDice(versionText) ||
+          parseDamageDice(ritual.description || '') ||
+          undefined
+        : version === 'verdadeiro'
+          ? ritual.verdadeiroDamage ||
+            parseDamageDice(versionText) ||
+            parseDamageDice(ritual.description || '') ||
+            undefined
+          : ritual.normalDamage || parseDamageDice(ritual.description || '') || undefined
+
+    // Delegate rolling + 3D animation to the dice bandeja; apply game effects in the callback
+    onRollRitual({
+      name: ritual.name,
+      version,
+      diceCount,
+      trainingBonus,
+      dt,
+      totalPe,
+      damageDice,
+      onResult: ({ rolls, best, total, damageResult }) => {
+        const success = total >= dt
+        const failMargin = success ? 0 : dt - total
+        const sanLoss = success ? 0 : totalPe
+        const failPermanent = !success && failMargin >= 5 ? 1 : 0
+
+        // Always deduct PE
+        onDeductPe(totalPe)
+        if (!success) {
+          onDeductSan(sanLoss)
+          if (failPermanent > 0) onDeductPermSan(failPermanent)
+        }
+
+        setRitualRollResults((prev) => ({
+          ...prev,
+          [charRitual.id]: {
+            charRitualId: charRitual.id,
+            version,
+            rolls,
+            best,
+            bonus: trainingBonus,
+            total,
+            dt,
+            peCost: totalPe,
+            success,
+            failMargin,
+            sanLoss,
+            permSanLoss: failPermanent,
+            damageDice,
+            damageResult: success ? damageResult : undefined,
+          },
+        }))
+      },
+    })
+  }
 
   return (
     <section className="bg-[#18181b] border border-zinc-800 rounded-xl p-6 shadow-xl flex-1 h-full">
@@ -418,30 +566,20 @@ export default function CharacterTabsCard({
                       </span>
                       <div className="flex items-center gap-1 border-l border-zinc-800 pl-3 ml-1">
                         {(item.itemKind === 'weapon' || item.itemKind === 'protection') && (
-                          <button
-                            title={item.equipped ? 'Desequipar' : 'Equipar'}
-                            style={{
-                              boxShadow: item.equipped
-                                ? 'inset 0 2px 5px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04)'
-                                : '0 4px 0 0 rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08)',
-                              transform: item.equipped ? 'translateY(3px)' : 'translateY(0px)',
-                            }}
-                            className={`
-                              px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest
-                              border transition-all duration-75 select-none
-                              ${
-                                item.equipped
-                                  ? 'bg-emerald-950 border-emerald-800/60 text-emerald-400'
-                                  : 'bg-zinc-800 border-zinc-600/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-750 active:translate-y-[3px]'
-                              }
-                            `}
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
                             onClick={(e) => {
                               e.stopPropagation()
                               onEquipItem(item.id, item.equipped)
                             }}
+                            className={`relative px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all duration-300 border focus:outline-none min-w-[90px] ${
+                              item.equipped
+                                ? 'bg-amber-500 border-amber-500 text-amber-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                                : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/60'
+                            }`}
                           >
-                            equip
-                          </button>
+                            {item.equipped ? 'EQUIPADO' : 'EQUIPAR'}
+                          </motion.button>
                         )}
                         {item.type === 'Arma' && (
                           <button
@@ -653,6 +791,66 @@ export default function CharacterTabsCard({
                       </div>
                     </div>
 
+                    {/* Botões de rolagem de ritual */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {pe >= calcPeAjustado(ritual).ajustado &&
+                        calcPeAjustado(ritual).ajustado <= Math.floor(nex / 5) && (
+                          <button
+                            onClick={() => handleRollRitual(charRitual, 'base')}
+                            className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                            title={`Rolar ${ritual.name} — base`}
+                          >
+                            <Dices size={11} />
+                            Base · {calcPeAjustado(ritual).ajustado} PE · DT{' '}
+                            {20 + calcPeAjustado(ritual).ajustado}
+                          </button>
+                        )}
+                      {ritual.discente &&
+                        canUseRitualUpgrade(
+                          ritual.discente,
+                          ritual.element ?? '',
+                          circuloMaximo,
+                          characterAffinity
+                        ) &&
+                        pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) &&
+                        calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) <=
+                          Math.floor(nex / 5) && (
+                          <button
+                            onClick={() => handleRollRitual(charRitual, 'discente')}
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                            title={`Rolar ${ritual.name} — discente`}
+                          >
+                            <Dices size={11} />
+                            Discente{' '}
+                            {calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente)} PE ·
+                            DT{' '}
+                            {20 + calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente)}
+                          </button>
+                        )}
+                      {ritual.verdadeiro &&
+                        canUseRitualUpgrade(
+                          ritual.verdadeiro,
+                          ritual.element ?? '',
+                          circuloMaximo,
+                          characterAffinity
+                        ) &&
+                        pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) &&
+                        calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) <=
+                          Math.floor(nex / 5) && (
+                          <button
+                            onClick={() => handleRollRitual(charRitual, 'verdadeiro')}
+                            className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                            title={`Rolar ${ritual.name} — verdadeiro`}
+                          >
+                            <Dices size={11} />
+                            Verdadeiro{' '}
+                            {calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro)} PE ·
+                            DT{' '}
+                            {20 + calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro)}
+                          </button>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-zinc-500 uppercase font-bold bg-zinc-900/50 p-2 rounded">
                       <div>
                         <span className="text-zinc-600 block">Execução</span> {ritual.execution}
@@ -679,22 +877,34 @@ export default function CharacterTabsCard({
 
                     {(ritual.discente || ritual.verdadeiro) && (
                       <div className="space-y-2 pt-2 border-t border-zinc-800/50 text-xs text-zinc-400">
-                        {ritual.discente && (
-                          <div>
-                            <span className="text-blue-400 font-bold uppercase mr-1">
-                              Discente:
-                            </span>
-                            {ritual.discente}
-                          </div>
-                        )}
-                        {ritual.verdadeiro && (
-                          <div>
-                            <span className="text-purple-400 font-bold uppercase mr-1">
-                              Verdadeiro:
-                            </span>
-                            {ritual.verdadeiro}
-                          </div>
-                        )}
+                        {ritual.discente &&
+                          canUseRitualUpgrade(
+                            ritual.discente,
+                            ritual.element ?? '',
+                            circuloMaximo,
+                            characterAffinity
+                          ) && (
+                            <div>
+                              <span className="text-blue-400 font-bold uppercase mr-1">
+                                Discente:
+                              </span>
+                              {ritual.discente}
+                            </div>
+                          )}
+                        {ritual.verdadeiro &&
+                          canUseRitualUpgrade(
+                            ritual.verdadeiro,
+                            ritual.element ?? '',
+                            circuloMaximo,
+                            characterAffinity
+                          ) && (
+                            <div>
+                              <span className="text-purple-400 font-bold uppercase mr-1">
+                                Verdadeiro:
+                              </span>
+                              {ritual.verdadeiro}
+                            </div>
+                          )}
                       </div>
                     )}
                   </div>
@@ -745,49 +955,51 @@ export default function CharacterTabsCard({
           {/* Lista de Combate */}
           <div className="space-y-6 overflow-y-auto custom-scrollbar">
             {/* Armas */}
-            {inventoryWeapons.length > 0 && (
+            {inventoryWeapons.filter((w: any) => w.equipped).length > 0 && (
               <div>
                 <h4 className="font-bold text-orange-400 text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
                   <Sword size={14} /> Armas
                 </h4>
                 <div className="space-y-2">
-                  {inventoryWeapons.map((w: any) => {
-                    const isMelee = w.range === 'Corpo a corpo'
-                    const skillName = isMelee ? 'Luta' : 'Pontaria'
-                    return (
-                      <div
-                        key={w.id}
-                        className="flex items-center justify-between px-4 py-3 rounded-lg bg-zinc-950/60 border border-zinc-800 hover:border-orange-500/30 transition-all"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-zinc-200 text-sm truncate">
-                            {w.name}
-                          </div>
-                          <div className="text-[11px] text-zinc-500 mt-0.5">
-                            <span className="text-orange-400/80 font-bold">{w.damage}</span>
-                            <span className="mx-1.5 text-zinc-700">·</span>
-                            <span>{skillName}</span>
-                            {!isMelee && w.range && (
-                              <span className="ml-1 text-zinc-600">({w.range})</span>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          className="ml-3 p-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-lg shrink-0 transition-colors"
-                          title={`Rolar ${w.name}`}
-                          onClick={() =>
-                            onRollWeapon({
-                              name: w.name,
-                              range: w.range || 'Corpo a corpo',
-                              damage: w.damage || '1d6',
-                            })
-                          }
+                  {inventoryWeapons
+                    .filter((w: any) => w.equipped)
+                    .map((w: any) => {
+                      const isMelee = w.range === 'Corpo a corpo'
+                      const skillName = isMelee ? 'Luta' : 'Pontaria'
+                      return (
+                        <div
+                          key={w.id}
+                          className="flex items-center justify-between px-4 py-3 rounded-lg bg-zinc-950/60 border border-zinc-800 hover:border-orange-500/30 transition-all"
                         >
-                          <Dices size={15} />
-                        </button>
-                      </div>
-                    )
-                  })}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-zinc-200 text-sm truncate">
+                              {w.name}
+                            </div>
+                            <div className="text-[11px] text-zinc-500 mt-0.5">
+                              <span className="text-orange-400/80 font-bold">{w.damage}</span>
+                              <span className="mx-1.5 text-zinc-700">·</span>
+                              <span>{skillName}</span>
+                              {!isMelee && w.range && (
+                                <span className="ml-1 text-zinc-600">({w.range})</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            className="ml-3 p-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 rounded-lg shrink-0 transition-colors"
+                            title={`Rolar ${w.name}`}
+                            onClick={() =>
+                              onRollWeapon({
+                                name: w.name,
+                                range: w.range || 'Corpo a corpo',
+                                damage: w.damage || '1d6',
+                              })
+                            }
+                          >
+                            <Dices size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
                 </div>
               </div>
             )}
@@ -869,7 +1081,7 @@ export default function CharacterTabsCard({
                 </div>
               </div>
             ) : (
-              inventoryWeapons.length === 0 &&
+              inventoryWeapons.filter((w: any) => w.equipped).length === 0 &&
               activeOriginAbilities.length === 0 && (
                 <div className="mt-16 flex items-center justify-center text-zinc-500 text-sm italic">
                   Nenhuma habilidade de combate disponível.

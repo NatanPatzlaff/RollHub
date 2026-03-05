@@ -31,6 +31,7 @@ router.group(() => {
     router.post('/characters/:id/rituals', [CharactersController, 'addRitual'])
     router.delete('/characters/:id/rituals/:ritualId', [CharactersController, 'removeRitual'])
     router.put('/characters/:id/trail', [CharactersController, 'selectTrail'])
+    router.put('/characters/:id/affinity', [CharactersController, 'updateAffinity'])
     router.put('/characters/:id/skills', [CharactersController, 'updateSkills'])
     router.post('/characters/:id/items', [CharactersController, 'addItem'])
     router.delete('/characters/:id/items/:itemId', [CharactersController, 'removeItem'])

@@ -36,6 +36,9 @@ export default class Character extends BaseModel {
   declare nex: number
 
   @column()
+  declare affinity: string | null
+
+  @column()
   declare rank: string
 
   @column()

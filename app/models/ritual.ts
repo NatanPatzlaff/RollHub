@@ -38,6 +38,15 @@ export default class Ritual extends BaseModel {
   @column()
   declare verdadeiro: string | null
 
+  @column()
+  declare normalDamage: string | null
+
+  @column()
+  declare discenteDamage: string | null
+
+  @column()
+  declare verdadeiroDamage: string | null
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
