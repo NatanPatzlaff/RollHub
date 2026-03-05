@@ -1,4 +1,4 @@
-import {
+﻿import {
   Card,
   CardBody,
   Button,
@@ -52,6 +52,13 @@ import AddItemModal from './components/AddItemModal'
 import SkillsCard from './components/SkillsCard'
 import CharacterTabsCard from './components/CharacterTabsCard'
 import CreateCharacterModal from '../home/CreateCharacterModal'
+import RitualBuffModal from './components/RitualBuffModal'
+import {
+  getRitualBuff,
+  rollDiceExpression,
+  getAttributeBonus,
+  type RitualBuffEffect,
+} from '../../utils/ritualBuffs'
 
 interface Origin {
   id: number
@@ -188,6 +195,7 @@ interface CatalogAmmunition {
   category: number
   type: string
   description: string | null
+  element?: string | null
   damageBonus?: string | null
   spaces: number
   damageTypeOverride?: string | null
@@ -207,6 +215,7 @@ interface CharacterProps {
     originId?: number
     trailId?: number
     trail?: { id: number; name: string }
+    trailConfig?: Record<string, any>
     class?: { id: number; name: string }
     origin?: {
       id: number
@@ -295,6 +304,7 @@ interface CharacterProps {
     title: string
     description: string | null
     type: string
+    effects?: Record<string, any> | null
   }>
   availableAbilities?: ClassAbility[]
   paranormalPowers?: ParanormalPower[]
@@ -338,26 +348,28 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const classTrails: Trail[] =
     initialProps.classTrails ?? pageProps.classTrails ?? pageProps.class_trails ?? []
 
-  const catalogParanormalPowers: ParanormalPower[] = (catalogParanormalPowersProp || []).filter((power) => {
-    if (!power.requirements) return true
-    // Parse requirements like 'Conhecimento 1', 'Energia 2', etc.
-    const match = power.requirements.trim().match(/^([A-Za-zÀ-ž]+)\s+(\d+)$/i)
-    if (!match) return true
-    const reqElement = match[1].toUpperCase()
-    const reqCircle = parseInt(match[2], 10)
-    // Score = sum of ritual circles + 1 per paranormal power (same element)
-    // must reach reqCircle (e.g. "Conhecimento 3" needs score >= 3)
-    let score = 0
-    for (const cr of (character.rituals || []) as any[]) {
-      const ritual = cr.ritual
-      if (ritual && ritual.element?.toUpperCase() === reqElement) score += ritual.circle
+  const catalogParanormalPowers: ParanormalPower[] = (catalogParanormalPowersProp || []).filter(
+    (power) => {
+      if (!power.requirements) return true
+      // Parse requirements like 'Conhecimento 1', 'Energia 2', etc.
+      const match = power.requirements.trim().match(/^([A-Za-zÀ-ž]+)\s+(\d+)$/i)
+      if (!match) return true
+      const reqElement = match[1].toUpperCase()
+      const reqCircle = parseInt(match[2], 10)
+      // Score = sum of ritual circles + 1 per paranormal power (same element)
+      // must reach reqCircle (e.g. "Conhecimento 3" needs score >= 3)
+      let score = 0
+      for (const cr of (character.rituals || []) as any[]) {
+        const ritual = cr.ritual
+        if (ritual && ritual.element?.toUpperCase() === reqElement) score += ritual.circle
+      }
+      for (const cp of (character.paranormalPowers || []) as any[]) {
+        const pp = cp.paranormalPower
+        if (pp && pp.element?.toUpperCase() === reqElement) score += 1
+      }
+      return score >= reqCircle
     }
-    for (const cp of (character.paranormalPowers || []) as any[]) {
-      const pp = cp.paranormalPower
-      if (pp && pp.element?.toUpperCase() === reqElement) score += 1
-    }
-    return score >= reqCircle
-  })
+  )
 
   // Personagem sem trilha: considerar trailId ou trail_id (serialização pode vir em snake_case)
   const characterTrailId = character.trailId ?? (character as { trail_id?: number | null }).trail_id
@@ -388,6 +400,59 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [pe, setPe] = useState(calculatedStats?.currentPe || 3)
   const [san, setSan] = useState(calculatedStats?.currentSanity || 12)
   const [permSanLoss, setPermSanLoss] = useState(calculatedStats?.permanentSanityLoss || 0)
+
+  // ── Estado de buffs ativos de rituais ───────────────────────────────────────
+  interface ActiveRitualBuff {
+    id: string
+    label: string
+    defenseBonus: number
+    dodgeBonus: number
+    tempHp: number
+    strBonus: number
+    agiBonus: number
+    intBonus: number
+    preBonus: number
+  }
+  const [activeRitualBuffs, setActiveRitualBuffs] = useState<ActiveRitualBuff[]>([])
+
+  // ── Estado de buffs ativos de habilidades (trilha / origem) ────────────────
+  interface ActiveAbilityBuff {
+    id: string
+    abilityName: string
+    source: 'trail' | 'origin'
+    effects: {
+      pe_cost?: number
+      duration?: 'next_test' | 'next_attack' | 'scene' | 'instant' | 'passive'
+      bonus?: number
+      attack_bonus?: number
+      damage_bonus?: number
+      critical_bonus?: number
+      skill_bonus_target?: string | string[]
+      skill_bonus_attr?: string | string[]
+      weapon_type?: 'melee' | 'ranged' | 'all'
+      exclude_skills?: string[]
+      skill_substitute?: string
+      trained_any_skill?: boolean
+      extra_move_action?: boolean
+      damage_reduction?: number
+      then_attack_bonus?: number
+      effect_label?: string
+      [key: string]: any
+    }
+  }
+  const [activeAbilityBuffs, setActiveAbilityBuffs] = useState<ActiveAbilityBuff[]>([])
+  const [abilityUsesThisScene, setAbilityUsesThisScene] = useState<Record<string, number>>({})
+
+  const [tempHp, setTempHp] = useState(0)
+  const [tempPe, setTempPe] = useState(0)
+
+  // Estado do modal de buff de ritual
+  const [isRitualBuffModalOpen, setIsRitualBuffModalOpen] = useState(false)
+  const [pendingRitualBuff, setPendingRitualBuff] = useState<{
+    ritualName: string
+    version: 'base' | 'discente' | 'verdadeiro'
+    buff: RitualBuffEffect
+  } | null>(null)
 
   // Persistir HP no backend
   useEffect(() => {
@@ -494,6 +559,75 @@ export default function CharacterShow(initialProps: CharacterProps) {
   // --- Toggles opcionais de uso de habilidades -----------------------------
   const [usarCamuflar, setUsarCamuflar] = useState(false)
   const [usarPeritoSkill, setUsarPeritoSkill] = useState<string | null>(null)
+
+  // --- Trail Config (habilidades de trilha configuráveis) ------------------
+  const trailConfig = character.trailConfig || {}
+
+  // Toggles de trilha (estado local sincronizado com backend)
+  const [useFlagelo, setUseFlagelo] = useState<boolean>(trailConfig.useFlagelo ?? false)
+  const [useLaminaMaldita, setUseLaminaMaldita] = useState<boolean>(
+    trailConfig.useLaminaMaldita ?? false
+  )
+  const [useOcultismoForAttacks, setUseOcultismoForAttacks] = useState<boolean>(
+    trailConfig.useOcultismoForAttacks ?? false
+  )
+
+  // A Favorita — arma favorita (escolha permanente)
+  const favoriteWeaponName: string | null = trailConfig.favoriteWeapon || null
+
+  // Salvar trail config no backend
+  const saveTrailConfig = (updates: Record<string, any>) => {
+    router.put(`/characters/${character.id}/trail-config`, updates, {
+      preserveUrl: true,
+      preserveState: true,
+      // @ts-ignore
+      preserveScroll: true,
+    })
+  }
+
+  // Toggle handlers que salvam automaticamente
+  const toggleFlagelo = (val: boolean) => {
+    setUseFlagelo(val)
+    saveTrailConfig({ useFlagelo: val })
+  }
+  const toggleLaminaMaldita = (val: boolean) => {
+    setUseLaminaMaldita(val)
+    saveTrailConfig({ useLaminaMaldita: val })
+  }
+  const toggleOcultismoForAttacks = (val: boolean) => {
+    setUseOcultismoForAttacks(val)
+    saveTrailConfig({ useOcultismoForAttacks: val })
+  }
+
+  // Modal de configuração de trilha (A Favorita)
+  const {
+    isOpen: isTrailConfigModalOpen,
+    onOpen: onTrailConfigModalOpen,
+    onOpenChange: onTrailConfigModalOpenChange,
+  } = useDisclosure()
+  const [selectedFavoriteWeapon, setSelectedFavoriteWeapon] = useState<string>(
+    favoriteWeaponName || ''
+  )
+  const [isSavingTrailConfig, setIsSavingTrailConfig] = useState(false)
+
+  const saveTrailConfigModal = () => {
+    if (!selectedFavoriteWeapon) return
+    setIsSavingTrailConfig(true)
+    router.put(
+      `/characters/${character.id}/trail-config`,
+      { favoriteWeapon: selectedFavoriteWeapon },
+      {
+        preserveUrl: true,
+        // @ts-ignore
+        preserveScroll: true,
+        onSuccess: () => {
+          setIsSavingTrailConfig(false)
+          onTrailConfigModalOpenChange()
+        },
+        onError: () => setIsSavingTrailConfig(false),
+      }
+    )
+  }
 
   // --- Cálculo de PE ajustado para um ritual -------------------------------
   const calcPeAjustado = (
@@ -645,17 +779,26 @@ export default function CharacterShow(initialProps: CharacterProps) {
     if (!weapon) return { allowed: false, reason: 'Nenhuma arma selecionada.' }
     const limits = RANK_LIMITS[rank] || {}
 
-    // Calculate the final category of the weapon if we add this modification
-    const baseCategory =
+    // Calcula a categoria base da arma
+    const rawBase =
       typeof weapon.category === 'string'
         ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weapon.category) + 1
         : weapon.category || 0
+
+    // Aplica redução de categoria da arma favorita no TOTAL (base + mods)
+    const isFavorite = !!favoriteWeaponName && weapon.name === favoriteWeaponName
+    const catReduction = isFavorite ? favoriteWeaponCategoryReduction : 0
+
     const currentModSum =
       weapon.modifications?.reduce((sum: number, m: any) => sum + (m.category || 0), 0) || 0
-    const newFinalCategory = baseCategory + currentModSum + modCategory
+    const newFinalCategory = Math.max(0, rawBase + currentModSum + modCategory - catReduction)
 
     if (newFinalCategory > 4) {
       return { allowed: false, reason: `Categoria ${newFinalCategory} não existe.` }
+    }
+
+    if (newFinalCategory <= 0) {
+      return { allowed: true }
     }
 
     const limit = limits[newFinalCategory] ?? 0
@@ -698,9 +841,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
   // --- Ocultista: créditos de rituais ------------------------------------
   const isOcultista = character.class?.name === 'Ocultista'
 
-    const circuloMaximo = isOcultista
-    ? (character.nex >= 85 ? 4 : character.nex >= 55 ? 3 : character.nex >= 25 ? 2 : 1)
-    : (character.nex >= 75 ? 3 : character.nex >= 45 ? 2 : 1)
+  const circuloMaximo = isOcultista
+    ? character.nex >= 85
+      ? 4
+      : character.nex >= 55
+        ? 3
+        : character.nex >= 25
+          ? 2
+          : 1
+    : character.nex >= 75
+      ? 3
+      : character.nex >= 45
+        ? 2
+        : 1
 
   // Créditos ganhos: 3 iniciais + 1 por nível acima do 1 (level = floor(nex/5))
   const nexLevel = Math.floor(character.nex / 5)
@@ -964,9 +1117,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
       : 'Tem certeza que deseja remover este poder paranormal?'
     if (!confirm(msg)) return
     if (isTranscend) {
-      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`, { preserveState: true, preserveScroll: true })
+      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`, {
+        preserveState: true,
+        preserveScroll: true,
+      })
     } else {
-      router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`, { preserveState: true, preserveScroll: true })
+      router.delete(`/characters/${character.id}/paranormal-powers/${powerId}`, {
+        preserveState: true,
+        preserveScroll: true,
+      })
     }
   }
 
@@ -995,9 +1154,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
       : 'Tem certeza que deseja remover este ritual?'
     if (!confirm(msg)) return
     if (isTranscend) {
-      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`, { preserveState: true, preserveScroll: true })
+      router.delete(`/characters/${character.id}/abilities/${characterClassAbilityId}`, {
+        preserveState: true,
+        preserveScroll: true,
+      })
     } else {
-      router.delete(`/characters/${character.id}/rituals/${ritualId}`, { preserveState: true, preserveScroll: true })
+      router.delete(`/characters/${character.id}/rituals/${ritualId}`, {
+        preserveState: true,
+        preserveScroll: true,
+      })
     }
   }
 
@@ -1096,14 +1261,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       maxPe: calculatedMaxPe,
       maxSan: Math.max(0, calculatedMaxSan),
     }
-  }, [
-    character.nex,
-    vigor,
-    presence,
-    classInfo,
-    character.classAbilities,
-    permSanLoss,
-  ])
+  }, [character.nex, vigor, presence, classInfo, character.classAbilities, permSanLoss])
 
   // Ocultismo training degree for ritual roll bonus
   const ocultismoDegree = ((): number => {
@@ -1116,12 +1274,233 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const handleDeductSan = (amount: number) => setSan((prev) => Math.max(0, prev - amount))
   const handleDeductPermSan = (amount: number) => setPermSanLoss((prev) => prev + amount)
 
+  // Mapeamento de perícia → atributo base (espelha SkillsCard ALL_SKILLS)
+  const SKILL_ATTR: Record<string, string> = {
+    Acrobacia: 'AGI', Adestramento: 'PRE', Artes: 'PRE', Atletismo: 'FOR',
+    Atualidades: 'INT', Ciências: 'INT', Crime: 'AGI', Diplomacia: 'PRE',
+    Enganação: 'PRE', Fortitude: 'VIG', Furtividade: 'AGI', Iniciativa: 'AGI',
+    Intimidação: 'PRE', Intuição: 'PRE', Investigação: 'INT', Luta: 'FOR',
+    Medicina: 'INT', Ocultismo: 'INT', Percepção: 'PRE', Pilotagem: 'AGI',
+    Pontaria: 'AGI', Profissão: 'INT', Reflexos: 'AGI', Religião: 'PRE',
+    Sobrevivência: 'INT', Tática: 'INT', Tecnologia: 'INT', Vontade: 'PRE',
+  }
+
+  /** Ativa uma habilidade (trilha ou origem): desconta PE e registra buff ativo */
+  const handleActivateAbility = (
+    abilityName: string,
+    source: 'trail' | 'origin',
+    peCost: number,
+    effects: any
+  ) => {
+    if (peCost > 0) handleDeductPe(peCost)
+
+    // Garante que effects é um objeto (proteção extra caso ainda chegue como string)
+    const eff = typeof effects === 'string'
+      ? (() => { try { return JSON.parse(effects) } catch { return {} } })()
+      : (effects || {})
+
+    // Infere duration se não presente no effects
+    let duration = eff.duration
+    if (!duration) {
+      if (eff.attack_bonus || eff.damage_bonus || eff.threat_range_bonus) {
+        duration = 'next_attack'
+      } else if (eff.bonus && (eff.skill_bonus_attr || eff.skill_bonus_target)) {
+        duration = 'next_test'
+      } else {
+        duration = 'scene'
+      }
+    }
+
+    // Gera effect_label se ausente
+    const effectLabel = eff.effect_label
+      || (eff.threat_range_bonus ? `+${eff.threat_range_bonus} margem de ameaça` : null)
+      || (eff.attack_bonus && eff.damage_bonus ? `+${eff.attack_bonus} atk / +${eff.damage_bonus} dano` : null)
+      || (eff.attack_bonus ? `+${eff.attack_bonus} no ataque` : null)
+      || (eff.damage_bonus ? `+${eff.damage_bonus} no dano` : null)
+      || (eff.bonus && eff.skill_bonus_attr ? `+${eff.bonus} em ${Array.isArray(eff.skill_bonus_attr) ? eff.skill_bonus_attr.join('/') : eff.skill_bonus_attr}` : null)
+      || (eff.bonus ? `+${eff.bonus} bônus` : null)
+      || abilityName
+
+    const enrichedEffects = { ...eff, duration, effect_label: effectLabel }
+
+    if (duration !== 'instant') {
+      setActiveAbilityBuffs((prev) => [
+        ...prev,
+        { id: `${abilityName}-${Date.now()}`, abilityName, source, effects: enrichedEffects },
+      ])
+    }
+    setAbilityUsesThisScene((prev) => ({
+      ...prev,
+      [abilityName]: (prev[abilityName] ?? 0) + 1,
+    }))
+  }
+
+  const clearAbilityBuff = (buffId: string) =>
+    setActiveAbilityBuffs((prev) => prev.filter((b) => b.id !== buffId))
+
+  const resetSceneUses = () => {
+    setAbilityUsesThisScene({})
+    setActiveAbilityBuffs([])  }
+
+  // ── Totais derivados dos buffs ativos de rituais ────────────────────────────
+  const ritualDefenseBonus = activeRitualBuffs.reduce((s, b) => s + b.defenseBonus, 0)
+  const ritualDodgeBonus = activeRitualBuffs.reduce((s, b) => s + b.dodgeBonus, 0)
+
+  /** Aplica um buff de ritual em si mesmo */
+  const applyRitualBuffToSelf = (buff: RitualBuffEffect, chosenAttr?: string) => {
+    const newBuff = {
+      id: `${buff.label}-${Date.now()}`,
+      label: buff.label,
+      defenseBonus: buff.defenseBonus ?? 0,
+      dodgeBonus: buff.dodgeBonus ?? 0,
+      tempHp: 0,
+      strBonus: 0,
+      agiBonus: 0,
+      intBonus: 0,
+      preBonus: 0,
+    }
+
+    // Cura de PV
+    if (buff.healDice) {
+      const { total } = rollDiceExpression(buff.healDice)
+      const bonusPotente = hasRitualPotente ? intellect : 0
+      const curaTotal = total + bonusPotente
+      setHp((prev) => Math.min(maxHp, prev + curaTotal))
+    }
+
+    // PV temporários
+    if (buff.tempHp) {
+      const { total } = rollDiceExpression(buff.tempHp)
+      const bonusPotente = hasRitualPotente ? intellect : 0
+      newBuff.tempHp = total + bonusPotente
+      setTempHp((prev) => prev + newBuff.tempHp)
+    }
+    if (buff.tempHpFlat) {
+      newBuff.tempHp = buff.tempHpFlat
+      setTempHp((prev) => prev + buff.tempHpFlat!)
+    }
+
+    // Bônus de atributo diretos no buff (sem escolha)
+    if (buff.strBonus) {
+      newBuff.strBonus = buff.strBonus
+      setStrength((p) => p + buff.strBonus!)
+    }
+    if (buff.agiBonus) {
+      newBuff.agiBonus = buff.agiBonus
+      setAgility((p) => p + buff.agiBonus!)
+    }
+    if (buff.intBonus) {
+      newBuff.intBonus = buff.intBonus
+      setIntellect((p) => p + buff.intBonus!)
+    }
+    if (buff.preBonus) {
+      newBuff.preBonus = buff.preBonus
+      setPresence((p) => p + buff.preBonus!)
+    }
+
+    // Bônus de atributo por escolha (Aprimorar Físico / Mente)
+    if (buff.attributeChoice && chosenAttr) {
+      const bonus = getAttributeBonus(pendingRitualBuff?.version ?? 'base')
+      if (chosenAttr === 'str') {
+        newBuff.strBonus = bonus
+        setStrength((p) => p + bonus)
+      }
+      if (chosenAttr === 'agi') {
+        newBuff.agiBonus = bonus
+        setAgility((p) => p + bonus)
+      }
+      if (chosenAttr === 'int') {
+        newBuff.intBonus = bonus
+        setIntellect((p) => p + bonus)
+      }
+      if (chosenAttr === 'pre') {
+        newBuff.preBonus = bonus
+        setPresence((p) => p + bonus)
+      }
+    }
+
+    setActiveRitualBuffs((prev) => [...prev, newBuff])
+  }
+
+  /** Remove um buff ativo pelo id */
+  const removeRitualBuff = (buffId: string) => {
+    setActiveRitualBuffs((prev) => {
+      const removed = prev.find((b) => b.id === buffId)
+      if (removed) {
+        if (removed.tempHp > 0) setTempHp((t) => Math.max(0, t - removed.tempHp))
+        if (removed.strBonus) setStrength((p) => p - removed.strBonus)
+        if (removed.agiBonus) setAgility((p) => p - removed.agiBonus)
+        if (removed.intBonus) setIntellect((p) => p - removed.intBonus)
+        if (removed.preBonus) setPresence((p) => p - removed.preBonus)
+      }
+      return prev.filter((b) => b.id !== buffId)
+    })
+  }
+
+  /** Remove todos os buffs ativos (fim de cena) */
+  const clearAllRitualBuffs = () => {
+    setActiveRitualBuffs((prev) => {
+      const totStr = prev.reduce((s, b) => s + b.strBonus, 0)
+      const totAgi = prev.reduce((s, b) => s + b.agiBonus, 0)
+      const totInt = prev.reduce((s, b) => s + b.intBonus, 0)
+      const totPre = prev.reduce((s, b) => s + b.preBonus, 0)
+      if (totStr) setStrength((p) => p - totStr)
+      if (totAgi) setAgility((p) => p - totAgi)
+      if (totInt) setIntellect((p) => p - totInt)
+      if (totPre) setPresence((p) => p - totPre)
+      return []
+    })
+    setTempHp(0)
+  }
+
+  /** Callback chamado quando um ritual de buff é conjurado com sucesso */
+  const handleRitualBuffSuccess = (
+    ritualName: string,
+    version: 'base' | 'discente' | 'verdadeiro'
+  ) => {
+    const buff = getRitualBuff(ritualName, version)
+    if (!buff) return
+
+    const hasEffect =
+      buff.defenseBonus ||
+      buff.dodgeBonus ||
+      buff.tempHp ||
+      buff.tempHpFlat ||
+      buff.healDice ||
+      (buff.attributeChoice?.length ?? 0) > 0
+    if (!hasEffect) return
+
+    if (buff.selfOnly && !buff.attributeChoice?.length) {
+      applyRitualBuffToSelf(buff)
+    } else {
+      setPendingRitualBuff({ ritualName, version, buff })
+      setIsRitualBuffModalOpen(true)
+    }
+  }
+
   // Filter trail progressions by current NEX
   const { currentTrailAbilities, futureTrailAbilities } = useMemo(() => {
     const current = trailProgressions.filter((prog) => prog.nex <= character.nex)
     const future = trailProgressions.filter((prog) => prog.nex > character.nex)
     return { currentTrailAbilities: current, futureTrailAbilities: future }
   }, [trailProgressions, character.nex])
+
+  // Calcula a redução de categoria para a arma favorita (trilha Aniquilador)
+  // A Favorita (NEX 10): -1 | Técnica Secreta (NEX 40): -2 | Máquina de Matar (NEX 99): -3
+  const favoriteWeaponCategoryReduction = useMemo(() => {
+    if (!favoriteWeaponName) return 0
+    const isAniquilador = character.trail?.name === 'Aniquilador'
+    if (!isAniquilador) return 0
+    // Verifica as progressões obtidas para determinar redução máxima
+    const obtained = trailProgressions.filter((p) => p.nex <= character.nex)
+    let reduction = 0
+    for (const prog of obtained) {
+      if (prog.title === 'Máquina de Matar') { reduction = 3; break }
+      if (prog.title === 'Técnica Secreta') { reduction = 2 }
+      if (prog.title === 'A Favorita' && reduction < 1) { reduction = 1 }
+    }
+    return reduction
+  }, [favoriteWeaponName, character.trail?.name, character.nex, trailProgressions])
 
   // Calculate how many class abilities can be chosen (1 per 15% NEX) and how many are already chosen
   const { maxClassAbilities, chosenClassAbilities, canChooseMore } = useMemo(() => {
@@ -1191,17 +1570,43 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setPrevMaxSan(maxSan)
   }, [maxSan])
 
+  // Aplica dano consumindo PV temporários primeiro, depois PV real
+  const takeDamage = (amount: number) => {
+    let remaining = amount
+    if (tempHp > 0) {
+      const absorbed = Math.min(tempHp, remaining)
+      setTempHp((prev) => Math.max(0, prev - absorbed))
+      remaining -= absorbed
+    }
+    if (remaining > 0) {
+      setHp((prev) => Math.max(0, prev - remaining))
+    }
+  }
+
   // Apply damage to HP based on damage input
   const applyDamageHp = () => {
     const appliedDamage = Math.max(0, Number(damageToHp) || 0)
-    setHp((prevHp) => Math.max(0, prevHp - appliedDamage))
+    takeDamage(appliedDamage)
     setDamageToHp('')
+  }
+
+  // Aplica gasto de PE consumindo PE temporários primeiro
+  const takePeDamage = (amount: number) => {
+    let remaining = amount
+    if (tempPe > 0) {
+      const absorbed = Math.min(tempPe, remaining)
+      setTempPe((prev) => Math.max(0, prev - absorbed))
+      remaining -= absorbed
+    }
+    if (remaining > 0) {
+      setPe((prev) => Math.max(0, prev - remaining))
+    }
   }
 
   // Apply damage to PE based on damage input
   const applyDamagePe = () => {
     const appliedDamage = Math.max(0, Number(damageToPe) || 0)
-    setPe((prevPe) => Math.max(0, prevPe - appliedDamage))
+    takePeDamage(appliedDamage)
     setDamageToPe('')
   }
 
@@ -1576,7 +1981,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
       const modsCategorySum =
         w.modifications?.reduce((sum: number, mod: any) => sum + (mod.category || 0), 0) || 0
-      const finalCategory = baseCategory + modsCategorySum
+
+      // Aplica redução de categoria da arma favorita no TOTAL (base + mods)
+      const isFavorite = !!favoriteWeaponName && w.name === favoriteWeaponName
+      const catReduction = isFavorite ? favoriteWeaponCategoryReduction : 0
+      const finalCategory = Math.max(0, baseCategory + modsCategorySum - catReduction)
 
       return {
         id: w.id,
@@ -1590,6 +1999,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
         damage: w.damage,
         damageType: w.damageType,
         category: w.category,
+        baseCategory,
+        categoryReduction: catReduction,
+        isFavoriteWeapon: isFavorite,
         calculatedCategory: finalCategory > 0 ? finalCategory : null,
         critical: w.critical,
         criticalMultiplier: w.criticalMultiplier,
@@ -1867,9 +2279,38 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onSaveSkills={saveSkills}
             onToggleSkill={toggleSkillTraining}
             onSkillContextMenu={handleSkillContextMenu}
-            onRollSkill={(_skill, attrVal, trainingBonus, label) => {
+            onRollSkill={(skill, attrVal, trainingBonus, label) => {
+              // Detecta buffs de habilidade que se aplicam a esta perícia
+              const skillAttr = SKILL_ATTR[skill] ?? ''
+              const relevantBuffs = activeAbilityBuffs.filter((b) => {
+                if (!b.effects.bonus) return false
+                if (b.effects.duration !== 'next_test' && b.effects.duration !== 'scene') return false
+                if (b.effects.exclude_skills?.includes(skill)) return false
+                const target = b.effects.skill_bonus_target
+                const attrTarget = b.effects.skill_bonus_attr
+                if (target) {
+                  if (Array.isArray(target)) return target.includes(skill)
+                  return target === skill
+                }
+                if (attrTarget) {
+                  if (Array.isArray(attrTarget)) return attrTarget.includes(skillAttr)
+                  return attrTarget === skillAttr
+                }
+                return false
+              })
+              const extraBonus = relevantBuffs.reduce((s, b) => s + (b.effects.bonus ?? 0), 0)
+              if (extraBonus > 0) {
+                // Consome buffs de duração 'next_test'
+                setActiveAbilityBuffs((prev) =>
+                  prev.filter(
+                    (b) =>
+                      !relevantBuffs.find((rb) => rb.id === b.id) ||
+                      b.effects.duration !== 'next_test'
+                  )
+                )
+              }
               diceTrayRef.current?.openDiceTray()
-              diceTrayRef.current?.rollDice(20, attrVal, label, 'highest', trainingBonus)
+              diceTrayRef.current?.rollDice(20, attrVal, label, 'highest', trainingBonus + extraBonus)
             }}
             onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
           />
@@ -1904,9 +2345,44 @@ export default function CharacterShow(initialProps: CharacterProps) {
             peritoPeSpending={peritoPeSpending}
             maxPeritoPe={maxPeritoPe}
             onRollWeapon={(w) => {
+              const isMelee = w.range === 'Corpo a corpo'
+              const wType = isMelee ? 'melee' : 'ranged'
+              // Filtra buffs de combate: ataque, dano e margem de ameaça
+              const combatBuffs = activeAbilityBuffs.filter((b) => {
+                if (b.effects.duration !== 'next_attack' && b.effects.duration !== 'scene') return false
+                const wt = b.effects.weapon_type
+                if (wt && wt !== 'all' && wt !== wType) return false
+                return (
+                  (b.effects.attack_bonus ?? 0) > 0 ||
+                  (b.effects.damage_bonus ?? 0) > 0 ||
+                  (b.effects.threat_range_bonus ?? 0) > 0
+                )
+              })
+              const extraAttackBonus = combatBuffs.reduce((s, b) => s + (b.effects.attack_bonus ?? 0), 0)
+              const extraDamageBonus = combatBuffs.reduce((s, b) => s + (b.effects.damage_bonus ?? 0), 0)
+              const extraCritBonus = combatBuffs.reduce((s, b) => s + (b.effects.threat_range_bonus ?? 0), 0)
+              // Consome buffs de duração 'next_attack' após a rolagem
+              if (combatBuffs.length > 0) {
+                setActiveAbilityBuffs((prev) =>
+                  prev.filter(
+                    (b) =>
+                      !combatBuffs.find((cb) => cb.id === b.id) ||
+                      b.effects.duration !== 'next_attack'
+                  )
+                )
+              }
               diceTrayRef.current?.openDiceTray()
               diceTrayRef.current?.rollWeapon(
-                { name: w.name, range: w.range, damage: w.damage },
+                {
+                  name: w.name,
+                  range: w.range,
+                  damage: w.damage,
+                  critical: w.critical || '20',
+                  criticalMultiplier: w.criticalMultiplier || 'x2',
+                  extraAttackBonus,
+                  extraDamageBonus,
+                  extraCritBonus,
+                },
                 strength,
                 agility,
                 character.skills
@@ -1944,10 +2420,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onOpenAbilityConfig={openAbilityConfig}
             onRemoveAbility={(charId, abilityId) => {
               if (confirm('Tem certeza que deseja remover esta habilidade?'))
-                router.delete(`/characters/${charId}/abilities/${abilityId}`, { preserveState: true, preserveScroll: true })
+                router.delete(`/characters/${charId}/abilities/${abilityId}`, {
+                  preserveState: true,
+                  preserveScroll: true,
+                })
             }}
             onRemoveParanormalPower={removeParanormalPower}
             onSetUsarCamuflar={setUsarCamuflar}
+            // Trail config props
+            trailConfig={trailConfig}
+            favoriteWeaponName={favoriteWeaponName}
+            useFlagelo={useFlagelo}
+            useLaminaMaldita={useLaminaMaldita}
+            useOcultismoForAttacks={useOcultismoForAttacks}
+            onToggleFlagelo={toggleFlagelo}
+            onToggleLaminaMaldita={toggleLaminaMaldita}
+            onToggleOcultismoForAttacks={toggleOcultismoForAttacks}
+            onOpenTrailConfigModal={onTrailConfigModalOpen}
             characterId={character.id}
             originAbilityName={character.origin?.abilityName}
             originAbilityDescription={character.origin?.abilityDescription}
@@ -1957,10 +2446,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onDeductPe={handleDeductPe}
             onDeductSan={handleDeductSan}
             onDeductPermSan={handleDeductPermSan}
+            activeAbilityBuffs={activeAbilityBuffs}
+            abilityUsesThisScene={abilityUsesThisScene}
+            onActivateAbility={handleActivateAbility}
+            onClearAbilityBuff={clearAbilityBuff}
+            onResetSceneUses={resetSceneUses}
             onRollRitual={(params) => {
               diceTrayRef.current?.openDiceTray()
               diceTrayRef.current?.rollRitual(params)
             }}
+            onRitualBuffSuccess={handleRitualBuffSuccess}
           />
         </div>
 
@@ -1998,7 +2493,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
           />
 
           {/* COMBAT DEFENSES */}
-          <CombatDefensesCard agility={agility} characterSkills={character.skills} inventoryProtections={inventoryProtections} />
+          <CombatDefensesCard
+            agility={agility}
+            characterSkills={character.skills}
+            inventoryProtections={inventoryProtections}
+            ritualDefenseBonus={ritualDefenseBonus}
+            ritualDodgeBonus={ritualDodgeBonus}
+            activeRitualBuffs={activeRitualBuffs}
+            onRemoveRitualBuff={removeRitualBuff}
+            onClearAllBuffs={clearAllRitualBuffs}
+            tempHp={tempHp}
+            onSetTempHp={setTempHp}
+            tempPe={tempPe}
+            onSetTempPe={setTempPe}
+          />
 
           {/* VITALS STACK */}
           <Card className="bg-zinc-900 border border-zinc-800 shadow-none rounded-xl">
@@ -2025,26 +2533,49 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   />
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-4xl font-black text-white">{hp}</span>
-                  <div className="flex-1">
-                    <Progress
-                      aria-label="PV"
-                      value={(hp / maxHp) * 100}
-                      className="h-3"
-                      classNames={{
-                        indicator: 'bg-gradient-to-r from-red-500 to-rose-500',
-                        track: 'bg-zinc-950 border border-zinc-800',
-                      }}
-                    />
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-black text-white">{hp}</span>
+                    {tempHp > 0 && (
+                      <span className="text-lg font-black text-cyan-400">+{tempHp}</span>
+                    )}
                   </div>
-                  <span className="text-sm text-zinc-500 font-bold">{maxHp}</span>
+                  <div className="flex-1">
+                    {/* Barra customizada: vermelha (HP real) + azul (HP temporário) */}
+                    {/* O tempHp preenche o gap entre hp e maxHp primeiro; só extrapola se hp+tempHp > maxHp */}
+                    {(() => {
+                      const effectiveTotal = hp + tempHp
+                      const barMax = Math.max(maxHp, effectiveTotal)
+                      return (
+                        <div className="relative h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                          {/* Segmento vermelho — HP real */}
+                          <div
+                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-500 to-rose-500 transition-all duration-300"
+                            style={{ width: `${(hp / barMax) * 100}%` }}
+                          />
+                          {/* Segmento azul — HP temporário (emplilhado após o vermelho) */}
+                          {tempHp > 0 && (
+                            <div
+                              className="absolute inset-y-0 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300"
+                              style={{
+                                left: `${(hp / barMax) * 100}%`,
+                                width: `${(tempHp / barMax) * 100}%`,
+                              }}
+                            />
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  <span className="text-sm text-zinc-500 font-bold">
+                    {hp + tempHp > maxHp ? hp + tempHp : maxHp}
+                  </span>
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-center text-xs text-zinc-400">
                   <Button
                     size="sm"
                     variant="flat"
                     className="bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 h-9 font-bold"
-                    onPress={() => setHp(Math.max(0, hp - 1))}
+                    onPress={() => takeDamage(1)}
                   >
                     -1
                   </Button>
@@ -2052,7 +2583,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     size="sm"
                     variant="flat"
                     className="bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 h-9 font-bold"
-                    onPress={() => setHp(Math.max(0, hp - 5))}
+                    onPress={() => takeDamage(5)}
                   >
                     -5
                   </Button>
@@ -2105,26 +2636,47 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-4xl font-black text-white">{pe}</span>
-                  <div className="flex-1">
-                    <Progress
-                      aria-label="PE"
-                      value={(pe / maxPe) * 100}
-                      className="h-3"
-                      classNames={{
-                        indicator: 'bg-gradient-to-r from-amber-400 to-yellow-400',
-                        track: 'bg-zinc-950 border border-zinc-800',
-                      }}
-                    />
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-black text-white">{pe}</span>
+                    {tempPe > 0 && (
+                      <span className="text-lg font-black text-cyan-400">+{tempPe}</span>
+                    )}
                   </div>
-                  <span className="text-sm text-zinc-500 font-bold">{maxPe}</span>
+                  <div className="flex-1">
+                    {(() => {
+                      const effectiveTotal = pe + tempPe
+                      const barMax = Math.max(maxPe, effectiveTotal)
+                      return (
+                        <div className="relative h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                          {/* Segmento amarelo — PE real */}
+                          <div
+                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-400 to-yellow-400 transition-all duration-300"
+                            style={{ width: `${(pe / barMax) * 100}%` }}
+                          />
+                          {/* Segmento azul — PE temporário */}
+                          {tempPe > 0 && (
+                            <div
+                              className="absolute inset-y-0 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300"
+                              style={{
+                                left: `${(pe / barMax) * 100}%`,
+                                width: `${(tempPe / barMax) * 100}%`,
+                              }}
+                            />
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  <span className="text-sm text-zinc-500 font-bold">
+                    {pe + tempPe > maxPe ? pe + tempPe : maxPe}
+                  </span>
                 </div>
                 <div className="grid grid-cols-4 gap-2 pt-1">
                   <Button
                     size="sm"
                     variant="flat"
                     className="bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 h-9 font-bold"
-                    onPress={() => setPe(Math.max(0, pe - 1))}
+                    onPress={() => takePeDamage(1)}
                   >
                     -1
                   </Button>
@@ -2132,7 +2684,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     size="sm"
                     variant="flat"
                     className="bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 h-9 font-bold"
-                    onPress={() => setPe(Math.max(0, pe - 5))}
+                    onPress={() => takePeDamage(5)}
                   >
                     -5
                   </Button>
@@ -2434,6 +2986,87 @@ export default function CharacterShow(initialProps: CharacterProps) {
         )}
       </BaseModal>
 
+      {/* Trail Config Modal — A Favorita (escolher arma) */}
+      <BaseModal
+        isOpen={isTrailConfigModalOpen}
+        onClose={onTrailConfigModalOpenChange}
+        maxWidth="max-w-xl"
+        title="A Favorita — Escolher Arma"
+        footer={
+          <>
+            <button
+              onClick={onTrailConfigModalOpenChange}
+              className="px-5 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={saveTrailConfigModal}
+              disabled={isSavingTrailConfig || !selectedFavoriteWeapon}
+              className="flex items-center gap-2 px-5 py-2 rounded-md font-medium bg-red-600 hover:bg-red-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSavingTrailConfig ? 'Salvando...' : 'Confirmar Arma Favorita'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-400">
+            Escolha uma arma do seu inventário para ser sua favorita. A{' '}
+            <span className="text-red-400 font-bold">categoria é reduzida em I</span> e conforme
+            avança de NEX, ganha bônus adicionais (Técnica Secreta, Técnica Sublime, Máquina de
+            Matar).
+          </p>
+          {inventoryWeapons.length > 0 ? (
+            <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+              {inventoryWeapons.map((w: any, idx: number) => {
+                const isSelected = selectedFavoriteWeapon === w.name
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedFavoriteWeapon(w.name)}
+                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                      isSelected
+                        ? 'bg-red-500/20 border-red-500 ring-1 ring-red-500/50'
+                        : 'bg-zinc-950/50 border-zinc-700 hover:border-red-500/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {isSelected && <span className="text-red-400 font-black text-lg">★</span>}
+                      <div>
+                        <span className="font-bold text-white text-sm">{w.name}</span>
+                        <div className="flex gap-2 mt-0.5">
+                          {w.damage && (
+                            <span className="text-[10px] text-zinc-400">{w.damage}</span>
+                          )}
+                          {w.weaponType && (
+                            <span className="text-[10px] text-zinc-500 uppercase">
+                              {w.weaponType}
+                            </span>
+                          )}
+                          {w.range && <span className="text-[10px] text-zinc-500">{w.range}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500 italic">
+              Nenhuma arma no inventário. Adicione armas primeiro.
+            </p>
+          )}
+          {selectedFavoriteWeapon && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <p className="text-xs text-red-400 font-bold">
+                Arma Favorita: <span className="text-white">{selectedFavoriteWeapon}</span>
+              </p>
+            </div>
+          )}
+        </div>
+      </BaseModal>
+
       {/* Skill Menu Modal */}
       <BaseModal
         isOpen={isSkillMenuOpen}
@@ -2657,6 +3290,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       <BaseModal
         isOpen={isModifyWeaponModalOpen}
         onClose={onModifyWeaponModalOpenChange}
+        maxWidth="max-w-xl"
+        height="h-[90vh]"
         title={
           <div className="flex items-center gap-2">
             <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
@@ -2664,7 +3299,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             </div>
             <div>
               <div className="text-xl font-bold text-white">Modificar {modifyingWeapon?.name}</div>
-              <div className="text-xs text-zinc-500">Melhorias, Acessórios e Maldições</div>
+              <div className="text-xs text-zinc-500">Melhorias e Maldiçöes</div>
             </div>
           </div>
         }
@@ -2677,259 +3312,187 @@ export default function CharacterShow(initialProps: CharacterProps) {
           </button>
         }
       >
-        <div className="space-y-6">
+        <div className="space-y-5">
           {/* Modificações Atuais */}
           <div>
-            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3">
-              Modificações Atuais
-            </h3>
-            <div className="flex flex-wrap gap-2">
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Modificações Atuais</p>
+            <div className="flex flex-wrap gap-1.5">
               {modifyingWeapon?.modifications && modifyingWeapon.modifications.length > 0 ? (
-                modifyingWeapon.modifications.map((mod: any) => (
-                  <Chip
-                    key={mod.id}
-                    variant="flat"
-                    color={mod.type === 'Maldição' ? 'danger' : 'primary'}
-                    onClose={() =>
-                      toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')
-                    }
-                    className={
-                      mod.type === 'Maldição'
-                        ? mod.element === 'Sangue'
-                          ? 'bg-red-500/10 text-red-300 border border-red-500/20'
-                          : mod.element === 'Morte'
-                            ? 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/20'
-                            : mod.element === 'Energia'
-                              ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
-                              : mod.element === 'Conhecimento'
-                                ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
-                                : 'bg-red-500/10 text-red-300 border border-red-500/20'
-                        : 'bg-blue-500/10 text-blue-300 border border-blue-500/20'
-                    }
-                  >
-                    {mod.name}
-                  </Chip>
-                ))
+                modifyingWeapon.modifications.map((mod: any) => {
+                  const isCurse = mod.type === 'Maldição'
+                  const elemClasses: Record<string, string> = {
+                    Sangue: 'bg-red-500/10 text-red-300 border-red-500/30',
+                    Morte: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
+                    Energia: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+                    Conhecimento: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+                  }
+                  const cls = isCurse
+                    ? (elemClasses[mod.element] || 'bg-red-500/10 text-red-300 border-red-500/30')
+                    : 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+                  return (
+                    <button
+                      key={mod.id}
+                      onClick={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
+                      title="Clique para remover"
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all hover:opacity-70 ${cls}`}
+                    >
+                      {mod.name}
+                      <span className="text-[10px] opacity-60">&times;</span>
+                    </button>
+                  )
+                })
               ) : (
                 <span className="text-sm text-zinc-600 italic">Nenhuma modificação aplicada.</span>
               )}
             </div>
           </div>
 
-          <Divider className="bg-zinc-800" />
+          <div className="h-px bg-zinc-800" />
 
-          {/* Catálogo de Modificações */}
-          <div>
-            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-3 flex items-center justify-between">
-              Disponíveis no Catálogo
-              <div className="flex bg-zinc-800/50 p-1 rounded-xl border border-zinc-800">
-                {['Melhoria', 'Maldição'].map((type) => {
-                  const isActive = modTypeFilter === type
-                  const activeBg = type === 'Melhoria' ? 'bg-blue-600' : 'bg-red-600'
+          {/* Filtros */}
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Catálogo</p>
+            <div className="flex bg-zinc-800/50 p-1 rounded-xl border border-zinc-800">
+              {(['Melhoria', 'Maldição'] as const).map((type) => {
+                const isActive = modTypeFilter === type
+                return (
+                  <button
+                    key={type}
+                    onClick={() => setModTypeFilter(type)}
+                    className={`px-4 h-7 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
+                      isActive
+                        ? type === 'Melhoria' ? 'bg-blue-600 text-white' : 'bg-red-600 text-white'
+                        : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
+          {/* Grade de modificações */}
+          <div className="space-y-5">
+            {modTypeFilter === 'Maldição' ? (
+              (['Sangue', 'Morte', 'Energia', 'Conhecimento'] as const).map((element) => {
+                const elemMods = catalogAmmunitions.filter((m) => m.type === 'Maldição' && m.element === element)
+                if (elemMods.length === 0) return null
+
+                const elemColor = { Sangue: 'text-red-400', Morte: 'text-zinc-400', Energia: 'text-purple-400', Conhecimento: 'text-amber-400' }[element]
+                const activeBg   = { Sangue: 'bg-red-500/20',    Morte: 'bg-zinc-500/20',   Energia: 'bg-purple-500/20',  Conhecimento: 'bg-amber-500/20'  }[element]
+                const activeBorder = { Sangue: 'border-red-500',  Morte: 'border-zinc-500',  Energia: 'border-purple-500', Conhecimento: 'border-amber-500' }[element]
+                const activeRing  = { Sangue: 'ring-red-500/40',  Morte: 'ring-zinc-500/40', Energia: 'ring-purple-500/40',Conhecimento: 'ring-amber-500/40'}[element]
+
+                return (
+                  <div key={element}>
+                    <p className={`text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1.5 mb-2 ${elemColor}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
+                      {element}
+                    </p>
+                    <div className="space-y-2">
+                      {elemMods.map((mod) => {
+                        const isActive = modifyingWeapon?.modifications?.some((m: any) => m.modificationId === mod.id)
+                        const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                        const isBlocked = !isActive && !validation.allowed
+                        return (
+                          <button
+                            key={mod.id}
+                            disabled={isBlocked}
+                            onClick={isBlocked ? undefined : () => toggleModification(modifyingWeapon!.id, mod.id, isActive ? 'remove' : 'add')}
+                            title={isBlocked ? validation.reason : undefined}
+                            className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+                              isBlocked
+                                ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                : isActive
+                                  ? `${activeBg} ${activeBorder} ring-1 ${activeRing}`
+                                  : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className={`font-semibold text-sm ${ isActive ? elemColor : 'text-zinc-200' }`}>{mod.name}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">+{mod.category} CAT</span>
+                            </div>
+                            {mod.description && (
+                              <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">{mod.description}</p>
+                            )}
+                            <div className="mt-1.5 flex items-center justify-between">
+                              <span className={`text-[9px] uppercase font-bold ${ isBlocked ? 'text-red-500' : isActive ? elemColor : 'text-zinc-600' }`}>
+                                {isBlocked ? validation.reason : 'MALDIÇÃO'}
+                              </span>
+                              {isActive && <Check size={11} className={elemColor} />}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })
+            ) : (
+              <div className="space-y-2">
+                {catalogAmmunitions.filter((m) => m.type === 'Melhoria').map((mod) => {
+                  const isActive = modifyingWeapon?.modifications?.some((m: any) => m.modificationId === mod.id)
+                  const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                  const isBlocked = !isActive && !validation.allowed
                   return (
                     <button
-                      key={type}
-                      onClick={() => setModTypeFilter(type as any)}
-                      className={`cursor-pointer px-4 h-8 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
-                        isActive
-                          ? `${activeBg} text-white shadow-md`
-                          : 'text-zinc-500 hover:text-zinc-300'
+                      key={mod.id}
+                      disabled={isBlocked}
+                      onClick={isBlocked ? undefined : () => toggleModification(modifyingWeapon!.id, mod.id, isActive ? 'remove' : 'add')}
+                      title={isBlocked ? validation.reason : undefined}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+                        isBlocked
+                          ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                          : isActive
+                            ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/40'
+                            : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
                       }`}
                     >
-                      {type}
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={`font-semibold text-sm ${ isActive ? 'text-blue-300' : 'text-zinc-200' }`}>{mod.name}</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">+{mod.category} CAT</span>
+                      </div>
+                      {mod.description && (
+                        <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">{mod.description}</p>
+                      )}
+                      <div className="mt-1.5 flex items-center justify-between">
+                        <span className={`text-[9px] uppercase font-bold ${ isBlocked ? 'text-red-500' : isActive ? 'text-blue-400' : 'text-zinc-600' }`}>
+                          {isBlocked ? validation.reason : 'MELHORIA'}
+                        </span>
+                        {isActive && <Check size={11} className="text-blue-400" />}
+                      </div>
                     </button>
                   )
                 })}
               </div>
-            </h3>
-            <div className="space-y-6 pr-2">
-              {modTypeFilter === 'Maldição' ? (
-                ['Sangue', 'Morte', 'Energia', 'Conhecimento'].map((element) => {
-                  const elementMods = catalogAmmunitions.filter(
-                    (m) => m.type === 'Maldição' && m.element === element
-                  )
-                  if (elementMods.length === 0) return null
-
-                  const elementColor =
-                    element === 'Sangue'
-                      ? 'text-red-500'
-                      : element === 'Morte'
-                        ? 'text-zinc-400'
-                        : element === 'Energia'
-                          ? 'text-purple-500'
-                          : 'text-amber-500' // Conhecimento
-
-                  const elementBg =
-                    element === 'Sangue'
-                      ? 'bg-red-500/10'
-                      : element === 'Morte'
-                        ? 'bg-zinc-500/10'
-                        : element === 'Energia'
-                          ? 'bg-purple-500/10'
-                          : 'bg-amber-500/10'
-
-                  const elementBorder =
-                    element === 'Sangue'
-                      ? 'border-red-500/20 font-red-glow'
-                      : element === 'Morte'
-                        ? 'border-zinc-500/20 font-death-glow'
-                        : element === 'Energia'
-                          ? 'border-purple-500/20 font-energy-glow'
-                          : 'border-amber-500/20 font-knowledge-glow'
-
-                  return (
-                    <div key={element} className="space-y-3">
-                      <h4
-                        className={`text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 ${elementColor}`}
-                      >
-                        <div
-                          className={`w-2 h-2 rounded-full ${elementBg.replace('/10', '')} animate-pulse`}
-                        />
-                        {element}
-                      </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {elementMods.map((mod) => {
-                          const isActive = modifyingWeapon?.modifications?.some(
-                            (m: any) => m.modificationId === mod.id
-                          )
-                          const validation = !isActive
-                            ? canApplyModification(modifyingWeapon, mod.category)
-                            : { allowed: true }
-                          const isBlocked = !isActive && !validation.allowed
-                          return (
-                            <div
-                              key={mod.id}
-                              className="w-full"
-                              title={isBlocked ? validation.reason : undefined}
-                            >
-                              <Card
-                                className={`w-full border transition-all ${
-                                  isBlocked
-                                    ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                                    : isActive
-                                      ? `${elementBg} ${elementBorder.split(' ')[0]}`
-                                      : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                }`}
-                              >
-                                <CardBody className="p-3">
-                                  <div className="flex justify-between items-start mb-1">
-                                    <span
-                                      className={`text-xs font-bold ${isActive ? elementColor : 'text-zinc-300'}`}
-                                    >
-                                      {mod.name}
-                                    </span>
-                                    <Chip
-                                      size="sm"
-                                      variant="flat"
-                                      className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300"
-                                    >
-                                      +{mod.category} CAT
-                                    </Chip>
-                                  </div>
-                                  <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
-                                    {mod.description}
-                                  </p>
-                                  <div className="mt-2 flex items-center justify-between">
-                                    <span
-                                      className={`text-[9px] uppercase font-bold ${
-                                        isBlocked
-                                          ? 'text-red-600'
-                                          : isActive
-                                            ? elementColor
-                                            : 'text-zinc-600'
-                                      }`}
-                                    >
-                                      {isBlocked ? validation.reason : 'MALDIÇÃO'}
-                                    </span>
-                                    {isActive && <Check size={12} className={elementColor} />}
-                                  </div>
-                                </CardBody>
-                              </Card>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })
-              ) : (
-                <div className="grid grid-cols-1 gap-3">
-                  {catalogAmmunitions
-                    .filter((m) => m.type === 'Melhoria')
-                    .map((mod) => {
-                      const isActive = modifyingWeapon?.modifications?.some(
-                        (m: any) => m.modificationId === mod.id
-                      )
-                      const validation = !isActive
-                        ? canApplyModification(modifyingWeapon, mod.category)
-                        : { allowed: true }
-                      const isBlocked = !isActive && !validation.allowed
-                      return (
-                        <div
-                          key={mod.id}
-                          className="w-full"
-                          title={isBlocked ? validation.reason : undefined}
-                        >
-                          <Card
-                            isPressable={!isBlocked}
-                            onPress={
-                              isBlocked
-                                ? undefined
-                                : () =>
-                                    toggleModification(
-                                      modifyingWeapon.id,
-                                      mod.id,
-                                      isActive ? 'remove' : 'add'
-                                    )
-                            }
-                            className={`w-full border transition-all ${
-                              isBlocked
-                                ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                                : isActive
-                                  ? 'bg-blue-500/10 border-blue-500/50'
-                                  : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                            }`}
-                          >
-                            <CardBody className="p-3">
-                              <div className="flex justify-between items-start mb-1">
-                                <span
-                                  className={`text-xs font-bold ${isActive ? 'text-blue-400' : 'text-zinc-300'}`}
-                                >
-                                  {mod.name}
-                                </span>
-                                <Chip
-                                  size="sm"
-                                  variant="flat"
-                                  className="text-[10px] h-4 bg-zinc-900 border border-zinc-700 text-zinc-300"
-                                >
-                                  +{mod.category} CAT
-                                </Chip>
-                              </div>
-                              <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-3">
-                                {mod.description}
-                              </p>
-                              <div className="mt-2 flex items-center justify-between">
-                                <span
-                                  className={`text-[9px] uppercase font-bold ${
-                                    isBlocked ? 'text-red-600' : 'text-zinc-600'
-                                  }`}
-                                >
-                                  {isBlocked ? validation.reason : 'MELHORIA'}
-                                </span>
-                                {isActive && <Check size={12} className="text-blue-400" />}
-                              </div>
-                            </CardBody>
-                          </Card>
-                        </div>
-                      )
-                    })}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </BaseModal>
+
+      {/* Modal de Buff de Ritual */}
+      {pendingRitualBuff && (
+        <RitualBuffModal
+          isOpen={isRitualBuffModalOpen}
+          onClose={() => {
+            setIsRitualBuffModalOpen(false)
+            setPendingRitualBuff(null)
+          }}
+          ritualName={pendingRitualBuff.ritualName}
+          version={pendingRitualBuff.version}
+          buff={pendingRitualBuff.buff}
+          onApplyToSelf={(buff, chosenAttr) => {
+            applyRitualBuffToSelf(buff, chosenAttr)
+            setIsRitualBuffModalOpen(false)
+            setPendingRitualBuff(null)
+          }}
+          onApplyToAlly={() => {
+            setIsRitualBuffModalOpen(false)
+            setPendingRitualBuff(null)
+          }}
+        />
+      )}
     </div>
   )
 }

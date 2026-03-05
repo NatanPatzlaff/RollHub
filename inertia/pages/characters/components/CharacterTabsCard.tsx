@@ -18,7 +18,9 @@ import {
   Shield,
   Activity,
   Dices,
+  Check,
 } from 'lucide-react'
+import BaseModal from './BaseModal'
 
 const RANK_OPTIONS = ['Recruta', 'Veterano', 'Expert']
 const RANK_LIMITS: Record<string, Record<number, number>> = {
@@ -60,7 +62,7 @@ export interface CharacterTabsCardProps {
   strength: number
   peritoPeSpending: Record<string, number>
   maxPeritoPe: number
-  onRollWeapon: (w: { name: string; range: string; damage: string }) => void
+  onRollWeapon: (w: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string }) => void
   classAbilities: any[]
   paranormalPowers: any[]
   currentTrailAbilities: any[]
@@ -92,6 +94,16 @@ export interface CharacterTabsCardProps {
   onRemoveParanormalPower: (id: number, characterClassAbilityId?: number | null) => void
   onSetUsarCamuflar: (v: boolean) => void
   onSetPeritoPeSpending: (v: Record<string, number>) => void
+  // Trail config props
+  trailConfig?: Record<string, any>
+  favoriteWeaponName?: string | null
+  useFlagelo?: boolean
+  useLaminaMaldita?: boolean
+  useOcultismoForAttacks?: boolean
+  onToggleFlagelo?: (v: boolean) => void
+  onToggleLaminaMaldita?: (v: boolean) => void
+  onToggleOcultismoForAttacks?: (v: boolean) => void
+  onOpenTrailConfigModal?: () => void
   characterId: number
   originAbilityName?: string | null
   originAbilityDescription?: string | null
@@ -130,6 +142,19 @@ export interface CharacterTabsCardProps {
       damageRolls: number[] | undefined
     }) => void
   }) => void
+  /** Callback disparado quando um ritual com buff passa no teste */
+  onRitualBuffSuccess?: (ritualName: string, version: 'base' | 'discente' | 'verdadeiro') => void
+  // Buffs ativos de habilidades (trilha / origem)
+  activeAbilityBuffs?: Array<{
+    id: string
+    abilityName: string
+    source: 'trail' | 'origin'
+    effects: Record<string, any>
+  }>
+  abilityUsesThisScene?: Record<string, number>
+  onActivateAbility?: (name: string, source: 'trail' | 'origin', peCost: number, effects: any) => void
+  onClearAbilityBuff?: (buffId: string) => void
+  onResetSceneUses?: () => void
 }
 
 import { canUseRitualUpgrade, circuloMaximoFromNex } from '../../../utils/ritualReqs'
@@ -189,6 +214,16 @@ export default function CharacterTabsCard({
   onRemoveAbility,
   onRemoveParanormalPower,
   onSetUsarCamuflar,
+  // Trail config
+  trailConfig,
+  favoriteWeaponName,
+  useFlagelo,
+  useLaminaMaldita,
+  useOcultismoForAttacks,
+  onToggleFlagelo,
+  onToggleLaminaMaldita,
+  onToggleOcultismoForAttacks,
+  onOpenTrailConfigModal,
   characterId,
   onSetPeritoPeSpending,
   originAbilityName,
@@ -201,6 +236,12 @@ export default function CharacterTabsCard({
   onDeductSan,
   onDeductPermSan,
   onRollRitual,
+  onRitualBuffSuccess,
+  activeAbilityBuffs = [],
+  abilityUsesThisScene = {},
+  onActivateAbility,
+  onClearAbilityBuff,
+  onResetSceneUses,
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<string>('inventario')
 
@@ -230,6 +271,19 @@ export default function CharacterTabsCard({
   }
 
   const [ritualRollResults, setRitualRollResults] = useState<Record<number, RitualRollResult>>({})
+  const [expandedRitualIds, setExpandedRitualIds] = useState<Set<number>>(new Set())
+
+  const toggleRitualExpand = (id: number) => {
+    setExpandedRitualIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   function parseExtraPe(text: string): number {
     const m = text.match(/\(\+(\d+)\s*PE\)/i)
@@ -301,6 +355,9 @@ export default function CharacterTabsCard({
         if (!success) {
           onDeductSan(sanLoss)
           if (failPermanent > 0) onDeductPermSan(failPermanent)
+        } else {
+          // Ritual passou → disparar aplicação de buffs (se houver)
+          onRitualBuffSuccess?.(ritual.name, version)
         }
 
         setRitualRollResults((prev) => ({
@@ -510,16 +567,39 @@ export default function CharacterTabsCard({
                       <div>
                         <div className="font-semibold text-zinc-200 text-sm">{item.name}</div>
                         <div className="text-[11px] text-zinc-500">{item.desc}</div>
-                        {item.type === 'Arma' &&
-                          item.calculatedCategory &&
-                          item.calculatedCategory > 0 && (
+                        {item.type === 'Arma' && (
                             <div className="flex flex-wrap gap-1 mt-1">
-                              <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-300 font-bold uppercase tracking-tight">
-                                CAT{' '}
-                                {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][
-                                  item.calculatedCategory - 1
-                                ] || item.calculatedCategory}
-                              </div>
+                              {/* Badge de categoria com redução da arma favorita */}
+                              {(item as any).isFavoriteWeapon && (item as any).categoryReduction > 0 ? (
+                                <div className="flex items-center gap-1">
+                                  <div className="px-1.5 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-[9px] text-amber-400 font-bold uppercase tracking-tight flex items-center gap-1">
+                                    <span>★</span>
+                                    <span className="line-through text-zinc-500">
+                                      CAT {['0', 'I', 'II', 'III', 'IV'][(item as any).baseCategory] || (item as any).baseCategory}
+                                    </span>
+                                    <span>→</span>
+                                    <span>
+                                      CAT {item.calculatedCategory != null && item.calculatedCategory > 0
+                                        ? (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory)
+                                        : '0'}
+                                    </span>
+                                  </div>
+                                  <div className="px-1 py-0.5 rounded text-[8px] text-amber-500/70 font-medium">
+                                    −{['I','II','III'][(item as any).categoryReduction - 1]}
+                                  </div>
+                                </div>
+                              ) : item.calculatedCategory && item.calculatedCategory > 0 ? (
+                                <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-300 font-bold uppercase tracking-tight">
+                                  CAT{' '}
+                                  {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][
+                                    item.calculatedCategory - 1
+                                  ] || item.calculatedCategory}
+                                </div>
+                              ) : (
+                                <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-500 font-bold uppercase tracking-tight">
+                                  CAT 0
+                                </div>
+                              )}
                               {item.modifications?.map((mod: any) => {
                                 const isCurse = mod.type === 'Maldição'
                                 const elementColor =
@@ -619,12 +699,15 @@ export default function CharacterTabsCard({
                           },
                           {
                             label: 'Categoria',
-                            value:
-                              item.calculatedCategory != null && item.calculatedCategory > 0
-                                ? ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][
-                                    item.calculatedCategory - 1
-                                  ] || item.calculatedCategory
-                                : '0',
+                            value: (() => {
+                              const calcCat = item.calculatedCategory != null && item.calculatedCategory > 0
+                                ? (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory)
+                                : '0'
+                              return calcCat
+                            })(),
+                            extra: (item as any).isFavoriteWeapon && (item as any).categoryReduction > 0
+                              ? ` (★ −${['I','II','III'][(item as any).categoryReduction - 1]})`
+                              : '',
                           },
                           { label: 'Alcance', value: item.range ?? '—' },
                           { label: 'Margem de Crítico', value: item.critical ?? '—' },
@@ -713,10 +796,13 @@ export default function CharacterTabsCard({
                 const temReducao = peInfo.ajustado < peInfo.base
                 const temAcrescimo = peInfo.ajustado > peInfo.base
 
+                const isExpanded = expandedRitualIds.has(charRitual.id)
+
                 return (
                   <div
                     key={charRitual.id}
-                    className="bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 rounded-lg p-4 transition-all space-y-3"
+                    className={`bg-zinc-950/50 border border-zinc-800 hover:border-zinc-700 rounded-lg transition-all cursor-pointer select-none ${isExpanded ? 'p-4 space-y-3' : 'p-3 space-y-2'}`}
+                    onClick={() => toggleRitualExpand(charRitual.id)}
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -770,7 +856,10 @@ export default function CharacterTabsCard({
                       </div>
                       <div className="flex items-center gap-2">
                         {hasCamuflarOcultismo && (
-                          <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold uppercase tracking-wide text-zinc-500 hover:text-zinc-300 transition-colors select-none">
+                          <label
+                            className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold uppercase tracking-wide text-zinc-500 hover:text-zinc-300 transition-colors select-none"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <input
                               type="checkbox"
                               checked={usarCamuflar}
@@ -782,12 +871,17 @@ export default function CharacterTabsCard({
                         )}
                         <button
                           className="p-1 rounded text-zinc-500 hover:text-red-400 transition-colors"
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.stopPropagation()
                             onRemoveRitual(ritual.id, charRitual.characterClassAbilityId)
-                          }
+                          }}
                         >
                           <Trash2 size={14} />
                         </button>
+                        <ChevronDown
+                          size={16}
+                          className={`text-zinc-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                        />
                       </div>
                     </div>
 
@@ -796,7 +890,10 @@ export default function CharacterTabsCard({
                       {pe >= calcPeAjustado(ritual).ajustado &&
                         calcPeAjustado(ritual).ajustado <= Math.floor(nex / 5) && (
                           <button
-                            onClick={() => handleRollRitual(charRitual, 'base')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRollRitual(charRitual, 'base')
+                            }}
                             className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
                             title={`Rolar ${ritual.name} — base`}
                           >
@@ -816,7 +913,10 @@ export default function CharacterTabsCard({
                         calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) <=
                           Math.floor(nex / 5) && (
                           <button
-                            onClick={() => handleRollRitual(charRitual, 'discente')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRollRitual(charRitual, 'discente')
+                            }}
                             className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
                             title={`Rolar ${ritual.name} — discente`}
                           >
@@ -838,7 +938,10 @@ export default function CharacterTabsCard({
                         calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) <=
                           Math.floor(nex / 5) && (
                           <button
-                            onClick={() => handleRollRitual(charRitual, 'verdadeiro')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRollRitual(charRitual, 'verdadeiro')
+                            }}
                             className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
                             title={`Rolar ${ritual.name} — verdadeiro`}
                           >
@@ -851,61 +954,65 @@ export default function CharacterTabsCard({
                         )}
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-zinc-500 uppercase font-bold bg-zinc-900/50 p-2 rounded">
-                      <div>
-                        <span className="text-zinc-600 block">Execução</span> {ritual.execution}
-                      </div>
-                      <div>
-                        <span className="text-zinc-600 block">Alcance</span> {ritual.range}
-                      </div>
-                      <div>
-                        <span className="text-zinc-600 block">Duração</span> {ritual.duration}
-                      </div>
-                      {ritual.resistance && (
-                        <div>
-                          <span className="text-zinc-600 block">Resistência</span>{' '}
-                          {ritual.resistance}
+                    {isExpanded && (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] text-zinc-500 uppercase font-bold bg-zinc-900/50 p-2 rounded">
+                          <div>
+                            <span className="text-zinc-600 block">Execução</span> {ritual.execution}
+                          </div>
+                          <div>
+                            <span className="text-zinc-600 block">Alcance</span> {ritual.range}
+                          </div>
+                          <div>
+                            <span className="text-zinc-600 block">Duração</span> {ritual.duration}
+                          </div>
+                          {ritual.resistance && (
+                            <div>
+                              <span className="text-zinc-600 block">Resistência</span>{' '}
+                              {ritual.resistance}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
 
-                    {ritual.description && (
-                      <p className="text-sm text-zinc-300 italic leading-relaxed">
-                        {ritual.description}
-                      </p>
-                    )}
+                        {ritual.description && (
+                          <p className="text-sm text-zinc-300 italic leading-relaxed">
+                            {ritual.description}
+                          </p>
+                        )}
 
-                    {(ritual.discente || ritual.verdadeiro) && (
-                      <div className="space-y-2 pt-2 border-t border-zinc-800/50 text-xs text-zinc-400">
-                        {ritual.discente &&
-                          canUseRitualUpgrade(
-                            ritual.discente,
-                            ritual.element ?? '',
-                            circuloMaximo,
-                            characterAffinity
-                          ) && (
-                            <div>
-                              <span className="text-blue-400 font-bold uppercase mr-1">
-                                Discente:
-                              </span>
-                              {ritual.discente}
-                            </div>
-                          )}
-                        {ritual.verdadeiro &&
-                          canUseRitualUpgrade(
-                            ritual.verdadeiro,
-                            ritual.element ?? '',
-                            circuloMaximo,
-                            characterAffinity
-                          ) && (
-                            <div>
-                              <span className="text-purple-400 font-bold uppercase mr-1">
-                                Verdadeiro:
-                              </span>
-                              {ritual.verdadeiro}
-                            </div>
-                          )}
-                      </div>
+                        {(ritual.discente || ritual.verdadeiro) && (
+                          <div className="space-y-2 pt-2 border-t border-zinc-800/50 text-xs text-zinc-400">
+                            {ritual.discente &&
+                              canUseRitualUpgrade(
+                                ritual.discente,
+                                ritual.element ?? '',
+                                circuloMaximo,
+                                characterAffinity
+                              ) && (
+                                <div>
+                                  <span className="text-blue-400 font-bold uppercase mr-1">
+                                    Discente:
+                                  </span>
+                                  {ritual.discente}
+                                </div>
+                              )}
+                            {ritual.verdadeiro &&
+                              canUseRitualUpgrade(
+                                ritual.verdadeiro,
+                                ritual.element ?? '',
+                                circuloMaximo,
+                                characterAffinity
+                              ) && (
+                                <div>
+                                  <span className="text-purple-400 font-bold uppercase mr-1">
+                                    Verdadeiro:
+                                  </span>
+                                  {ritual.verdadeiro}
+                                </div>
+                              )}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 )
@@ -952,6 +1059,50 @@ export default function CharacterTabsCard({
             </div>
           </div>
 
+          {/* Buffs Ativos de Habilidades */}
+          {activeAbilityBuffs.length > 0 && (
+            <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Zap size={11} /> Buffs Ativos
+                </span>
+                {onResetSceneUses && (
+                  <button
+                    onClick={onResetSceneUses}
+                    className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors"
+                  >
+                    Encerrar Cena
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {activeAbilityBuffs.map((buff) => (
+                  <div
+                    key={buff.id}
+                    className={`flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full border text-[10px] font-medium ${
+                      buff.source === 'trail'
+                        ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                        : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                    }`}
+                  >
+                    <span>{buff.effects.effect_label || buff.abilityName}</span>
+                    <span className="text-zinc-600">
+                      {buff.effects.duration === 'scene' ? '(cena)' : '(próx.)'}
+                    </span>
+                    {onClearAbilityBuff && (
+                      <button
+                        onClick={() => onClearAbilityBuff(buff.id)}
+                        className="ml-0.5 w-4 h-4 flex items-center justify-center text-zinc-500 hover:text-red-400 transition-colors"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Lista de Combate */}
           <div className="space-y-6 overflow-y-auto custom-scrollbar">
             {/* Armas */}
@@ -992,6 +1143,8 @@ export default function CharacterTabsCard({
                                 name: w.name,
                                 range: w.range || 'Corpo a corpo',
                                 damage: w.damage || '1d6',
+                                critical: w.critical || '20',
+                                criticalMultiplier: w.criticalMultiplier || 'x2',
                               })
                             }
                           >
@@ -1089,6 +1242,151 @@ export default function CharacterTabsCard({
               )
             )}
 
+            {/* Habilidades Ativas de Trilha */}
+            {currentTrailAbilities &&
+              currentTrailAbilities.length > 0 &&
+              (() => {
+                // Filtra apenas habilidades que são ativas/reativas (não passivas)
+                const activeTrailAbilities = currentTrailAbilities.filter((prog: any) => {
+                  if (prog.type === 'PASSIVE' || prog.type === 'RITUAL_UNLOCK') return false
+                  const desc = (prog.description || '').toLowerCase()
+                  const effects = prog.effects || {}
+                  const hasPe = !!desc.match(/\d+\s*pe/i) || effects.pe_cost
+                  const hasAction =
+                    desc.includes('reação') ||
+                    desc.includes('ação padrão') ||
+                    desc.includes('ação completa') ||
+                    desc.includes('ação de movimento') ||
+                    desc.includes('ação livre')
+                  // A Favorita e toggles já ficam na aba de Habilidades
+                  if (
+                    prog.title === 'A Favorita' ||
+                    prog.title === 'Poder do Flagelo' ||
+                    prog.title === 'Lâmina Maldita'
+                  )
+                    return false
+                  return hasPe || hasAction
+                })
+
+                if (activeTrailAbilities.length === 0) return null
+
+                return (
+                  <div>
+                    <h4 className="font-bold text-purple-400 text-sm uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Sparkles size={14} /> Habilidades de Trilha ({characterTrail?.name})
+                    </h4>
+                    <div className="space-y-2">
+                      {activeTrailAbilities.map((prog: any, idx: number) => {
+                        const desc = prog.description || ''
+                        const effects = prog.effects || {}
+                        const peCost = effects.pe_cost || desc.match(/(\d+)\s*PE/i)?.[1]
+                        const isReaction = desc.toLowerCase().includes('reação')
+                        const usesPerRound = effects.uses_per_round
+                        const usesPerScene = effects.uses_per_scene
+                        const usesPerMission = effects.uses_per_mission
+
+                        const actionBadge = isReaction
+                          ? {
+                              label: 'Reação',
+                              color: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                            }
+                          : desc.toLowerCase().includes('ação completa')
+                            ? {
+                                label: 'Ação Completa',
+                                color: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+                              }
+                            : desc.toLowerCase().includes('ação de movimento')
+                              ? {
+                                  label: 'Ação de Mov.',
+                                  color: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+                                }
+                              : {
+                                  label: 'Ação Padrão',
+                                  color: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+                                }
+
+                        return (() => {
+                            const peCostNum = peCost ? Number(peCost) : 0
+                            const usesPerSceneNum = usesPerScene ? Number(usesPerScene) : null
+                            const usesThisScene = abilityUsesThisScene[prog.title] ?? 0
+                            const isLimitReached = usesPerSceneNum !== null && usesThisScene >= usesPerSceneNum
+                            const canUseTrail = !isLimitReached && pe >= peCostNum
+                            return (
+                              <div
+                                key={idx}
+                                className="px-4 py-3 rounded-lg bg-zinc-950/60 border border-purple-500/20 hover:border-purple-500/40 transition-all"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                      <span className="font-semibold text-sm text-purple-300">
+                                        {prog.title}
+                                      </span>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${actionBadge.color}`}
+                                      >
+                                        {actionBadge.label}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {peCost && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                                          {peCost} PE
+                                        </span>
+                                      )}
+                                      {usesPerRound && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                          {usesPerRound}x/rodada
+                                        </span>
+                                      )}
+                                      {usesPerScene && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                          {usesThisScene}/{usesPerScene}x/cena
+                                        </span>
+                                      )}
+                                      {usesPerMission && (
+                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                          {usesPerMission}x/missão
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-zinc-500 text-[10px] leading-relaxed mt-1.5 line-clamp-2">
+                                      {desc}
+                                    </p>
+                                  </div>
+                                  {onActivateAbility && (
+                                    <button
+                                      disabled={!canUseTrail}
+                                      onClick={() =>
+                                        canUseTrail &&
+                                        onActivateAbility(prog.title, 'trail', peCostNum, effects)
+                                      }
+                                      title={
+                                        isLimitReached
+                                          ? 'Limite de usos atingido'
+                                          : !canUseTrail
+                                            ? 'PE insuficiente'
+                                            : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
+                                      }
+                                      className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                        canUseTrail
+                                          ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-purple-500/40'
+                                          : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                      }`}
+                                    >
+                                      {isLimitReached ? 'Usado' : 'Usar'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })()
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+
             {/* Habilidades Ativas da Origem */}
             {activeOriginAbilities.length > 0 && (
               <div>
@@ -1161,15 +1459,52 @@ export default function CharacterTabsCard({
                             )}
                           </div>
 
-                          {/* Botão de rolagem (se tiver custo de PE, implica uso ativo) */}
-                          {ability.peCost && (
-                            <button
-                              className={`ml-2 p-2 ${isReaction ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border-amber-500/30' : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border-emerald-500/30'} border rounded-lg shrink-0 transition-colors`}
-                              title={`Usar ${ability.name}`}
-                            >
-                              <Dices size={15} />
-                            </button>
-                          )}
+                          {/* Botão Usar */}
+                          {onActivateAbility && (() => {
+                            const parsedPe = ability.peCost
+                              ? parseInt(ability.peCost.replace(/\D/g, '') || '0', 10)
+                              : 0
+                            const usesPerSceneVal = ability.effects?.uses_per_scene
+                            const usesPerSessionVal = ability.effects?.uses_per_session
+                            const usesPerMissionVal = ability.effects?.uses_per_mission
+                            const usesThisSceneOrigin = abilityUsesThisScene[ability.name] ?? 0
+                            const isOriginLimitReached =
+                              (usesPerSceneVal && usesThisSceneOrigin >= Number(usesPerSceneVal)) ||
+                              (usesPerSessionVal && usesThisSceneOrigin >= Number(usesPerSessionVal)) ||
+                              (usesPerMissionVal && usesThisSceneOrigin >= Number(usesPerMissionVal))
+                            const canUseOrigin = !isOriginLimitReached && pe >= parsedPe
+                            const activeColor = isReaction
+                              ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                              : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border-emerald-500/40'
+                            return (
+                              <button
+                                disabled={!canUseOrigin}
+                                onClick={() =>
+                                  canUseOrigin &&
+                                  onActivateAbility(
+                                    ability.name,
+                                    'origin',
+                                    parsedPe,
+                                    ability.effects || {}
+                                  )
+                                }
+                                title={
+                                  isOriginLimitReached
+                                    ? 'Limite de usos atingido'
+                                    : !canUseOrigin
+                                      ? 'PE insuficiente'
+                                      : `Usar${parsedPe > 0 ? ` (${parsedPe} PE)` : ''}`
+                                }
+                                className={`ml-2 shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                  canUseOrigin
+                                    ? activeColor
+                                    : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                }`}
+                              >
+                                {isOriginLimitReached ? 'Usado' : `Usar${parsedPe > 0 ? ` (${parsedPe} PE)` : ''}`}
+                              </button>
+                            )
+                          })()}
                         </div>
                       </div>
                     )
@@ -1196,43 +1531,15 @@ export default function CharacterTabsCard({
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {/* Poderes de Trilha (dropdown) */}
-              {characterTrail?.id && futureTrailAbilities.length > 0 && (
-                <Dropdown isOpen={isTrailPowersOpen} onOpenChange={onTrailPowersOpenChange}>
-                  <DropdownTrigger>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors">
-                      <Sparkles className="w-4 h-4" />
-                      Poderes de Trilha
-                    </button>
-                  </DropdownTrigger>
-                  <DropdownMenu
-                    aria-label="Trail powers"
-                    className="max-h-96 overflow-y-auto"
-                    classNames={{ base: 'bg-zinc-900 border border-zinc-800', list: 'bg-zinc-900' }}
-                  >
-                    {futureTrailAbilities.map((prog) => (
-                      <DropdownItem
-                        key={prog.id}
-                        textValue={prog.title}
-                        className="px-3 py-2 data-[hover=true]:bg-zinc-800"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <h5 className="font-semibold text-purple-300">{prog.title}</h5>
-                            <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
-                              NEX {prog.nex}%
-                            </span>
-                          </div>
-                          {prog.description && (
-                            <p className="text-zinc-400 text-xs leading-relaxed">
-                              {prog.description}
-                            </p>
-                          )}
-                        </div>
-                      </DropdownItem>
-                    ))}
-                  </DropdownMenu>
-                </Dropdown>
+              {/* Poderes de Trilha (modal) */}
+              {characterTrail?.id && (currentTrailAbilities.length > 0 || futureTrailAbilities.length > 0) && (
+                <button
+                  onClick={() => onTrailPowersOpenChange(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Poderes de Trilha
+                </button>
               )}
               {/* Escolher Trilha */}
               {hasNoTrail && classTrails.length > 0 && (
@@ -1836,30 +2143,216 @@ export default function CharacterTabsCard({
                       transition={{ duration: 0.2 }}
                       className="space-y-2 mt-2"
                     >
-                      {currentTrailAbilities.map((progression, idx) => (
-                        <div
-                          key={idx}
-                          className="p-3 bg-[#141417] rounded-lg border border-zinc-800/50 hover:border-purple-500/30 transition-all"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h5 className="font-semibold text-purple-300">
-                                  {progression.title}
-                                </h5>
-                                <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
-                                  NEX {progression.nex}%
-                                </span>
+                      {currentTrailAbilities.map((progression, idx) => {
+                        // Determina tipo de habilidade baseado no título
+                        const title = progression.title
+                        const desc = (progression.description || '').toLowerCase()
+                        const effects = progression.effects || {}
+
+                        // Detecta custo de PE
+                        const peCostMatch = (progression.description || '').match(/(\d+)\s*PE/i)
+                        const hasPeCost = !!peCostMatch || effects.pe_cost
+                        const peCost = effects.pe_cost || (peCostMatch ? peCostMatch[1] : null)
+
+                        // Detecta tipo de ação
+                        const isReaction = desc.includes('reação')
+                        const isFreeAction = desc.includes('ação livre')
+                        const isFullAction = desc.includes('ação completa')
+                        const isStandard = desc.includes('ação padrão')
+                        const isMoveAction = desc.includes('ação de movimento')
+                        const isPassive =
+                          progression.type === 'PASSIVE' ||
+                          (!hasPeCost &&
+                            !isReaction &&
+                            !isStandard &&
+                            !isFullAction &&
+                            !isMoveAction)
+
+                        // Detecta escolha permanente
+                        const isPermanentChoice = title === 'A Favorita'
+
+                        // Detecta toggle (modificador de comportamento)
+                        const isToggle = title === 'Poder do Flagelo' || title === 'Lâmina Maldita'
+
+                        // Detecta uses per round
+                        const usesPerRound = effects.uses_per_round
+                        const usesPerScene = effects.uses_per_scene
+                        const usesPerMission = effects.uses_per_mission
+
+                        // Determina cor do badge baseado tipo
+                        const badgeInfo = isPermanentChoice
+                          ? { label: 'Escolha Permanente', color: 'amber' }
+                          : isToggle
+                            ? { label: 'Switch', color: 'cyan' }
+                            : isPassive
+                              ? { label: 'Passivo', color: 'emerald' }
+                              : isReaction
+                                ? { label: 'Reação', color: 'amber' }
+                                : isFullAction
+                                  ? { label: 'Ação Completa', color: 'orange' }
+                                  : isMoveAction
+                                    ? { label: 'Ação de Mov.', color: 'sky' }
+                                    : isStandard
+                                      ? { label: 'Ação Padrão', color: 'violet' }
+                                      : isFreeAction
+                                        ? { label: 'Ação Livre', color: 'teal' }
+                                        : hasPeCost
+                                          ? { label: 'Ativa', color: 'purple' }
+                                          : { label: 'Passivo', color: 'emerald' }
+
+                        const colorMap: Record<string, string> = {
+                          amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                          cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+                          emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+                          orange: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+                          sky: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+                          violet: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+                          teal: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
+                          purple: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+                        }
+
+                        return (
+                          <div
+                            key={idx}
+                            className="px-4 py-3 rounded-lg bg-zinc-950/60 border border-zinc-800/50 hover:border-purple-500/30 transition-all"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h5 className="font-semibold text-purple-300">
+                                    {progression.title}
+                                  </h5>
+                                  <span className="px-1.5 py-0.5 bg-purple-500/20 border border-purple-500/40 rounded text-purple-300 text-xs font-bold">
+                                    NEX {progression.nex}%
+                                  </span>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${colorMap[badgeInfo.color]}`}
+                                  >
+                                    {badgeInfo.label}
+                                  </span>
+                                  {hasPeCost && (
+                                    <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded text-[10px] font-bold">
+                                      {peCost} PE
+                                    </span>
+                                  )}
+                                  {usesPerRound && (
+                                    <span className="px-1.5 py-0.5 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded text-[10px] font-bold">
+                                      {usesPerRound}x/rodada
+                                    </span>
+                                  )}
+                                  {usesPerScene && (
+                                    <span className="px-1.5 py-0.5 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded text-[10px] font-bold">
+                                      {usesPerScene}x/cena
+                                    </span>
+                                  )}
+                                  {usesPerMission && (
+                                    <span className="px-1.5 py-0.5 bg-zinc-800 text-zinc-400 border border-zinc-700 rounded text-[10px] font-bold">
+                                      {usesPerMission}x/missão
+                                    </span>
+                                  )}
+                                </div>
+                                {progression.description && (
+                                  <p className="text-zinc-400 text-xs leading-relaxed mt-1">
+                                    {progression.description}
+                                  </p>
+                                )}
+
+                                {/* A Favorita — mostra arma escolhida ou botão de configurar */}
+                                {title === 'A Favorita' && (
+                                  <div className="mt-2 p-2 rounded bg-red-500/5 border border-red-500/20 flex items-center gap-2">
+                                    {favoriteWeaponName ? (
+                                      <>
+                                        <span className="text-[9px] font-black uppercase text-red-400/60 tracking-wider">
+                                          Arma Favorita:
+                                        </span>
+                                        <span className="text-[11px] font-black text-red-300 bg-red-500/10 border border-red-500/20 rounded px-2 py-0.5">
+                                          ★ {favoriteWeaponName}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500">
+                                          Categoria –I
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-amber-400 italic">
+                                        Nenhuma arma configurada
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Poder do Flagelo — switch para usar PV como PE */}
+                                {title === 'Poder do Flagelo' && (
+                                  <div className="mt-2 p-2 rounded bg-cyan-500/5 border border-cyan-500/20 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-black uppercase text-cyan-400/60 tracking-wider">
+                                        Pagar PE com PV (2 PV = 1 PE):
+                                      </span>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={useFlagelo ?? false}
+                                        onChange={(e) => onToggleFlagelo?.(e.target.checked)}
+                                        className="sr-only peer"
+                                      />
+                                      <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600" />
+                                    </label>
+                                  </div>
+                                )}
+
+                                {/* Lâmina Maldita — switch para usar com custo reduzido + Ocultismo para ataques */}
+                                {title === 'Lâmina Maldita' && (
+                                  <div className="mt-2 space-y-2">
+                                    <div className="p-2 rounded bg-cyan-500/5 border border-cyan-500/20 flex items-center justify-between">
+                                      <span className="text-[9px] font-black uppercase text-cyan-400/60 tracking-wider">
+                                        Amaldiçoar Arma como ação de movimento (+1 PE):
+                                      </span>
+                                      <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={useLaminaMaldita ?? false}
+                                          onChange={(e) =>
+                                            onToggleLaminaMaldita?.(e.target.checked)
+                                          }
+                                          className="sr-only peer"
+                                        />
+                                        <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600" />
+                                      </label>
+                                    </div>
+                                    <div className="p-2 rounded bg-violet-500/5 border border-violet-500/20 flex items-center justify-between">
+                                      <span className="text-[9px] font-black uppercase text-violet-400/60 tracking-wider">
+                                        Usar Ocultismo para ataques:
+                                      </span>
+                                      <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={useOcultismoForAttacks ?? false}
+                                          onChange={(e) =>
+                                            onToggleOcultismoForAttacks?.(e.target.checked)
+                                          }
+                                          className="sr-only peer"
+                                        />
+                                        <div className="w-9 h-5 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600" />
+                                      </label>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              {progression.description && (
-                                <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                  {progression.description}
-                                </p>
+
+                              {/* Botão de configurar para A Favorita */}
+                              {title === 'A Favorita' && (
+                                <button
+                                  className="ml-2 p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg transition-colors shrink-0"
+                                  onClick={() => onOpenTrailConfigModal?.()}
+                                  title="Escolher arma favorita"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
                               )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -1944,6 +2437,94 @@ export default function CharacterTabsCard({
             })()}
           </div>
         </div>
+      )}
+
+      {/* ═══ MODAL: Poderes de Trilha ═══ */}
+      {characterTrail?.id && (
+        <BaseModal
+          isOpen={isTrailPowersOpen}
+          onClose={() => onTrailPowersOpenChange(false)}
+          maxWidth="max-w-2xl"
+          title={
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg p-2 bg-purple-500/20 text-purple-400">
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <div className="text-lg font-bold text-white">{characterTrail.name}</div>
+                <div className="text-xs text-zinc-500">Trilha de Classe</div>
+              </div>
+            </div>
+          }
+        >
+          {(() => {
+            const allAbilities = [
+              ...currentTrailAbilities.map((p: any) => ({ ...p, unlocked: true })),
+              ...futureTrailAbilities.map((p: any) => ({ ...p, unlocked: false })),
+            ].sort((a: any, b: any) => a.nex - b.nex)
+
+            return (
+              <div className="flex flex-col gap-4">
+                {/* Descrição da trilha */}
+                {characterTrail.description && (
+                  <p className="text-sm text-zinc-400 leading-relaxed">{characterTrail.description}</p>
+                )}
+
+                {/* Badges de NEX */}
+                <div className="flex flex-wrap gap-2">
+                  {allAbilities.map((p: any) => (
+                    <span
+                      key={p.id}
+                      className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${
+                        p.unlocked
+                          ? 'bg-purple-500/10 text-purple-400 ring-purple-500/30'
+                          : 'bg-zinc-800/50 text-zinc-500 ring-zinc-700/50'
+                      }`}
+                    >
+                      NEX {p.nex}% — {p.title}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Lista expandida */}
+                <div className="flex flex-col gap-3 border-t border-zinc-800 pt-4">
+                  {allAbilities.map((p: any) => (
+                    <div
+                      key={p.id}
+                      className={`rounded-lg p-3 flex flex-col gap-1 ${
+                        p.unlocked
+                          ? 'bg-purple-500/10 border border-purple-500/20'
+                          : 'bg-zinc-900/60 border border-zinc-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`text-xs font-bold uppercase tracking-wide ${
+                            p.unlocked ? 'text-purple-400' : 'text-zinc-500'
+                          }`}
+                        >
+                          NEX {p.nex}%
+                        </span>
+                        {p.unlocked && (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 rounded px-1.5 py-0.5">
+                            <Check size={9} strokeWidth={3} />
+                            DESBLOQUEADO
+                          </span>
+                        )}
+                      </div>
+                      <h4 className={`text-sm font-bold ${ p.unlocked ? 'text-white' : 'text-zinc-300' }`}>
+                        {p.title}
+                      </h4>
+                      {p.description && (
+                        <p className="text-xs text-zinc-400 leading-relaxed">{p.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+        </BaseModal>
       )}
     </section>
   )

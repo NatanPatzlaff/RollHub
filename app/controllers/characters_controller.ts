@@ -859,8 +859,12 @@ export default class CharactersController {
       character.originId = originId
     }
 
-    // If class changed, reset chosen abilities and update mandatory ones
+    // If class changed, reset chosen abilities, trail, and update mandatory ones
     if (classId && classId !== oldClassId) {
+      // Remove trail (pertence à classe anterior)
+      character.trailId = null
+      character.trailConfig = {}
+
       // Delete all chosen abilities (non-mandatory) from old class
       const oldAbilities = await CharacterClassAbility.query()
         .where('characterId', character.id)
@@ -966,7 +970,7 @@ export default class CharactersController {
       .firstOrFail()
 
     // Get config from request
-    const config = request.only(['selectedSkills'])
+    const config = request.only(['selectedSkills', 'ritualName', 'element', 'favoriteWeapon'])
 
     // Validate that it's not Luta or Pontaria
     if (config.selectedSkills && Array.isArray(config.selectedSkills)) {
@@ -1425,6 +1429,28 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
+  async updateTrailConfig({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const character = await Character.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    const incomingConfig = request.only([
+      'favoriteWeapon',
+      'useFlagelo',
+      'useLaminaMaldita',
+      'useOcultismoForAttacks',
+    ])
+
+    // Mescla com a config existente para não perder dados
+    const existing = character.trailConfig || {}
+    character.trailConfig = { ...existing, ...incomingConfig }
+    await character.save()
+
+    return response.redirect().back()
+  }
+
   async addItem({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
@@ -1497,6 +1523,21 @@ export default class CharactersController {
       'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
     }
 
+    // Calcula redução de categoria para arma favorita (trilha Aniquilador)
+    const favoriteWeaponName = (character.trailConfig as any)?.favoriteWeapon || null
+    let favoriteWeaponCatReduction = 0
+    if (favoriteWeaponName && character.trail?.name === 'Aniquilador') {
+      const trailProgs = await TrailProgression.query()
+        .where('trailId', character.trailId!)
+        .where('nex', '<=', (character as any).nex || 0)
+        .orderBy('nex', 'asc')
+      for (const p of trailProgs) {
+        if (p.title === 'Máquina de Matar') { favoriteWeaponCatReduction = 3; break }
+        if (p.title === 'Técnica Secreta') { favoriteWeaponCatReduction = 2 }
+        if (p.title === 'A Favorita' && favoriteWeaponCatReduction < 1) { favoriteWeaponCatReduction = 1 }
+      }
+    }
+
     const [weaponsCats, protectionsCats, generalCats, cursedCats] = await Promise.all([
       db
         .from('character_weapons')
@@ -1512,16 +1553,18 @@ export default class CharactersController {
           'character_weapon_modifications.modification_id',
           'weapon_modifications.id'
         )
-        .select('character_weapons.id', 'weapons.category as base_category')
+        .select('character_weapons.id', 'weapons.category as base_category', 'weapons.name as weapon_name')
         .sum('weapon_modifications.category as mods_category')
-        .groupBy('character_weapons.id', 'weapons.category')
+        .groupBy('character_weapons.id', 'weapons.category', 'weapons.name')
         .then((rows) =>
           rows.map((r) => {
             const base =
               typeof r.base_category === 'string'
                 ? ['I', 'II', 'III', 'IV', 'V'].indexOf(r.base_category) + 1
                 : Number(r.base_category || 0)
-            return base + Number(r.mods_category || 0)
+            // Aplica redução de categoria da arma favorita no TOTAL (base + mods)
+            const reduction = (favoriteWeaponName && r.weapon_name === favoriteWeaponName) ? favoriteWeaponCatReduction : 0
+            return Math.max(0, base + Number(r.mods_category || 0) - reduction)
           })
         ),
       db
@@ -1567,9 +1610,13 @@ export default class CharactersController {
         })
       }
 
-      if (!checkCategoryLimit(weapon.category)) {
+      // Aplica redução de categoria da arma favorita (Aniquilador) antes de validar
+      const effWeaponCat = (favoriteWeaponName && weapon.name === favoriteWeaponName)
+        ? Math.max(0, weapon.category - favoriteWeaponCatReduction)
+        : weapon.category
+      if (effWeaponCat > 0 && !checkCategoryLimit(effWeaponCat)) {
         return response.badRequest({
-          error: `Limite de itens de Categoria ${weapon.category} atingido para a patente ${character.rank || 'Recruta'}.`,
+          error: `Limite de itens de Categoria ${effWeaponCat} atingido para a patente ${character.rank || 'Recruta'}.`,
         })
       }
 
@@ -1856,6 +1903,72 @@ export default class CharactersController {
 
     if (existing) {
       return response.badRequest({ error: 'Modificação já aplicada' })
+    }
+
+    // Validação de categoria — aplica redução da arma favorita (Aniquilador)
+    const modification = await db.from('weapon_modifications').where('id', modificationId).first()
+    if (!modification) {
+      return response.notFound({ error: 'Modificação não encontrada' })
+    }
+
+    // Busca a arma base para obter categoria e nome
+    const weaponData = await db.from('weapons').where('id', characterWeapon.weapon_id).first()
+    const rawBase = weaponData
+      ? (typeof weaponData.category === 'string'
+          ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weaponData.category) + 1
+          : Number(weaponData.category || 0))
+      : 0
+
+    // Calcula redução de categoria da arma favorita (Aniquilador)
+    const charWithTrail = await Character.query()
+      .where('id', character.id)
+      .preload('trail')
+      .firstOrFail()
+    const favWeapon = (charWithTrail.trailConfig as any)?.favoriteWeapon || null
+    let catReduction = 0
+    if (favWeapon && weaponData?.name === favWeapon && charWithTrail.trail?.name === 'Aniquilador') {
+      const progs = await TrailProgression.query()
+        .where('trailId', charWithTrail.trailId!)
+        .where('nex', '<=', (charWithTrail as any).nex || 0)
+        .orderBy('nex', 'asc')
+      for (const p of progs) {
+        if (p.title === 'Máquina de Matar') { catReduction = 3; break }
+        if (p.title === 'Técnica Secreta') { catReduction = 2 }
+        if (p.title === 'A Favorita' && catReduction < 1) { catReduction = 1 }
+      }
+    }
+
+    // Soma das mods já aplicadas
+    const currentMods = await db
+      .from('character_weapon_modifications')
+      .where('character_weapon_id', characterWeapon.id)
+      .leftJoin('weapon_modifications', 'character_weapon_modifications.modification_id', 'weapon_modifications.id')
+      .sum('weapon_modifications.category as total')
+      .first()
+    const currentModSum = Number(currentMods?.total || 0)
+
+    // Aplica redução no TOTAL (base + mods existentes + nova mod)
+    const newFinalCat = Math.max(0, rawBase + currentModSum + Number(modification.category || 0) - catReduction)
+    if (newFinalCat > 4) {
+      return response.badRequest({ error: `Categoria resultante (${newFinalCat}) excede o máximo permitido (IV).` })
+    }
+
+    // Valida limites de patente
+    if (newFinalCat > 0) {
+      const RANK_LIMITS_MOD: Record<string, Record<number, number>> = {
+        'Recruta': { 1: 2, 2: 0, 3: 0, 4: 0 },
+        'Operador': { 1: 3, 2: 1, 3: 0, 4: 0 },
+        'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
+        'Oficial de Operações': { 1: 5, 2: 3, 3: 2, 4: 1 },
+        'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
+      }
+      const rankName = charWithTrail.rank || 'Recruta'
+      const limit = RANK_LIMITS_MOD[rankName]?.[newFinalCat] ?? 0
+      if (limit <= 0) {
+        return response.badRequest({
+          error: `Patente ${rankName} não permite itens de Categoria ${['I','II','III','IV'][newFinalCat - 1]}.`,
+        })
+      }
     }
 
     const now = new Date().toISOString()

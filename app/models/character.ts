@@ -41,6 +41,12 @@ export default class Character extends BaseModel {
   @column()
   declare rank: string
 
+  @column({
+    prepare: (value: any) => JSON.stringify(value),
+    consume: (value: any) => (typeof value === 'string' ? JSON.parse(value) : value || {}),
+  })
+  declare trailConfig: Record<string, any>
+
   @column()
   declare xp: number
 

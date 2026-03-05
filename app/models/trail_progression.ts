@@ -25,7 +25,16 @@ export default class TrailProgression extends BaseModel {
   @column()
   declare referenceId: number | null
 
-  @column({ prepare: (value: any) => JSON.stringify(value) })
+  @column({
+    prepare: (value: any) => (value ? JSON.stringify(value) : null),
+    consume: (value: any) => {
+      if (!value) return null
+      if (typeof value === 'string') {
+        try { return JSON.parse(value) } catch { return null }
+      }
+      return value
+    },
+  })
   declare effects: any | null
 
   @column.dateTime({ autoCreate: true })
