@@ -328,14 +328,14 @@ export default function CharacterTabsCard({
     const damageDice: string | undefined =
       version === 'discente'
         ? ritual.discenteDamage ||
+        parseDamageDice(versionText) ||
+        parseDamageDice(ritual.description || '') ||
+        undefined
+        : version === 'verdadeiro'
+          ? ritual.verdadeiroDamage ||
           parseDamageDice(versionText) ||
           parseDamageDice(ritual.description || '') ||
           undefined
-        : version === 'verdadeiro'
-          ? ritual.verdadeiroDamage ||
-            parseDamageDice(versionText) ||
-            parseDamageDice(ritual.description || '') ||
-            undefined
           : ritual.normalDamage || parseDamageDice(ritual.description || '') || undefined
 
     // Delegate rolling + 3D animation to the dice bandeja; apply game effects in the callback
@@ -397,11 +397,10 @@ export default function CharacterTabsCard({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-5 py-3 border-b-2 whitespace-nowrap transition-all duration-200 font-medium ${
-                isActive
-                  ? 'border-orange-500 text-orange-500'
-                  : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
-              }`}
+              className={`flex items-center gap-2 px-5 py-3 border-b-2 whitespace-nowrap transition-all duration-200 font-medium ${isActive
+                ? 'border-orange-500 text-orange-500'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                }`}
             >
               <Circle
                 className={`w-2 h-2 fill-current ${isActive ? 'text-orange-500' : 'text-zinc-600'}`}
@@ -444,13 +443,12 @@ export default function CharacterTabsCard({
               </span>
               <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    inventoryCapacity.used > inventoryCapacity.maxCapacity
-                      ? 'bg-red-500'
-                      : inventoryCapacity.isOverloaded
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
-                  }`}
+                  className={`h-full rounded-full transition-all duration-500 ${inventoryCapacity.used > inventoryCapacity.maxCapacity
+                    ? 'bg-red-500'
+                    : inventoryCapacity.isOverloaded
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                    }`}
                   style={{
                     width: `${Math.min((inventoryCapacity.used / inventoryCapacity.limit) * 100, 100)}%`,
                   }}
@@ -497,9 +495,8 @@ export default function CharacterTabsCard({
               return (
                 <div
                   key={cat}
-                  className={`flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full ${
-                    isEmpty ? 'text-zinc-500' : isFull ? 'text-red-400' : 'text-zinc-400'
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full ${isEmpty ? 'text-zinc-500' : isFull ? 'text-red-400' : 'text-zinc-400'
+                    }`}
                 >
                   {!isEmpty && (
                     <div
@@ -571,75 +568,74 @@ export default function CharacterTabsCard({
                         <div className="font-semibold text-zinc-200 text-sm">{item.name}</div>
                         <div className="text-[11px] text-zinc-500">{item.desc}</div>
                         {item.type === 'Arma' && (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {/* Badge de categoria com redução da arma favorita */}
-                              {(item as any).isFavoriteWeapon && (item as any).categoryReduction > 0 ? (
-                                <div className="flex items-center gap-1">
-                                  <div className="px-1.5 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-[9px] text-amber-400 font-bold uppercase tracking-tight flex items-center gap-1">
-                                    <span>★</span>
-                                    <span className="line-through text-zinc-500">
-                                      CAT {['0', 'I', 'II', 'III', 'IV'][(item as any).baseCategory] || (item as any).baseCategory}
-                                    </span>
-                                    <span>→</span>
-                                    <span>
-                                      CAT {item.calculatedCategory != null && item.calculatedCategory > 0
-                                        ? (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory)
-                                        : '0'}
-                                    </span>
-                                  </div>
-                                  <div className="px-1 py-0.5 rounded text-[8px] text-amber-500/70 font-medium">
-                                    −{['I','II','III'][(item as any).categoryReduction - 1]}
-                                  </div>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {/* Badge de categoria com redução da arma favorita */}
+                            {(item as any).isFavoriteWeapon && (item as any).categoryReduction > 0 ? (
+                              <div className="flex items-center gap-1">
+                                <div className="px-1.5 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-[9px] text-amber-400 font-bold uppercase tracking-tight flex items-center gap-1">
+                                  <span>★</span>
+                                  <span className="line-through text-zinc-500">
+                                    CAT {['0', 'I', 'II', 'III', 'IV'][(item as any).baseCategory] || (item as any).baseCategory}
+                                  </span>
+                                  <span>→</span>
+                                  <span>
+                                    CAT {item.calculatedCategory != null && item.calculatedCategory > 0
+                                      ? (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][item.calculatedCategory - 1] || item.calculatedCategory)
+                                      : '0'}
+                                  </span>
                                 </div>
-                              ) : item.calculatedCategory && item.calculatedCategory > 0 ? (
-                                <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-300 font-bold uppercase tracking-tight">
-                                  CAT{' '}
-                                  {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][
-                                    item.calculatedCategory - 1
-                                  ] || item.calculatedCategory}
+                                <div className="px-1 py-0.5 rounded text-[8px] text-amber-500/70 font-medium">
+                                  −{['I', 'II', 'III'][(item as any).categoryReduction - 1]}
                                 </div>
-                              ) : (
-                                <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-500 font-bold uppercase tracking-tight">
-                                  CAT 0
-                                </div>
-                              )}
-                              {item.modifications?.map((mod: any) => {
-                                const isCurse = mod.type === 'Maldição'
-                                const elementColor =
-                                  mod.element === 'Sangue'
-                                    ? 'text-red-400'
-                                    : mod.element === 'Morte'
-                                      ? 'text-zinc-400'
-                                      : mod.element === 'Energia'
-                                        ? 'text-purple-400'
-                                        : mod.element === 'Conhecimento'
-                                          ? 'text-amber-400'
-                                          : 'text-red-400'
-                                const elementBg =
-                                  mod.element === 'Sangue'
-                                    ? 'bg-red-500/10 border-red-500/20'
-                                    : mod.element === 'Morte'
-                                      ? 'bg-zinc-500/10 border-zinc-500/20'
-                                      : mod.element === 'Energia'
-                                        ? 'bg-purple-500/10 border-purple-500/20'
-                                        : mod.element === 'Conhecimento'
-                                          ? 'bg-amber-500/10 border-amber-500/20'
-                                          : 'bg-red-500/10 border-red-500/20'
-                                return (
-                                  <div
-                                    key={mod.id}
-                                    className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-tight ${
-                                      isCurse
-                                        ? `${elementBg} ${elementColor}`
-                                        : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                              </div>
+                            ) : item.calculatedCategory && item.calculatedCategory > 0 ? (
+                              <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-300 font-bold uppercase tracking-tight">
+                                CAT{' '}
+                                {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][
+                                  item.calculatedCategory - 1
+                                ] || item.calculatedCategory}
+                              </div>
+                            ) : (
+                              <div className="px-1.5 py-0.5 rounded border bg-zinc-800/50 border-zinc-700/50 text-[9px] text-zinc-500 font-bold uppercase tracking-tight">
+                                CAT 0
+                              </div>
+                            )}
+                            {item.modifications?.map((mod: any) => {
+                              const isCurse = mod.type === 'Maldição'
+                              const elementColor =
+                                mod.element === 'Sangue'
+                                  ? 'text-red-400'
+                                  : mod.element === 'Morte'
+                                    ? 'text-zinc-400'
+                                    : mod.element === 'Energia'
+                                      ? 'text-purple-400'
+                                      : mod.element === 'Conhecimento'
+                                        ? 'text-amber-400'
+                                        : 'text-red-400'
+                              const elementBg =
+                                mod.element === 'Sangue'
+                                  ? 'bg-red-500/10 border-red-500/20'
+                                  : mod.element === 'Morte'
+                                    ? 'bg-zinc-500/10 border-zinc-500/20'
+                                    : mod.element === 'Energia'
+                                      ? 'bg-purple-500/10 border-purple-500/20'
+                                      : mod.element === 'Conhecimento'
+                                        ? 'bg-amber-500/10 border-amber-500/20'
+                                        : 'bg-red-500/10 border-red-500/20'
+                              return (
+                                <div
+                                  key={mod.id}
+                                  className={`px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-tight ${isCurse
+                                    ? `${elementBg} ${elementColor}`
+                                    : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
                                     }`}
-                                  >
-                                    {mod.name}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
+                                >
+                                  {mod.name}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -655,11 +651,10 @@ export default function CharacterTabsCard({
                               e.stopPropagation()
                               onEquipItem(item.id, item.equipped)
                             }}
-                            className={`relative px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all duration-300 border focus:outline-none min-w-[90px] ${
-                              item.equipped
-                                ? 'bg-amber-500 border-amber-500 text-amber-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                                : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/60'
-                            }`}
+                            className={`relative px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all duration-300 border focus:outline-none min-w-[90px] ${item.equipped
+                              ? 'bg-amber-500 border-amber-500 text-amber-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                              : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/60'
+                              }`}
                           >
                             {item.equipped ? 'EQUIPADO' : 'EQUIPAR'}
                           </m.button>
@@ -709,7 +704,7 @@ export default function CharacterTabsCard({
                               return calcCat
                             })(),
                             extra: (item as any).isFavoriteWeapon && (item as any).categoryReduction > 0
-                              ? ` (★ −${['I','II','III'][(item as any).categoryReduction - 1]})`
+                              ? ` (★ −${['I', 'II', 'III'][(item as any).categoryReduction - 1]})`
                               : '',
                           },
                           { label: 'Alcance', value: item.range ?? '—' },
@@ -914,7 +909,7 @@ export default function CharacterTabsCard({
                         ) &&
                         pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) &&
                         calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) <=
-                          Math.floor(nex / 5) && (
+                        Math.floor(nex / 5) && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -939,7 +934,7 @@ export default function CharacterTabsCard({
                         ) &&
                         pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) &&
                         calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) <=
-                          Math.floor(nex / 5) && (
+                        Math.floor(nex / 5) && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1082,11 +1077,10 @@ export default function CharacterTabsCard({
                 {activeAbilityBuffs.map((buff) => (
                   <div
                     key={buff.id}
-                    className={`flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full border text-[10px] font-medium ${
-                      buff.source === 'trail'
-                        ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
-                        : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                    }`}
+                    className={`flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full border text-[10px] font-medium ${buff.source === 'trail'
+                      ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                      : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                      }`}
                   >
                     <span>{buff.effects.effect_label || buff.abilityName}</span>
                     <span className="text-zinc-600">
@@ -1261,28 +1255,28 @@ export default function CharacterTabsCard({
 
                     const actionBadge = isReaction
                       ? {
-                          label: 'Reação',
-                          color: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-                        }
+                        label: 'Reação',
+                        color: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                      }
                       : desc.toLowerCase().includes('ação completa')
                         ? {
-                            label: 'Ação Completa',
-                            color: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-                          }
+                          label: 'Ação Completa',
+                          color: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+                        }
                         : desc.toLowerCase().includes('ação de movimento')
                           ? {
-                              label: 'Ação de Mov.',
-                              color: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
-                            }
+                            label: 'Ação de Mov.',
+                            color: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+                          }
                           : desc.toLowerCase().includes('ação livre')
                             ? {
-                                label: 'Ação Livre',
-                                color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-                              }
+                              label: 'Ação Livre',
+                              color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+                            }
                             : {
-                                label: 'Ação Padrão',
-                                color: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
-                              }
+                              label: 'Ação Padrão',
+                              color: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+                            }
 
                     const abilityName = ability.classAbility?.name || 'Habilidade Sem Nome'
                     const peCostNum = peCost ? Number(peCost) : 0
@@ -1352,11 +1346,10 @@ export default function CharacterTabsCard({
                                     ? 'PE insuficiente'
                                     : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
                               }
-                              className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                                canUseAbility
-                                  ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
-                                  : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
-                              }`}
+                              className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${canUseAbility
+                                ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
+                                : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                }`}
                             >
                               {isLimitReached ? 'Usado' : 'Usar'}
                             </button>
@@ -1421,100 +1414,99 @@ export default function CharacterTabsCard({
 
                         const actionBadge = isReaction
                           ? {
-                              label: 'Reação',
-                              color: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-                            }
+                            label: 'Reação',
+                            color: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                          }
                           : desc.toLowerCase().includes('ação completa')
                             ? {
-                                label: 'Ação Completa',
-                                color: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-                              }
+                              label: 'Ação Completa',
+                              color: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+                            }
                             : desc.toLowerCase().includes('ação de movimento')
                               ? {
-                                  label: 'Ação de Mov.',
-                                  color: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
-                                }
+                                label: 'Ação de Mov.',
+                                color: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+                              }
                               : {
-                                  label: 'Ação Padrão',
-                                  color: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
-                                }
+                                label: 'Ação Padrão',
+                                color: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+                              }
 
                         return (() => {
-                            const peCostNum = peCost ? Number(peCost) : 0
-                            const usesPerSceneNum = usesPerScene ? Number(usesPerScene) : null
-                            const usesThisScene = abilityUsesThisScene[prog.title] ?? 0
-                            const isLimitReached = usesPerSceneNum !== null && usesThisScene >= usesPerSceneNum
-                            const canUseTrail = !isLimitReached && pe >= peCostNum
-                            return (
-                              <div
-                                key={idx}
-                                className="px-4 py-3 rounded-lg bg-zinc-950/60 border border-purple-500/20 hover:border-purple-500/40 transition-all"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                                      <span className="font-semibold text-sm text-purple-300">
-                                        {prog.title}
-                                      </span>
-                                      <span
-                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${actionBadge.color}`}
-                                      >
-                                        {actionBadge.label}
-                                      </span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                      {peCost && (
-                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                                          {peCost} PE
-                                        </span>
-                                      )}
-                                      {usesPerRound && (
-                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
-                                          {usesPerRound}x/rodada
-                                        </span>
-                                      )}
-                                      {usesPerScene && (
-                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
-                                          {usesThisScene}/{usesPerScene}x/cena
-                                        </span>
-                                      )}
-                                      {usesPerMission && (
-                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
-                                          {usesPerMission}x/missão
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-zinc-500 text-[10px] leading-relaxed mt-1.5 line-clamp-2">
-                                      {desc}
-                                    </p>
-                                  </div>
-                                  {onActivateAbility && (
-                                    <button
-                                      disabled={!canUseTrail}
-                                      onClick={() =>
-                                        canUseTrail &&
-                                        onActivateAbility(prog.title, 'trail', peCostNum, effects)
-                                      }
-                                      title={
-                                        isLimitReached
-                                          ? 'Limite de usos atingido'
-                                          : !canUseTrail
-                                            ? 'PE insuficiente'
-                                            : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
-                                      }
-                                      className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                                        canUseTrail
-                                          ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-purple-500/40'
-                                          : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
-                                      }`}
+                          const peCostNum = peCost ? Number(peCost) : 0
+                          const usesPerSceneNum = usesPerScene ? Number(usesPerScene) : null
+                          const usesThisScene = abilityUsesThisScene[prog.title] ?? 0
+                          const isLimitReached = usesPerSceneNum !== null && usesThisScene >= usesPerSceneNum
+                          const canUseTrail = !isLimitReached && pe >= peCostNum
+                          return (
+                            <div
+                              key={idx}
+                              className="px-4 py-3 rounded-lg bg-zinc-950/60 border border-purple-500/20 hover:border-purple-500/40 transition-all"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <span className="font-semibold text-sm text-purple-300">
+                                      {prog.title}
+                                    </span>
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${actionBadge.color}`}
                                     >
-                                      {isLimitReached ? 'Usado' : 'Usar'}
-                                    </button>
-                                  )}
+                                      {actionBadge.label}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                    {peCost && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                                        {peCost} PE
+                                      </span>
+                                    )}
+                                    {usesPerRound && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                        {usesPerRound}x/rodada
+                                      </span>
+                                    )}
+                                    {usesPerScene && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                        {usesThisScene}/{usesPerScene}x/cena
+                                      </span>
+                                    )}
+                                    {usesPerMission && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                        {usesPerMission}x/missão
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-zinc-500 text-[10px] leading-relaxed mt-1.5 line-clamp-2">
+                                    {desc}
+                                  </p>
                                 </div>
+                                {onActivateAbility && (
+                                  <button
+                                    disabled={!canUseTrail}
+                                    onClick={() =>
+                                      canUseTrail &&
+                                      onActivateAbility(prog.title, 'trail', peCostNum, effects)
+                                    }
+                                    title={
+                                      isLimitReached
+                                        ? 'Limite de usos atingido'
+                                        : !canUseTrail
+                                          ? 'PE insuficiente'
+                                          : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
+                                    }
+                                    className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${canUseTrail
+                                      ? 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-purple-500/40'
+                                      : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                      }`}
+                                  >
+                                    {isLimitReached ? 'Usado' : 'Usar'}
+                                  </button>
+                                )}
                               </div>
-                            )
-                          })()
+                            </div>
+                          )
+                        })()
                       })}
                     </div>
                   </div>
@@ -1629,11 +1621,10 @@ export default function CharacterTabsCard({
                                       ? 'PE insuficiente'
                                       : `Usar${parsedPe > 0 ? ` (${parsedPe} PE)` : ''}`
                                 }
-                                className={`ml-2 shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                                  canUseOrigin
-                                    ? activeColor
-                                    : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
-                                }`}
+                                className={`ml-2 shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${canUseOrigin
+                                  ? activeColor
+                                  : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                  }`}
                               >
                                 {isOriginLimitReached ? 'Usado' : `Usar${parsedPe > 0 ? ` (${parsedPe} PE)` : ''}`}
                               </button>
@@ -1667,26 +1658,26 @@ export default function CharacterTabsCard({
             <div className="flex items-center gap-3">
               {/* Poderes de Trilha (modal) */}
               {characterTrail?.id && (currentTrailAbilities.length > 0 || futureTrailAbilities.length > 0) && (
-                  <button
-                    onClick={() => onTrailPowersOpenChange(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Poderes de Trilha
-                  </button>
-                )}
-                {/* Trocar Trilha (se já tem uma) */}
-                {characterTrail && (
-                  <button
-                    onClick={onOpenTrailModal}
-                    className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-md text-sm font-medium transition-colors"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    Trocar Trilha
-                  </button>
-                )}
-                {/* Escolher Trilha (se não tem nenhuma) */}
-                {hasNoTrail && classTrails.length > 0 && (
+                <button
+                  onClick={() => onTrailPowersOpenChange(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Poderes de Trilha
+                </button>
+              )}
+              {/* Trocar Trilha (se já tem uma) */}
+              {characterTrail && (
+                <button
+                  onClick={onOpenTrailModal}
+                  className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-md text-sm font-medium transition-colors"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  Trocar Trilha
+                </button>
+              )}
+              {/* Escolher Trilha (se não tem nenhuma) */}
+              {hasNoTrail && classTrails.length > 0 && (
                 <button
                   onClick={onOpenTrailModal}
                   className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
@@ -1985,13 +1976,13 @@ export default function CharacterTabsCard({
                                     ability.classAbility?.name === 'Ritual Predileto' ||
                                     ability.classAbility?.name === 'Mestre em Elemento' ||
                                     ability.classAbility?.name === 'Especialista em Elemento') && (
-                                    <button
-                                      className="p-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/40 rounded-lg transition-colors"
-                                      onClick={() => onOpenAbilityConfig(ability)}
-                                    >
-                                      <Edit3 size={14} />
-                                    </button>
-                                  )}
+                                      <button
+                                        className="p-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/40 rounded-lg transition-colors"
+                                        onClick={() => onOpenAbilityConfig(ability)}
+                                      >
+                                        <Edit3 size={14} />
+                                      </button>
+                                    )}
                                   <button
                                     className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg transition-colors"
                                     onClick={() => {
@@ -2163,12 +2154,21 @@ export default function CharacterTabsCard({
                         // Helper para filtrar descrição do Monstruoso
                         const filterDescription = (text: string) => {
                           if (!isMonstruoso || !chosenElement || !text) return text
+
                           const lines = text.split('\n')
                           const filteredLines = lines.filter((line) => {
                             const trimmed = line.trim()
-                            if (trimmed.startsWith('* ')) {
-                              return trimmed.toUpperCase().includes(chosenElement.toUpperCase())
+
+                            // Se a linha começa com * é uma opção de afinidade.
+                            // Só manteremos se a linha contiver o nome do elemento escolhido
+                            if (trimmed.startsWith('*')) {
+                              // Ex: "* SANGUE (Beber sangue humano)..."
+                              const normalizedLine = trimmed.toUpperCase()
+                              const normalizedElement = chosenElement.toUpperCase()
+                              return normalizedLine.includes(normalizedElement)
                             }
+
+                            // Mantém o resto do texto (a descrição geral da habilidade)
                             return true
                           })
                           return filteredLines.join('\n')
@@ -2200,7 +2200,7 @@ export default function CharacterTabsCard({
                             !isMoveAction)
 
                         // Detecta escolha permanente
-                        const isPermanentChoice = title === 'A Favorita' || (isMonstruoso && progression.nex === 10 && !chosenElement)
+                        const isPermanentChoice = title === 'A Favorita'
 
                         // Detecta toggle (modificador de comportamento)
                         const isToggle = title === 'Poder do Flagelo' || title === 'Lâmina Maldita'
@@ -2282,21 +2282,6 @@ export default function CharacterTabsCard({
                                     </span>
                                   )}
                                 </div>
-                                {isMonstruoso && progression.nex === 10 && !chosenElement && (
-                                  <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3">
-                                    <p className="text-xs text-purple-400 leading-relaxed font-medium">
-                                      Você ainda não escolheu sua <span className="font-bold uppercase">Afinidade Paranormal</span>.
-                                      Como Monstruoso, esta escolha define sua mutação e resistências iniciais.
-                                    </p>
-                                    <button
-                                      onClick={onOpenAffinityModal}
-                                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-purple-900/40"
-                                    >
-                                      <Sparkles size={14} className="fill-current" />
-                                      Escolher Afinidade
-                                    </button>
-                                  </div>
-                                )}
 
                                 {description && (
                                   <p className="text-xs leading-relaxed opacity-80 whitespace-pre-line">
@@ -2522,11 +2507,10 @@ export default function CharacterTabsCard({
                   {allAbilities.map((p: any) => (
                     <span
                       key={p.id}
-                      className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${
-                        p.unlocked
-                          ? 'bg-purple-500/10 text-purple-400 ring-purple-500/30'
-                          : 'bg-zinc-800/50 text-zinc-500 ring-zinc-700/50'
-                      }`}
+                      className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset transition-colors ${p.unlocked
+                        ? 'bg-purple-500/10 text-purple-400 ring-purple-500/30'
+                        : 'bg-zinc-800/50 text-zinc-500 ring-zinc-700/50'
+                        }`}
                     >
                       NEX {p.nex}% — {p.title}
                     </span>
@@ -2538,17 +2522,15 @@ export default function CharacterTabsCard({
                   {allAbilities.map((p: any) => (
                     <div
                       key={p.id}
-                      className={`rounded-lg p-3 flex flex-col gap-1 ${
-                        p.unlocked
-                          ? 'bg-purple-500/10 border border-purple-500/20'
-                          : 'bg-zinc-900/60 border border-zinc-800'
-                      }`}
+                      className={`rounded-lg p-3 flex flex-col gap-1 ${p.unlocked
+                        ? 'bg-purple-500/10 border border-purple-500/20'
+                        : 'bg-zinc-900/60 border border-zinc-800'
+                        }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span
-                          className={`text-xs font-bold uppercase tracking-wide ${
-                            p.unlocked ? 'text-purple-400' : 'text-zinc-500'
-                          }`}
+                          className={`text-xs font-bold uppercase tracking-wide ${p.unlocked ? 'text-purple-400' : 'text-zinc-500'
+                            }`}
                         >
                           NEX {p.nex}%
                         </span>
@@ -2559,7 +2541,7 @@ export default function CharacterTabsCard({
                           </span>
                         )}
                       </div>
-                      <h4 className={`text-sm font-bold ${ p.unlocked ? 'text-white' : 'text-zinc-300' }`}>
+                      <h4 className={`text-sm font-bold ${p.unlocked ? 'text-white' : 'text-zinc-300'}`}>
                         {p.title}
                       </h4>
                       {p.description && (

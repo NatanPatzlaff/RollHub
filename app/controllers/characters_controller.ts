@@ -1028,36 +1028,44 @@ export default class CharactersController {
 
     // Find origin skill IDs
     const originSkillIds = new Set<number>()
-    for (const skillName of originSkillNames) {
-      const skill = await Skill.findBy('name', skillName)
-      if (skill) {
+    if (originSkillNames.length > 0) {
+      const originSkills = await Skill.query().whereIn('name', originSkillNames)
+      for (const skill of originSkills) {
         originSkillIds.add(skill.id)
       }
     }
 
     await db.transaction(async (trx) => {
       // 1. Delete all non-origin skills for this character
-      await CharacterSkill.query({ client: trx })
-        .where('characterId', character.id)
-        .whereNotIn('skillId', [...originSkillIds])
-        .delete()
+      const query = CharacterSkill.query({ client: trx }).where('characterId', character.id)
+      if (originSkillIds.size > 0) {
+        query.whereNotIn('skillId', [...originSkillIds])
+      }
+      await query.delete()
 
       // 2. Prepare all unique skill names to process
       // Deduplicate: a skill should only be processed once. 
       // If it's in veteranSkills, we give it 10. Otherwise if trained, 5.
-      const uniqueSkillNames = new Set([...trainedSkills, ...veteranSkills])
+      const uniqueSkillNames = Array.from(new Set([...trainedSkills, ...veteranSkills]))
 
-      for (const skillName of uniqueSkillNames) {
-        const skill = await Skill.findBy('name', skillName)
-        if (skill && !originSkillIds.has(skill.id)) {
-          const degree = veteranSkills.includes(skillName) ? 10 : 5
+      if (uniqueSkillNames.length > 0) {
+        const skills = await Skill.query({ client: trx }).whereIn('name', uniqueSkillNames)
 
-          // Since we deleted existing skills, we just create new ones
-          await CharacterSkill.create({
-            characterId: character.id,
-            skillId: skill.id,
-            trainingDegree: degree,
-          }, { client: trx })
+        const skillsToInsert = []
+
+        for (const skill of skills) {
+          if (!originSkillIds.has(skill.id)) {
+            const degree = veteranSkills.includes(skill.name) ? 10 : 5
+            skillsToInsert.push({
+              characterId: character.id,
+              skillId: skill.id,
+              trainingDegree: degree,
+            })
+          }
+        }
+
+        if (skillsToInsert.length > 0) {
+          await CharacterSkill.createMany(skillsToInsert, { client: trx })
         }
       }
     })
