@@ -202,6 +202,163 @@ export default class extends BaseSeeder {
           },
         ],
       },
+      {
+        name: 'Monstruoso',
+        description:
+          'ESPECIAL: Esta trilha usa a “Progressão de NEX” apresentada na regra opcional Nível de Experiência e Nível de Exposição. O personagem recebe todas as alterações apropriadas ao seu NEX descritas na progressão.',
+        progressions: [
+          {
+            nex: 10,
+            title: 'Ser Amaldiçoado',
+            description:
+              'Você se torna treinado em Ocultismo (se já for treinado, em vez disso recebe +2 nessa perícia). Escolha um elemento paranormal. Uma vez por dia, você precisa executar uma etapa ritualística desse elemento para receber bônus:\n' +
+              '* SANGUE (Beber sangue humano): Resistência a balístico e Sangue 5 e faro e, quando faz um contra-ataque bem-sucedido, soma seu Vigor na rolagem de dano, mas sofre –O em Ciências e Intuição.\n' +
+              '* MORTE (Inalar cinzas de mortos): Resistência a perfuração e Morte 5 e imunidade a fadiga e soma sua Força em seu total de pontos de vida, mas sofre –O em Diplomacia e Enganação.\n' +
+              '* CONHECIMENTO (Tatuar palavras que causam medo): Resistência a balístico e Conhecimento 5 e visão no escuro e soma seu Intelecto na Defesa, mas sofre –O em Atletismo e Acrobacia.\n' +
+              '* ENERGIA (Receber choques elétricos): Resistência a corte, eletricidade, fogo e Energia 5 e soma sua Agilidade na RD recebida por um bloqueio bem-sucedido, mas sofre –O em Investigação e Percepção.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 40,
+            title: 'Ser Macabro',
+            description:
+              'A resistência a dano aumenta para 10, e a penalidade em perícias aumenta para –2O. Efeitos adicionais:\n' +
+              '* SANGUE: Pode usar Força para calcular seus pontos de esforço. Pode gastar uma ação de movimento e 1 ou mais PE (limitado por sua Força) para recuperar 1d8 PV por PE gasto.\n' +
+              '* MORTE: Recebe +O em Intimidação e pode usar Vigor para calcular seus pontos de esforço. Morre se iniciar quatro turnos morrendo e não precisa comer/beber para viver.\n' +
+              '* CONHECIMENTO: Seu Intelecto aumenta em +1. Pode usar Intelecto para Enganação e para calcular pontos de esforço.\n' +
+              '* ENERGIA: Pode usar Agilidade para calcular pontos de esforço. Quando acerta um ataque corpo a corpo, pode gastar 1 ou mais PE (limitado por sua Agilidade) para causar +1d6 de dano de Energia por PE gasto.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 60,
+            title: 'Alteração Paranormal Física',
+            description:
+              'Seu corpo sofre mutações inescapáveis ligadas ao seu elemento.\n' +
+              '* SANGUE: Recebe +O em Sobrevivência e se torna imune a calor e frio extremos. Entretanto, não pode mais escolher 10 em testes.\n' +
+              '* MORTE: Recebe +O em Iniciativa e Reflexos, mas sofre –O em Diplomacia e Intuição.\n' +
+              '* CONHECIMENTO: Você passa a enxergar auras paranormais (efeito básico do ritual Terceiro Olho; se já o conhece, custo reduz em -1 PE). Entretanto, você se torna permanentemente ofuscado.\n' +
+              '* ENERGIA: Você pode conjurar Coincidência Forçada (se já conhece, custo -1 PE). No início de cada cena, role 1d6 na tabela de Caos.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 65,
+            title: 'Ser Assustador',
+            description:
+              'A RD elemental aumenta para 15, mas sua Presença é reduzida permanentemente em 1.\n' +
+              '* SANGUE: Tem 50% de chance de ignorar dano adicional de acerto crítico ou furtivo. Recebe uma arma natural de mordida (1d8, crítico x2, perfuração). Ao bater com outra arma, pode gastar 1 PE para ataque extra com mordida.\n' +
+              '* MORTE: No início de cada turno morrendo, pode fazer um teste de Vigor (DT 15) para acordar com 1 PV. Sempre que faz um acerto crítico ou reduz um inimigo a 0 PV, recupera 2 PE.\n' +
+              '* CONHECIMENTO: Pode deixar de ser treinado em uma perícia para receber dados de bônus iguais ao seu Intelecto em testes na cena.\n' +
+              '* ENERGIA: RD se aplica a químico. Pode extrair energia de fontes elétricas com ação de movimento para recuperar PE.',
+            type: 'FEATURE',
+          },
+          {
+            nex: 75,
+            title: 'Alteração e Punição Paranormal',
+            description:
+              'Você se torna permanentemente perturbado e perde suporte da Ordem.\n' +
+              '* SANGUE: Penalidade em perícias aumenta para –2O. Pode conjurar Aprimorar Físico apenas em si mesmo (se já conhece, -1 PE). Sofre –O em Ciências, Medicina e Tecnologia.\n' +
+              '* MORTE: Pode conjurar Velocidade Mortal (se já conhece, -1 PE). Penalidade de NEX 60% aumenta para –2O e se aplica também a Enganação e Intimidação.\n' +
+              '* CONHECIMENTO: Percebe perigos (efeito básico de Detecção de Ameaças; se já conhece, -1 PE). Penalidade de ofuscado aumenta para –2O.\n' +
+              '* ENERGIA: Pode conjurar Tela de Ruído (se já conhece, -1 PE). Voz vibra, comportamento caótico amplifica.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 90,
+            title: 'Alteração Extrema',
+            description:
+              '* SANGUE: Penalidade de NEX 75% aumenta para –2O. Pode conjurar Forma Monstruosa (se já conhece, -1 PE). Pode gastar +2 PE para eliminar as penalidades temporariamente.\n' +
+              '* MORTE: Não pode mais ser surpreendido e sabe o que todos com Iniciativa menor vão fazer. Perde 3 PE na 1ª interação social.\n' +
+              '* CONHECIMENTO: Quando não está no escuro, em vez de ofuscado fica cego. Pode conjurar Vidência sem superfície reflexiva (se já conhece, -1 PE).\n' +
+              '* ENERGIA: Pode conjurar Salto Fantasma (se já conhece, -1 PE). Não precisa falar para rituais e DT para resistir aumenta em +2 se digitar em dispositivo.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 99,
+            title: 'Ser Aterrorizante',
+            description:
+              'RD elemental aumenta para 20. Efeitos ritualísticos permanentes. Você é uma criatura paranormal. Sanidade reduzida a 1.\n' +
+              '* SANGUE: Intelecto –1, Força +1. Mordida recupera 5 PV. Aprende Forma Monstruosa.\n' +
+              '* MORTE: Presença –1, Vigor +1. Imunidade a Morte e imortal. Aprende Fim Inevitável.\n' +
+              '* CONHECIMENTO: Força –1, Intelecto +1. Percepção às Cegas e aprende ritual de 4º círculo de Conhecimento.\n' +
+              '* ENERGIA: Força –1, Agilidade +1. Paira a 1,5m, deslocamento 12m. Imune a agarrado/enredado. Aprende Deflagração de Energia.',
+            type: 'PASSIVE',
+          },
+        ],
+      },
+      {
+        name: 'Agente Secreto',
+        description:
+          'Indivíduos treinados para trabalhar sozinhos ou em pequenos grupos, operando de forma discreta, com documentos falsos e lábia afiada.',
+        progressions: [
+          {
+            nex: 10,
+            title: 'Carteirada',
+            description:
+              'Escolha Diplomacia ou Enganação para treinar (ou +2 se já treinado). Recebe documentos que fornecem privilégios jurídicos especiais, não ocupam espaço.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 40,
+            title: 'O Sorriso',
+            description:
+              'Recebe +2 em Diplomacia e Enganação. Quando falha numa dessas, gaste 2 PE para rolar de novo e deve aceitar o novo resultado. Uma vez por cena, teste Diplomacia para acalmar a si mesmo.',
+            type: 'FEATURE',
+            effects: { pe_cost: 2, reroll: ['Diplomacia', 'Enganação'] },
+          },
+          {
+            nex: 65,
+            title: 'Método Investigativo',
+            description:
+              'A urgência de qualquer cena de investigação aumenta 1 rodada. Pode gastar 2 PE (cumulativo) para transformar um evento de investigação em "sem evento".',
+            type: 'FEATURE',
+            effects: { pe_cost: 2 },
+          },
+          {
+            nex: 99,
+            title: 'Multifacetado',
+            description:
+              'Uma vez por missão, gaste 5 de Sanidade para receber todas as habilidades de NEX até 65% de uma trilha de combatente ou especialista à sua escolha até o fim da cena.',
+            type: 'FEATURE',
+            effects: { sanity_cost: 5 },
+          },
+        ],
+      },
+      {
+        name: 'Caçador',
+        description:
+          'Especialista em reunir informações, rastrear e extermimar criaturas do Outro Lado utilizando suas próprias fraquezas.',
+        progressions: [
+          {
+            nex: 10,
+            title: 'Rastrear o Paranormal',
+            description:
+              'Torna-se treinado em Sobrevivência. Pode usar essa perícia no lugar de Ocultismo para identificar criaturas, e no lugar de Investigação e Percepção para encontrar rastros de traços paranormais.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 40,
+            title: 'Estudar Fraquezas',
+            description:
+              'Em interlúdio, caso tenha uma pista da criatura, ganhe uma informação útil +1 em perícias contra o alvo específico.',
+            type: 'FEATURE',
+          },
+          {
+            nex: 65,
+            title: 'Atacar das Sombras',
+            description:
+              'Não sofre penalidade de Furtividade por mover deslocamento normal. Armas silenciosas reduzem a penalidade de Furtividade para -O ao bater. Visibilidade inicial sempre 1 ponto abaixo.',
+            type: 'PASSIVE',
+          },
+          {
+            nex: 99,
+            title: 'Estudar a Presa',
+            description:
+              'Transforma o ser alvo do Estudar Fraquezas em sua "presa". Ganha +O em perícias, +1 na margem de ameaça e multiplicador de crítico, além de RD 5 contra a presa.',
+            type: 'FEATURE',
+            effects: { threat_range: 1, critical_multiplier_bonus: 1, damage_reduction: 5 },
+          },
+        ],
+      },
     ]
 
     // Create trails and their progressions
@@ -231,7 +388,7 @@ export default class extends BaseSeeder {
     }
 
     console.log(
-      `✓ Seeded 5 Combatente trails with ${trails.reduce((acc, t) => acc + t.progressions.length, 0)} total progressions`
+      `✓ Seeded ${trails.length} Combatente trails with ${trails.reduce((acc, t) => acc + t.progressions.length, 0)} total progressions`
     )
   }
 }

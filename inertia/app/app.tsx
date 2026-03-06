@@ -3,6 +3,7 @@
 
 import '../css/app.css';
 import { HeroUIProvider } from "@heroui/react";
+import { LazyMotion, domAnimation } from 'framer-motion'
 import { createRoot } from 'react-dom/client';
 import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from '@adonisjs/inertia/helpers'
@@ -25,7 +26,9 @@ createInertiaApp({
 
     createRoot(el).render(
       <HeroUIProvider>
-        <App {...props} />
+        <LazyMotion features={domAnimation}>
+          <App {...props} />
+        </LazyMotion>
       </HeroUIProvider>
     );
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { router } from '@inertiajs/react'
 import { X, ChevronRight, ChevronLeft, Check } from 'lucide-react'
 import { getOriginIcon } from '../../utils/originIcons'
@@ -180,7 +180,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* backdrop */}
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -189,7 +189,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
       />
 
       {/* container do modal — largura máxima e altura auto para caber sem comprimir */}
-      <motion.div
+      <m.div
         initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.96, opacity: 0 }}
@@ -247,7 +247,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
         {/* ── CONTEÚDO ANIMADO ────────────────────────────────────────────── */}
         <div className="relative overflow-hidden flex-1 min-h-0">
           <AnimatePresence initial={false} custom={direction} mode="wait">
-            <motion.div
+            <m.div
               key={step}
               custom={direction}
               variants={variants}
@@ -273,7 +273,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                     </p>
                   </div>
 
-                  <motion.div
+                  <m.div
                     key={nex}
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
@@ -283,7 +283,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                     }`}
                   >
                     {nex}%
-                  </motion.div>
+                  </m.div>
 
                   <div className="w-full px-1">
                     <input
@@ -305,7 +305,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
 
                   {/* banner informativo quando NEX = 0 */}
                   {isMundano && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="w-full rounded-xl bg-amber-500/10 border border-amber-500/30 text-left overflow-hidden"
@@ -341,7 +341,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                           </p>
                         </div>
                       </div>
-                    </motion.div>
+                    </m.div>
                   )}
                 </div>
               )}
@@ -368,7 +368,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                     const isExpanded = expandedOrigin === origin.id
 
                     return (
-                      <motion.div
+                      <m.div
                         key={origin.id}
                         layout
                         onClick={() => setExpandedOrigin(isExpanded ? null : origin.id)}
@@ -408,7 +408,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
 
                         <AnimatePresence>
                           {isExpanded && (
-                            <motion.div
+                            <m.div
                               initial={{ opacity: 0, height: 0, marginTop: 0 }}
                               animate={{ opacity: 1, height: 'auto', marginTop: 10 }}
                               exit={{ opacity: 0, height: 0, marginTop: 0 }}
@@ -429,10 +429,10 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                                   <p className="leading-relaxed">{origin.abilityDescription}</p>
                                 </div>
                               )}
-                            </motion.div>
+                            </m.div>
                           )}
                         </AnimatePresence>
-                      </motion.div>
+                      </m.div>
                     )
                   }
 
@@ -604,7 +604,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                   </div>
                 </div>
               )}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
         </div>
 
@@ -673,7 +673,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
             )}
           </div>
         </div>
-      </motion.div>
+      </m.div>
     </div>
   )
 }

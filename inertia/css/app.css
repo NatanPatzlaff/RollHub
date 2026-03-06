@@ -1,150 +1,114 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Cinzel:wght@600;700;800&display=swap');
 
-@layer base {
-  :root {
-    --background: 220 20% 10%;
-    --foreground: 220 10% 92%;
+@import "tailwindcss";
 
-    --card: 220 18% 14%;
-    --card-foreground: 220 10% 92%;
+@source '../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
 
-    --popover: 220 18% 14%;
-    --popover-foreground: 220 10% 92%;
+@theme {
+  --color-background: hsl(220 20% 10%);
+  --color-foreground: hsl(220 10% 92%);
+  --color-card: hsl(220 18% 14%);
+  --color-card-foreground: hsl(220 10% 92%);
+  --color-popover: hsl(220 18% 14%);
+  --color-popover-foreground: hsl(220 10% 92%);
+  --color-primary: hsl(28 100% 50%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(220 16% 20%);
+  --color-secondary-foreground: hsl(220 10% 85%);
+  --color-muted: hsl(220 14% 18%);
+  --color-muted-foreground: hsl(220 10% 55%);
+  --color-accent: hsl(265 70% 55%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(220 14% 22%);
+  --color-input: hsl(220 14% 22%);
+  --color-ring: hsl(28 100% 50%);
+  --color-success: hsl(142 70% 45%);
+  --color-warning: hsl(38 92% 50%);
+  --color-info: hsl(210 80% 55%);
+  --radius: 0.75rem;
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Cinzel', serif;
+}
 
-    --primary: 28 100% 50%;
-    --primary-foreground: 0 0% 100%;
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
 
-    --secondary: 220 16% 20%;
-    --secondary-foreground: 220 10% 85%;
+h1, h2, h3 {
+  font-family: 'Cinzel', serif;
+}
 
-    --muted: 220 14% 18%;
-    --muted-foreground: 220 10% 55%;
-
-    --accent: 265 70% 55%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 220 14% 22%;
-    --input: 220 14% 22%;
-    --ring: 28 100% 50%;
-
-    --radius: 0.75rem;
-
-    --success: 142 70% 45%;
-    --warning: 38 92% 50%;
-    --info: 210 80% 55%;
+@keyframes rainbow {
+  0% {
+    color: #ef4444;
+    text-shadow: 0 0 10px #ef4444;
+  }
+  14% {
+    color: #f97316;
+    text-shadow: 0 0 10px #f97316;
+  }
+  28% {
+    color: #eab308;
+    text-shadow: 0 0 10px #eab308;
+  }
+  42% {
+    color: #22c55e;
+    text-shadow: 0 0 10px #22c55e;
+  }
+  57% {
+    color: #3b82f6;
+    text-shadow: 0 0 10px #3b82f6;
+  }
+  71% {
+    color: #6366f1;
+    text-shadow: 0 0 10px #6366f1;
+  }
+  85% {
+    color: #a855f7;
+    text-shadow: 0 0 10px #a855f7;
+  }
+  100% {
+    color: #ef4444;
+    text-shadow: 0 0 10px #ef4444;
   }
 }
 
-@layer base {
-  * {
-    border-color: hsl(var(--border));
-  }
-
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-    font-family: 'Inter', sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  h1, h2, h3 {
-    font-family: 'Cinzel', serif;
-  }
+.animate-rainbow {
+  animation: rainbow 0.5s linear infinite;
 }
 
-@layer utilities {
-    @keyframes rainbow {
-        0% {
-            color: #ef4444;
-            text-shadow: 0 0 10px #ef4444;
-        }
-
-        /* Red */
-        14% {
-            color: #f97316;
-            text-shadow: 0 0 10px #f97316;
-        }
-
-        /* Orange */
-        28% {
-            color: #eab308;
-            text-shadow: 0 0 10px #eab308;
-        }
-
-        /* Yellow */
-        42% {
-            color: #22c55e;
-            text-shadow: 0 0 10px #22c55e;
-        }
-
-        /* Green */
-        57% {
-            color: #3b82f6;
-            text-shadow: 0 0 10px #3b82f6;
-        }
-
-        /* Blue */
-        71% {
-            color: #6366f1;
-            text-shadow: 0 0 10px #6366f1;
-        }
-
-        /* Indigo */
-        85% {
-            color: #a855f7;
-            text-shadow: 0 0 10px #a855f7;
-        }
-
-        /* Violet */
-        100% {
-            color: #ef4444;
-            text-shadow: 0 0 10px #ef4444;
-        }
-
-        /* Red */
-    }
-
-    .animate-rainbow {
-        animation: rainbow 0.5s linear infinite;
-    }
+[data-slot="input"] {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
-@layer base {
-    [data-slot="input"] {
-        outline: none !important;
-        box-shadow: none !important;
-    }
+[data-slot="input"]:focus,
+[data-slot="input"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
 
-    [data-slot="input"]:focus,
-    [data-slot="input"]:focus-visible {
-        outline: none !important;
-        box-shadow: none !important;
-    }
+/* Scrollbar customizado - Invisível */
+.custom-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
 
-    /* Scrollbar customizado - Invisível */
-    .custom-scrollbar {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
+.custom-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 0;
-        height: 0;
-        display: none;
-    }
+.custom-scrollbar::-webkit-scrollbar-track {
+  display: none;
+}
 
-    .custom-scrollbar::-webkit-scrollbar-track {
-        display: none;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        display: none;
-    }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  display: none;
 }

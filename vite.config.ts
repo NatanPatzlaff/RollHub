@@ -3,9 +3,16 @@ import { getDirname } from '@adonisjs/core/helpers'
 import inertia from '@adonisjs/inertia/client'
 import react from '@vitejs/plugin-react'
 import adonisjs from '@adonisjs/vite/client'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [inertia({ ssr: { enabled: false } }), react(), adonisjs({ entrypoints: ['inertia/app/app.tsx'], reload: ['resources/views/**/*.edge'] })],
+  plugins: [tailwindcss(), inertia({ ssr: { enabled: false } }), react(), adonisjs({ entrypoints: ['inertia/app/app.tsx'], reload: ['resources/views/**/*.edge'] })],
+
+  server: {
+    watch: {
+      ignored: ['**/database.sqlite*'],
+    },
+  },
 
   /**
    * Define aliases for importing modules from

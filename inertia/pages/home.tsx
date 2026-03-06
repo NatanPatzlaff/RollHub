@@ -1,6 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import {
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter,
   Button, useDisclosure,
@@ -93,7 +93,7 @@ export default function Home({
 
           {/* ── Meus Personagens ─────────────────────────────────────────── */}
           <section className="flex flex-1 flex-col p-6">
-            <motion.div
+            <m.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
@@ -110,7 +110,7 @@ export default function Home({
               >
                 Criar Personagem
               </Button>
-            </motion.div>
+            </m.div>
 
             {characters.length === 0 ? (
               <div className="flex flex-1 items-center justify-center">
@@ -140,7 +140,7 @@ export default function Home({
 
           {/* ── Minhas Campanhas ─────────────────────────────────────────── */}
           <section className="flex flex-1 flex-col p-6">
-            <motion.div
+            <m.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
@@ -156,7 +156,7 @@ export default function Home({
               >
                 Criar Campanha
               </Button>
-            </motion.div>
+            </m.div>
 
             <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 content-start">
               {paginatedCamps.length === 0 ? (
