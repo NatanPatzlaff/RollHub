@@ -10,6 +10,13 @@ const dbConfig = defineConfig({
         filename: './database.sqlite',
       },
       useNullAsDefault: true,
+      pool: {
+        afterCreate: (conn: any, done: Function) => {
+          conn.run('PRAGMA journal_mode=WAL;', () => {
+            conn.run('PRAGMA foreign_keys = ON;', done)
+          })
+        },
+      },
       migrations: {
         naturalSort: true,
         paths: ['database/migrations'],

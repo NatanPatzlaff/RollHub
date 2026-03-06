@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { Filter, Sparkles, CircleDot, Check } from 'lucide-react'
 import BaseModal from './BaseModal'
 import { canUseRitualUpgrade } from '../../../utils/ritualReqs'
@@ -217,7 +217,7 @@ export default function RitualSelectModal({
             const elementColor = elementColors[ritual.element?.toUpperCase()] ?? 'text-zinc-400'
 
             return (
-              <motion.div
+              <m.div
                 id={`ritual-card-${ritual.id}`}
                 key={ritual.id}
                 layout
@@ -234,7 +234,7 @@ export default function RitualSelectModal({
                 }`}
               >
                 {/* Nome + círculo + badges de estado */}
-                <motion.div
+                <m.div
                   layout="position"
                   className="mb-1 flex items-center gap-3 pr-8 flex-wrap"
                 >
@@ -256,18 +256,18 @@ export default function RitualSelectModal({
                       🔒 NEX insuficiente
                     </span>
                   )}
-                </motion.div>
+                </m.div>
 
                 {/* Elemento */}
-                <motion.div
+                <m.div
                   layout="position"
                   className={`mb-3 text-sm font-bold tracking-wider ${elementColor}`}
                 >
                   {ritual.element}
-                </motion.div>
+                </m.div>
 
                 {/* Stats: execução, alcance, duração */}
-                <motion.div
+                <m.div
                   layout="position"
                   className="mb-4 grid grid-cols-2 gap-y-2 text-xs text-zinc-400"
                 >
@@ -297,12 +297,12 @@ export default function RitualSelectModal({
                       {ritual.resistance}
                     </div>
                   )}
-                </motion.div>
+                </m.div>
 
                 {/* Descrição completa — expandida ao selecionar */}
                 <AnimatePresence>
                   {isSelected && ritual.description && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
@@ -312,13 +312,13 @@ export default function RitualSelectModal({
                       <p className="mb-4 text-sm leading-relaxed text-zinc-300">
                         {ritual.description}
                       </p>
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
 
                 {/* Upgrades Discente / Verdadeiro */}
                 {(ritual.discente || ritual.verdadeiro) && (
-                  <motion.div
+                  <m.div
                     layout="position"
                     className="flex flex-col gap-1.5 border-t border-zinc-800/50 pt-3"
                   >
@@ -338,23 +338,23 @@ export default function RitualSelectModal({
                         {ritual.verdadeiro}
                       </p>
                     )}
-                  </motion.div>
+                  </m.div>
                 )}
 
                 {/* Check animado ao selecionar */}
                 <AnimatePresence>
                   {isSelected && (
-                    <motion.div
+                    <m.div
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0, opacity: 0 }}
                       className="absolute right-4 top-4 rounded-full bg-amber-500 p-1 text-black shadow-lg"
                     >
                       <Check size={16} strokeWidth={3} />
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
-              </motion.div>
+              </m.div>
             )
           })
         ) : (

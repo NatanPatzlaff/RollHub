@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 
 interface DiceTrayProps {
     diceResult: { label: string; total: number; rolls: number[] } | null
@@ -34,16 +34,16 @@ export default function DiceTray({
                 <div className="px-1">
                     {isRolling ? (
                         <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
-                            <motion.span
+                            <m.span
                                 animate={{ rotate: 360 }}
                                 transition={{ repeat: Infinity, duration: 0.5, ease: 'linear' }}
                                 style={{ display: 'inline-block' }}
-                            >⟳</motion.span>
+                            >⟳</m.span>
                             Rolando...
                         </div>
                     ) : weaponRollResult ? (
                         /* Resultado de arma: ataque + dano lado a lado */
-                        <motion.div
+                        <m.div
                             key={weaponRollResult.weapon + weaponRollResult.attack.total}
                             initial={{ y: 6, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
@@ -64,10 +64,10 @@ export default function DiceTray({
                                     <div className="text-[10px] text-zinc-600 mt-0.5">[{weaponRollResult.damage.rolls.join(', ')}]</div>
                                 </div>
                             </div>
-                        </motion.div>
+                        </m.div>
                     ) : diceResult ? (
                         /* Resultado de perícia simples */
-                        <motion.div
+                        <m.div
                             key={diceResult.total + diceResult.label}
                             initial={{ y: 6, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
@@ -75,7 +75,7 @@ export default function DiceTray({
                         >
                             <span className="text-4xl font-black text-amber-400">{diceResult.total}</span>
                             <span className="text-xs text-zinc-500">{diceResult.label} → [{diceResult.rolls.join(', ')}]</span>
-                        </motion.div>
+                        </m.div>
                     ) : null}
                 </div>
             )}

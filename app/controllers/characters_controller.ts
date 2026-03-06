@@ -16,11 +16,27 @@ import CharacterRitual from '#models/character_ritual'
 import ParanormalPower from '#models/paranormal_power'
 import CharacterParanormalPower from '#models/character_paranormal_power'
 import OriginAbility from '#models/origin_ability'
+import {
+  storeCharacterValidator,
+  updateCharacterValidator,
+  updateAttributesValidator,
+  updateAffinityValidator,
+  configureAbilityValidator,
+  updateSkillsValidator,
+  addAbilityValidator,
+  addParanormalPowerValidator,
+  addRitualValidator,
+  selectTrailValidator,
+  updateTrailConfigValidator,
+  addItemValidator,
+  equipItemValidator,
+  addModificationValidator,
+} from '#validators/character'
 
 export default class CharactersController {
   async store({ request, response, auth }: HttpContext) {
     const user = auth.user!
-    const data = request.only(['nex', 'classId', 'originId', 'name'])
+    const data = await request.validateUsing(storeCharacterValidator)
 
     // Fetch the class to access stats info
     const characterClass = await Class.findOrFail(data.classId)
@@ -115,10 +131,10 @@ export default class CharactersController {
 
       if (origin.trainedSkills && Array.isArray(origin.trainedSkills)) {
         console.log(`[SKILL ASSIGNMENT] Found ${origin.trainedSkills.length} skills to assign`)
+        const skills = await Skill.query().whereIn('name', origin.trainedSkills)
+        const skillMap = new Map(skills.map((s) => [s.name, s]))
         for (const skillName of origin.trainedSkills) {
-          console.log(`[SKILL ASSIGNMENT] Looking for skill: ${skillName}`)
-          const skill = await Skill.query().where('name', skillName).first()
-
+          const skill = skillMap.get(skillName)
           if (skill) {
             console.log(`[SKILL ASSIGNMENT] Found skill ID ${skill.id} for ${skillName}`)
             await CharacterSkill.create({
@@ -150,6 +166,11 @@ export default class CharactersController {
   private async syncMandatoryAbilities(character: Character) {
     const allClassAbilities = await ClassAbility.query().where('classId', character.classId)
 
+    // Buscar todas as abilities existentes do personagem em batch (evita N+1)
+    const existingAbilities = await CharacterClassAbility.query()
+      .where('characterId', character.id)
+    const existingMap = new Map(existingAbilities.map((a) => [a.classAbilityId, a]))
+
     for (const ability of allClassAbilities) {
       const effects =
         typeof ability.effects === 'string'
@@ -166,10 +187,7 @@ export default class CharactersController {
           }
         }
 
-        const exists = await CharacterClassAbility.query()
-          .where('characterId', character.id)
-          .where('classAbilityId', ability.id)
-          .first()
+        const exists = existingMap.get(ability.id)
 
         if (meetsNexRequirement) {
           if (!exists) {
@@ -669,13 +687,7 @@ export default class CharactersController {
       .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
 
-    const { strength, agility, intellect, vigor, presence } = request.only([
-      'strength',
-      'agility',
-      'intellect',
-      'vigor',
-      'presence',
-    ])
+    const { strength, agility, intellect, vigor, presence } = await request.validateUsing(updateAttributesValidator)
 
     // Calculate attribute bonus from NEX (Aumento de Atributo at 20%, 50%, 80%, 95%)
     const nex = character.nex
@@ -778,13 +790,7 @@ export default class CharactersController {
       .preload('skills')
       .firstOrFail()
 
-    const { name, classId, originId, nex, rank } = request.only([
-      'name',
-      'classId',
-      'originId',
-      'nex',
-      'rank',
-    ])
+    const { name, classId, originId, nex, rank } = await request.validateUsing(updateCharacterValidator)
 
     // Store old classId to detect if class changed
     const oldClassId = character.classId
@@ -932,11 +938,15 @@ export default class CharactersController {
     const character = await Character.query()
       .where('id', params.id)
       .where('userId', user.id)
+      .preload('trail')
       .firstOrFail()
 
-    if (character.nex < 50) {
+    const isMonstruoso = character.trail?.name === 'Monstruoso'
+    const minNex = isMonstruoso ? 10 : 50
+
+    if (character.nex < minNex) {
       return response.badRequest({
-        error: 'Personagem não possui NEX suficiente para escolher afinidade.',
+        error: `Personagem não possui NEX suficiente para escolher afinidade (${minNex}%).`,
       })
     }
 
@@ -944,7 +954,7 @@ export default class CharactersController {
       return response.badRequest({ error: 'Personagem já possui afinidade.' })
     }
 
-    const { affinity } = request.only(['affinity'])
+    const { affinity } = await request.validateUsing(updateAffinityValidator)
 
     if (!affinity) {
       return response.badRequest({ error: 'Afinidade é obrigatória.' })
@@ -970,7 +980,7 @@ export default class CharactersController {
       .firstOrFail()
 
     // Get config from request
-    const config = request.only(['selectedSkills', 'ritualName', 'element', 'favoriteWeapon'])
+    const config = await request.validateUsing(configureAbilityValidator)
 
     // Validate that it's not Luta or Pontaria
     if (config.selectedSkills && Array.isArray(config.selectedSkills)) {
@@ -1007,7 +1017,7 @@ export default class CharactersController {
       .firstOrFail()
 
     // Get the data from request
-    const { trainedSkills, veteranSkills } = request.only(['trainedSkills', 'veteranSkills'])
+    const { trainedSkills = [], veteranSkills = [] } = await request.validateUsing(updateSkillsValidator)
 
     // Get origin's initial skills
     const originSkillNames = character.origin
@@ -1025,40 +1035,32 @@ export default class CharactersController {
       }
     }
 
-    // Delete all non-origin skills
-    const existingSkills = await CharacterSkill.query().where('characterId', character.id)
-    for (const existingSkill of existingSkills) {
-      if (!originSkillIds.has(existingSkill.skillId)) {
-        await existingSkill.delete()
-      }
-    }
+    await db.transaction(async (trx) => {
+      // 1. Delete all non-origin skills for this character
+      await CharacterSkill.query({ client: trx })
+        .where('characterId', character.id)
+        .whereNotIn('skillId', [...originSkillIds])
+        .delete()
 
-    // Add the new trained and veteran skills
-    const allSelectedSkills = [...(trainedSkills || []), ...(veteranSkills || [])]
+      // 2. Prepare all unique skill names to process
+      // Deduplicate: a skill should only be processed once. 
+      // If it's in veteranSkills, we give it 10. Otherwise if trained, 5.
+      const uniqueSkillNames = new Set([...trainedSkills, ...veteranSkills])
 
-    for (const skillName of allSelectedSkills) {
-      const skill = await Skill.findBy('name', skillName)
-      if (skill && !originSkillIds.has(skill.id)) {
-        const degree = veteranSkills?.includes(skillName) ? 10 : 5
+      for (const skillName of uniqueSkillNames) {
+        const skill = await Skill.findBy('name', skillName)
+        if (skill && !originSkillIds.has(skill.id)) {
+          const degree = veteranSkills.includes(skillName) ? 10 : 5
 
-        // Check if already exists (from origin)
-        const existing = await CharacterSkill.query()
-          .where('characterId', character.id)
-          .where('skillId', skill.id)
-          .first()
-
-        if (existing) {
-          existing.trainingDegree = degree
-          await existing.save()
-        } else {
+          // Since we deleted existing skills, we just create new ones
           await CharacterSkill.create({
             characterId: character.id,
             skillId: skill.id,
             trainingDegree: degree,
-          })
+          }, { client: trx })
         }
       }
-    }
+    })
 
     // Reload page to show updated skills
     return response.redirect().back()
@@ -1066,7 +1068,7 @@ export default class CharactersController {
 
   async addAbility({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
-    const { abilityId } = request.only(['abilityId'])
+    const { abilityId } = await request.validateUsing(addAbilityValidator)
 
     const character = await Character.query()
       .where('id', params.id)
@@ -1198,7 +1200,7 @@ export default class CharactersController {
 
   async addParanormalPower({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
-    const { powerId, transcendAbilityId } = request.only(['powerId', 'transcendAbilityId'])
+    const { powerId, transcendAbilityId } = await request.validateUsing(addParanormalPowerValidator)
 
     const character = await Character.query()
       .where('id', params.id)
@@ -1272,7 +1274,7 @@ export default class CharactersController {
 
   async addRitual({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
-    const { ritualId, transcendAbilityId } = request.only(['ritualId', 'transcendAbilityId'])
+    const { ritualId, transcendAbilityId } = await request.validateUsing(addRitualValidator)
 
     const character = await Character.query()
       .where('id', params.id)
@@ -1415,7 +1417,7 @@ export default class CharactersController {
       .where('userId', user.id)
       .firstOrFail()
 
-    const { trailId } = request.only(['trailId'])
+    const { trailId } = await request.validateUsing(selectTrailValidator)
 
     // Verify trail exists and belongs to the character's class
     const trail = await Trail.query()
@@ -1424,6 +1426,7 @@ export default class CharactersController {
       .firstOrFail()
 
     character.trailId = trail.id
+    character.trailConfig = {}
     await character.save()
 
     return response.redirect().back()
@@ -1436,12 +1439,7 @@ export default class CharactersController {
       .where('userId', user.id)
       .firstOrFail()
 
-    const incomingConfig = request.only([
-      'favoriteWeapon',
-      'useFlagelo',
-      'useLaminaMaldita',
-      'useOcultismoForAttacks',
-    ])
+    const incomingConfig = await request.validateUsing(updateTrailConfigValidator)
 
     // Mescla com a config existente para não perder dados
     const existing = character.trailConfig || {}
@@ -1465,12 +1463,12 @@ export default class CharactersController {
       .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
 
-    const { type, itemId, quantity } = request.only(['type', 'itemId', 'quantity'])
+    const { type, itemId, quantity } = await request.validateUsing(addItemValidator)
     if (!type || !itemId) {
       return response.badRequest({ error: 'type e itemId são obrigatórios' })
     }
 
-    const qty = Math.max(1, parseInt(quantity, 10) || 1)
+    const qty = Math.max(1, quantity ?? 1)
 
     // CÁLCULO DE CAPACIDADE (BACKEND)
     const strength = character.attributes?.strength || 0
@@ -1519,8 +1517,8 @@ export default class CharactersController {
       'Recruta': { 1: 2, 2: 0, 3: 0, 4: 0 },
       'Operador': { 1: 3, 2: 1, 3: 0, 4: 0 },
       'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
-      'Oficial de Operações': { 1: 5, 2: 3, 3: 2, 4: 1 },
-      'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
+      'Oficial de Operações': { 1: 3, 2: 3, 3: 2, 4: 1 },
+      'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
     }
 
     // Calcula redução de categoria para arma favorita (trilha Aniquilador)
@@ -1532,9 +1530,16 @@ export default class CharactersController {
         .where('nex', '<=', (character as any).nex || 0)
         .orderBy('nex', 'asc')
       for (const p of trailProgs) {
-        if (p.title === 'Máquina de Matar') { favoriteWeaponCatReduction = 3; break }
-        if (p.title === 'Técnica Secreta') { favoriteWeaponCatReduction = 2 }
-        if (p.title === 'A Favorita' && favoriteWeaponCatReduction < 1) { favoriteWeaponCatReduction = 1 }
+        if (p.title === 'Máquina de Matar') {
+          favoriteWeaponCatReduction = 3
+          break
+        }
+        if (p.title === 'Técnica Secreta') {
+          favoriteWeaponCatReduction = 2
+        }
+        if (p.title === 'A Favorita' && favoriteWeaponCatReduction < 1) {
+          favoriteWeaponCatReduction = 1
+        }
       }
     }
 
@@ -1553,7 +1558,11 @@ export default class CharactersController {
           'character_weapon_modifications.modification_id',
           'weapon_modifications.id'
         )
-        .select('character_weapons.id', 'weapons.category as base_category', 'weapons.name as weapon_name')
+        .select(
+          'character_weapons.id',
+          'weapons.category as base_category',
+          'weapons.name as weapon_name'
+        )
         .sum('weapon_modifications.category as mods_category')
         .groupBy('character_weapons.id', 'weapons.category', 'weapons.name')
         .then((rows) =>
@@ -1563,7 +1572,10 @@ export default class CharactersController {
                 ? ['I', 'II', 'III', 'IV', 'V'].indexOf(r.base_category) + 1
                 : Number(r.base_category || 0)
             // Aplica redução de categoria da arma favorita no TOTAL (base + mods)
-            const reduction = (favoriteWeaponName && r.weapon_name === favoriteWeaponName) ? favoriteWeaponCatReduction : 0
+            const reduction =
+              favoriteWeaponName && r.weapon_name === favoriteWeaponName
+                ? favoriteWeaponCatReduction
+                : 0
             return Math.max(0, base + Number(r.mods_category || 0) - reduction)
           })
         ),
@@ -1611,9 +1623,10 @@ export default class CharactersController {
       }
 
       // Aplica redução de categoria da arma favorita (Aniquilador) antes de validar
-      const effWeaponCat = (favoriteWeaponName && weapon.name === favoriteWeaponName)
-        ? Math.max(0, weapon.category - favoriteWeaponCatReduction)
-        : weapon.category
+      const effWeaponCat =
+        favoriteWeaponName && weapon.name === favoriteWeaponName
+          ? Math.max(0, weapon.category - favoriteWeaponCatReduction)
+          : weapon.category
       if (effWeaponCat > 0 && !checkCategoryLimit(effWeaponCat)) {
         return response.badRequest({
           error: `Limite de itens de Categoria ${effWeaponCat} atingido para a patente ${character.rank || 'Recruta'}.`,
@@ -1826,7 +1839,7 @@ export default class CharactersController {
       .firstOrFail()
 
     const itemId = params.itemId
-    const { equipped } = request.only(['equipped'])
+    const { equipped } = await request.validateUsing(equipItemValidator)
     const isEquipped = equipped === true || equipped === 1 || equipped === 'true'
 
     // Tenta atualizar em character_weapons
@@ -1879,7 +1892,7 @@ export default class CharactersController {
   async addWeaponModification({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const { id, characterWeaponId } = params
-    const { modificationId } = request.only(['modificationId'])
+    const { modificationId } = await request.validateUsing(addModificationValidator)
 
     const character = await Character.query().where('id', id).where('userId', user.id).firstOrFail()
 
@@ -1914,9 +1927,9 @@ export default class CharactersController {
     // Busca a arma base para obter categoria e nome
     const weaponData = await db.from('weapons').where('id', characterWeapon.weapon_id).first()
     const rawBase = weaponData
-      ? (typeof weaponData.category === 'string'
-          ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weaponData.category) + 1
-          : Number(weaponData.category || 0))
+      ? typeof weaponData.category === 'string'
+        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(weaponData.category) + 1
+        : Number(weaponData.category || 0)
       : 0
 
     // Calcula redução de categoria da arma favorita (Aniquilador)
@@ -1926,15 +1939,26 @@ export default class CharactersController {
       .firstOrFail()
     const favWeapon = (charWithTrail.trailConfig as any)?.favoriteWeapon || null
     let catReduction = 0
-    if (favWeapon && weaponData?.name === favWeapon && charWithTrail.trail?.name === 'Aniquilador') {
+    if (
+      favWeapon &&
+      weaponData?.name === favWeapon &&
+      charWithTrail.trail?.name === 'Aniquilador'
+    ) {
       const progs = await TrailProgression.query()
         .where('trailId', charWithTrail.trailId!)
         .where('nex', '<=', (charWithTrail as any).nex || 0)
         .orderBy('nex', 'asc')
       for (const p of progs) {
-        if (p.title === 'Máquina de Matar') { catReduction = 3; break }
-        if (p.title === 'Técnica Secreta') { catReduction = 2 }
-        if (p.title === 'A Favorita' && catReduction < 1) { catReduction = 1 }
+        if (p.title === 'Máquina de Matar') {
+          catReduction = 3
+          break
+        }
+        if (p.title === 'Técnica Secreta') {
+          catReduction = 2
+        }
+        if (p.title === 'A Favorita' && catReduction < 1) {
+          catReduction = 1
+        }
       }
     }
 
@@ -1942,15 +1966,24 @@ export default class CharactersController {
     const currentMods = await db
       .from('character_weapon_modifications')
       .where('character_weapon_id', characterWeapon.id)
-      .leftJoin('weapon_modifications', 'character_weapon_modifications.modification_id', 'weapon_modifications.id')
+      .leftJoin(
+        'weapon_modifications',
+        'character_weapon_modifications.modification_id',
+        'weapon_modifications.id'
+      )
       .sum('weapon_modifications.category as total')
       .first()
     const currentModSum = Number(currentMods?.total || 0)
 
     // Aplica redução no TOTAL (base + mods existentes + nova mod)
-    const newFinalCat = Math.max(0, rawBase + currentModSum + Number(modification.category || 0) - catReduction)
+    const newFinalCat = Math.max(
+      0,
+      rawBase + currentModSum + Number(modification.category || 0) - catReduction
+    )
     if (newFinalCat > 4) {
-      return response.badRequest({ error: `Categoria resultante (${newFinalCat}) excede o máximo permitido (IV).` })
+      return response.badRequest({
+        error: `Categoria resultante (${newFinalCat}) excede o máximo permitido (IV).`,
+      })
     }
 
     // Valida limites de patente
@@ -1959,14 +1992,14 @@ export default class CharactersController {
         'Recruta': { 1: 2, 2: 0, 3: 0, 4: 0 },
         'Operador': { 1: 3, 2: 1, 3: 0, 4: 0 },
         'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
-        'Oficial de Operações': { 1: 5, 2: 3, 3: 2, 4: 1 },
-        'Agente de Elite': { 1: 5, 2: 5, 3: 3, 4: 2 },
+        'Oficial de Operações': { 1: 3, 2: 3, 3: 2, 4: 1 },
+        'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
       }
       const rankName = charWithTrail.rank || 'Recruta'
       const limit = RANK_LIMITS_MOD[rankName]?.[newFinalCat] ?? 0
       if (limit <= 0) {
         return response.badRequest({
-          error: `Patente ${rankName} não permite itens de Categoria ${['I','II','III','IV'][newFinalCat - 1]}.`,
+          error: `Patente ${rankName} não permite itens de Categoria ${['I', 'II', 'III', 'IV'][newFinalCat - 1]}.`,
         })
       }
     }
@@ -2011,7 +2044,7 @@ export default class CharactersController {
   async addProtectionModification({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const { id, characterProtectionId } = params
-    const { modificationId } = request.only(['modificationId'])
+    const { modificationId } = await request.validateUsing(addModificationValidator)
 
     const character = await Character.query().where('id', id).where('userId', user.id).firstOrFail()
 
@@ -2077,7 +2110,7 @@ export default class CharactersController {
   async addGeneralItemModification({ params, request, response, auth }: HttpContext) {
     const user = auth.user!
     const { id, characterGeneralItemId } = params
-    const { modificationId } = request.only(['modificationId'])
+    const { modificationId } = await request.validateUsing(addModificationValidator)
 
     const character = await Character.query().where('id', id).where('userId', user.id).firstOrFail()
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Card, CardHeader, CardBody, Chip, Button } from '@heroui/react'
+import { m, AnimatePresence } from 'framer-motion'
+import { Card, CardHeader, CardBody, Chip, Button, Switch } from '@heroui/react'
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts'
 import { Dices, Save, Dumbbell, Wind, Brain, Heart, Ghost } from 'lucide-react'
 
@@ -316,9 +316,8 @@ const AttributesDiceTrayCard = forwardRef<
     return () => {
       mounted = false
       if (dddiceRef.current) {
-        try {
-          dddiceRef.current.stop()
-        } catch (_) {}
+        try { dddiceRef.current.disconnect?.() } catch (_) {}
+        try { dddiceRef.current.stop() } catch (_) {}
       }
       dddiceRef.current = null
     }
@@ -603,24 +602,19 @@ const AttributesDiceTrayCard = forwardRef<
 
         <div className="flex items-center gap-2">
           {/* Toggle modo atributos / bandeja */}
-          <button
-            onClick={() => {
-              if (isDiceTray) diceThemeRef.current = undefined
-              setIsDiceTray((prev) => !prev)
+          <Switch
+            isSelected={isDiceTray}
+            onValueChange={(isSelected) => {
+              if (isSelected) diceThemeRef.current = undefined
+              setIsDiceTray(isSelected)
               setDiceResult(null)
               setRitualRollResult(null)
             }}
-            className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
-              isDiceTray ? 'bg-amber-500' : 'bg-zinc-700'
-            }`}
+            size="sm"
+            color="warning"
+            classNames={{ wrapper: 'bg-zinc-700 group-data-[selected=true]:bg-amber-500' }}
             title={isDiceTray ? 'Voltar para Atributos' : 'Abrir Bandeja de Dados'}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                isDiceTray ? 'translate-x-5' : 'translate-x-1'
-              }`}
-            />
-          </button>
+          />
           <Dices size={16} className={isDiceTray ? 'text-amber-400' : 'text-zinc-600'} />
 
           {/* Controles de pontos (somente modo atributos) */}
@@ -765,18 +759,18 @@ const AttributesDiceTrayCard = forwardRef<
               <div className="px-1">
                 {isRolling ? (
                   <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
-                    <motion.span
+                    <m.span
                       animate={{ rotate: 360 }}
                       transition={{ repeat: Infinity, duration: 0.5, ease: 'linear' }}
                       style={{ display: 'inline-block' }}
                     >
                       ⟳
-                    </motion.span>
+                    </m.span>
                     Rolando...
                   </div>
                 ) : weaponRollResult ? (
                   /* Resultado de arma: ataque + dano */
-                  <motion.div
+                  <m.div
                     key={weaponRollResult.weapon + weaponRollResult.attack.total}
                     initial={{ y: 6, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
@@ -842,10 +836,10 @@ const AttributesDiceTrayCard = forwardRef<
                         </div>
                       </div>
                     </div>
-                  </motion.div>
+                  </m.div>
                 ) : ritualRollResult ? (
                   /* Resultado de ritual — mesmo layout visual de armas */
-                  <motion.div
+                  <m.div
                     key={ritualRollResult.name + ritualRollResult.total}
                     initial={{ y: 6, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
@@ -914,10 +908,10 @@ const AttributesDiceTrayCard = forwardRef<
                         </div>
                       )}
                     </div>
-                  </motion.div>
+                  </m.div>
                 ) : diceResult ? (
                   /* Resultado de perícia simples */
-                  <motion.div
+                  <m.div
                     key={diceResult.total + diceResult.label}
                     initial={{ y: 6, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
@@ -927,7 +921,7 @@ const AttributesDiceTrayCard = forwardRef<
                     <span className="text-xs text-zinc-500">
                       {diceResult.label} → [{diceResult.rolls.join(', ')}]
                     </span>
-                  </motion.div>
+                  </m.div>
                 ) : null}
               </div>
             )}
@@ -935,7 +929,7 @@ const AttributesDiceTrayCard = forwardRef<
             {/* Histórico compacto */}
             <AnimatePresence>
               {diceHistory.length > 0 && (
-                <motion.div
+                <m.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
@@ -957,7 +951,7 @@ const AttributesDiceTrayCard = forwardRef<
                   >
                     limpar
                   </button>
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
           </div>

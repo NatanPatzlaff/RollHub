@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { X, Sword, Shield, Briefcase, Eye, Crosshair, Plus, Check, Search } from 'lucide-react'
 
 // ─── Interfaces de catálogo ───────────────────────────────────────────────────
@@ -114,7 +114,7 @@ function AddItemButton({ onClick, disabled }: { onClick: () => void; disabled?: 
   }
 
   return (
-    <motion.button
+    <m.button
       whileHover={!added && !disabled ? { scale: 1.05 } : {}}
       whileTap={!added && !disabled ? { scale: 0.95 } : {}}
       onClick={handleClick}
@@ -129,12 +129,12 @@ function AddItemButton({ onClick, disabled }: { onClick: () => void; disabled?: 
     >
       <AnimatePresence mode="wait">
         {disabled ? (
-          <motion.span key="disabled" className="flex items-center gap-2">
+          <m.span key="disabled" className="flex items-center gap-2">
             <Plus size={16} strokeWidth={3} />
             Em breve
-          </motion.span>
+          </m.span>
         ) : added ? (
-          <motion.div
+          <m.div
             key="added"
             initial={{ y: 10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -143,9 +143,9 @@ function AddItemButton({ onClick, disabled }: { onClick: () => void; disabled?: 
           >
             <Check size={16} strokeWidth={3} />
             Adicionado
-          </motion.div>
+          </m.div>
         ) : (
-          <motion.div
+          <m.div
             key="add"
             initial={{ y: -10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -154,10 +154,10 @@ function AddItemButton({ onClick, disabled }: { onClick: () => void; disabled?: 
           >
             <Plus size={16} strokeWidth={3} />
             Adicionar
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
-    </motion.button>
+    </m.button>
   )
 }
 
@@ -187,7 +187,7 @@ function ItemCard({
   const isExpanded = expandedKey === id
 
   return (
-    <motion.div
+    <m.div
       layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
@@ -211,14 +211,14 @@ function ItemCard({
         {/* Detalhes expandidos */}
         <AnimatePresence>
           {isExpanded && expandedContent && (
-            <motion.div
+            <m.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-hidden"
             >
               {expandedContent}
-            </motion.div>
+            </m.div>
           )}
         </AnimatePresence>
       </div>
@@ -226,7 +226,7 @@ function ItemCard({
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <AddItemButton onClick={onAdd} disabled={addDisabled} />
       </div>
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -713,14 +713,14 @@ function SearchResults({
 
   if (filtered.length === 0) {
     return (
-      <motion.div
+      <m.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="flex flex-col items-center justify-center py-20 text-zinc-600"
       >
         <Search size={48} className="mb-4 opacity-20" />
         <p className="text-sm">Nenhum item encontrado para &ldquo;{query}&rdquo;.</p>
-      </motion.div>
+      </m.div>
     )
   }
 
@@ -764,14 +764,14 @@ function EmptyState({
   message: string
 }) {
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="flex flex-col items-center justify-center py-20 text-zinc-600"
     >
       <Icon size={48} className="mb-4 opacity-20" />
       <p className="text-sm">{message}</p>
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -818,7 +818,7 @@ export default function AddItemModal({
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Overlay */}
-          <motion.div
+          <m.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -827,7 +827,7 @@ export default function AddItemModal({
           />
 
           {/* Container do modal */}
-          <motion.div
+          <m.div
             initial={{ scale: 0.95, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
@@ -897,7 +897,7 @@ export default function AddItemModal({
                       <Icon size={16} />
                       {label}
                       {isActive && (
-                        <motion.div
+                        <m.div
                           layoutId="addItemTabIndicator"
                           className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500"
                           transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -966,7 +966,7 @@ export default function AddItemModal({
                 )}
               </div>
             </div>
-          </motion.div>
+          </m.div>
         </div>
       )}
     </AnimatePresence>

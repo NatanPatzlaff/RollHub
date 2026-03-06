@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { Check } from 'lucide-react'
 import BaseModal from './BaseModal'
 
@@ -158,7 +158,7 @@ export default function ParanormalPowerModal({
             const style = getStyle(power.element)
 
             return (
-              <motion.div
+              <m.div
                 id={`ppower-card-${power.id}`}
                 layout
                 style={{ originY: 0 }}
@@ -175,7 +175,7 @@ export default function ParanormalPowerModal({
                 }`}
               >
                 {/* Header */}
-                <motion.div layout="position" className="flex items-start justify-between pr-8">
+                <m.div layout="position" className="flex items-start justify-between pr-8">
                   <div className="flex flex-col gap-1">
                     <h3
                       className={`text-xl font-bold transition-colors ${
@@ -195,43 +195,43 @@ export default function ParanormalPowerModal({
                       </span>
                     )}
                   </div>
-                </motion.div>
+                </m.div>
 
                 {/* Requisito */}
                 {power.requirements && (
-                  <motion.div layout="position" className="mt-2 mb-3">
+                  <m.div layout="position" className="mt-2 mb-3">
                     <span className="text-xs font-medium tracking-wider text-zinc-500 uppercase">
                       Requisito: {power.requirements}
                     </span>
-                  </motion.div>
+                  </m.div>
                 )}
 
                 {/* Descrição */}
                 {power.description && (
-                  <motion.p
+                  <m.p
                     layout="position"
                     className={`text-[15px] italic leading-relaxed transition-colors ${
                       isSelected ? 'text-zinc-300' : 'text-zinc-400'
                     }`}
                   >
                     {power.description}
-                  </motion.p>
+                  </m.p>
                 )}
 
                 {/* Check animado ao selecionar */}
                 <AnimatePresence>
                   {isSelected && (
-                    <motion.div
+                    <m.div
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0, opacity: 0 }}
                       className={`absolute right-5 top-5 rounded-full p-1 text-[#141417] shadow-lg ${style.check}`}
                     >
                       <Check size={16} strokeWidth={3} />
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
-              </motion.div>
+              </m.div>
             )
           })
         )}

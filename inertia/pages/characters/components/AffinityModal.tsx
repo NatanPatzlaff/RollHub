@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import { Check } from 'lucide-react'
 import BaseModal from './BaseModal'
 
@@ -132,7 +132,7 @@ export default function AffinityModal({
           const isSelected = selected === element
 
           return (
-            <motion.button
+            <m.button
               key={element}
               whileHover={{ scale: isSelected ? 1 : 1.01 }}
               whileTap={{ scale: 0.99 }}
@@ -151,13 +151,13 @@ export default function AffinityModal({
                 </span>
 
                 {isSelected && (
-                  <motion.span
+                  <m.span
                     initial={{ scale: 0, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     className={`flex h-5 w-5 items-center justify-center rounded-full ${s.check}`}
                   >
                     <Check size={12} className="text-black font-bold" />
-                  </motion.span>
+                  </m.span>
                 )}
               </div>
 
@@ -166,7 +166,7 @@ export default function AffinityModal({
               >
                 {s.description}
               </p>
-            </motion.button>
+            </m.button>
           )
         })}
       </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react'
 import {
   Backpack,
@@ -97,6 +97,8 @@ export interface CharacterTabsCardProps {
   // Trail config props
   trailConfig?: Record<string, any>
   favoriteWeaponName?: string | null
+  characterAffinity?: string | null
+  onOpenAffinityModal?: () => void
   useFlagelo?: boolean
   useLaminaMaldita?: boolean
   useOcultismoForAttacks?: boolean
@@ -224,6 +226,7 @@ export default function CharacterTabsCard({
   onToggleLaminaMaldita,
   onToggleOcultismoForAttacks,
   onOpenTrailConfigModal,
+  onOpenAffinityModal,
   characterId,
   onSetPeritoPeSpending,
   originAbilityName,
@@ -646,7 +649,7 @@ export default function CharacterTabsCard({
                       </span>
                       <div className="flex items-center gap-1 border-l border-zinc-800 pl-3 ml-1">
                         {(item.itemKind === 'weapon' || item.itemKind === 'protection') && (
-                          <motion.button
+                          <m.button
                             whileTap={{ scale: 0.95 }}
                             onClick={(e) => {
                               e.stopPropagation()
@@ -659,7 +662,7 @@ export default function CharacterTabsCard({
                             }`}
                           >
                             {item.equipped ? 'EQUIPADO' : 'EQUIPAR'}
-                          </motion.button>
+                          </m.button>
                         )}
                         {item.type === 'Arma' && (
                           <button
@@ -1164,10 +1167,11 @@ export default function CharacterTabsCard({
                   Habilidades de Combate
                 </h4>
                 <div className="space-y-2">
-                  {classAbilities.map((ability, idx) => (
-                    <div key={idx}>
-                      {ability.classAbility?.name === 'Perito' && ability.config?.selectedSkills ? (
-                        <div className="space-y-3">
+                  {classAbilities.map((ability, idx) => {
+                    // Trata as habilidades específicas antigas (ex: Perito)
+                    if (ability.classAbility?.name === 'Perito' && ability.config?.selectedSkills) {
+                      return (
+                        <div key={idx} className="space-y-3">
                           {ability.config.selectedSkills.map((skillName: string) => {
                             const currentPe = peritoPeSpending[skillName] || 2
                             const diceBonus =
@@ -1228,9 +1232,139 @@ export default function CharacterTabsCard({
                             )
                           })}
                         </div>
-                      ) : null}
-                    </div>
-                  ))}
+                      )
+                    }
+
+                    // Para as demais habilidades, verifica se ela tem efeitos ativos
+                    const desc = ability.classAbility?.description || ''
+                    const effects =
+                      typeof ability.classAbility?.effects === 'string'
+                        ? JSON.parse(ability.classAbility?.effects || '{}')
+                        : ability.classAbility?.effects || {}
+
+                    const peCost = effects.pe_cost || desc.match(/(\d+)\s*PE/i)?.[1]
+                    const isReaction = desc.toLowerCase().includes('reação')
+                    const usesPerRound = effects.uses_per_round
+                    const usesPerScene = effects.uses_per_scene
+                    const usesPerMission = effects.uses_per_mission
+
+                    const hasActionOrCost =
+                      peCost ||
+                      isReaction ||
+                      desc.toLowerCase().includes('ação padrão') ||
+                      desc.toLowerCase().includes('ação completa') ||
+                      desc.toLowerCase().includes('ação de movimento') ||
+                      desc.toLowerCase().includes('ação livre')
+
+                    // Apenas renderiza seletivamente as que possuem algum tipo de custo de PE ou de Ação
+                    if (!hasActionOrCost) return null
+
+                    const actionBadge = isReaction
+                      ? {
+                          label: 'Reação',
+                          color: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+                        }
+                      : desc.toLowerCase().includes('ação completa')
+                        ? {
+                            label: 'Ação Completa',
+                            color: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+                          }
+                        : desc.toLowerCase().includes('ação de movimento')
+                          ? {
+                              label: 'Ação de Mov.',
+                              color: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+                            }
+                          : desc.toLowerCase().includes('ação livre')
+                            ? {
+                                label: 'Ação Livre',
+                                color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+                              }
+                            : {
+                                label: 'Ação Padrão',
+                                color: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+                              }
+
+                    const abilityName = ability.classAbility?.name || 'Habilidade Sem Nome'
+                    const peCostNum = peCost ? Number(peCost) : 0
+                    const usesPerSceneNum = usesPerScene ? Number(usesPerScene) : null
+                    const usesThisScene = abilityUsesThisScene[abilityName] ?? 0
+                    const isLimitReached =
+                      usesPerSceneNum !== null && usesThisScene >= usesPerSceneNum
+                    const canUseAbility = !isLimitReached && pe >= peCostNum
+
+                    // Filtra Perito da renderização genérica caso caia aqui
+                    if (abilityName === 'Perito') return null
+
+                    return (
+                      <div
+                        key={idx}
+                        className="px-4 py-3 rounded-lg bg-zinc-950/60 border border-red-500/20 hover:border-red-500/40 transition-all"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-1">
+                              <span className="font-semibold text-sm text-red-400">
+                                {abilityName}
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${actionBadge.color}`}
+                              >
+                                {actionBadge.label}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {peCost && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                                  {peCost} PE
+                                </span>
+                              )}
+                              {usesPerRound && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                  {usesPerRound}x/rodada
+                                </span>
+                              )}
+                              {usesPerScene && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                  {usesThisScene}/{usesPerScene}x/cena
+                                </span>
+                              )}
+                              {usesPerMission && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                  {usesPerMission}x/missão
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-zinc-500 text-[10px] leading-relaxed mt-1.5 line-clamp-2 title" title={desc}>
+                              {desc}
+                            </p>
+                          </div>
+                          {onActivateAbility && (
+                            <button
+                              disabled={!canUseAbility}
+                              onClick={() =>
+                                canUseAbility &&
+                                onActivateAbility(abilityName, 'class' as any, peCostNum, effects)
+                              }
+                              title={
+                                isLimitReached
+                                  ? 'Limite de usos atingido'
+                                  : !canUseAbility
+                                    ? 'PE insuficiente'
+                                    : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
+                              }
+                              className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                canUseAbility
+                                  ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
+                                  : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                              }`}
+                            >
+                              {isLimitReached ? 'Usado' : 'Usar'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             ) : (
@@ -1533,16 +1667,26 @@ export default function CharacterTabsCard({
             <div className="flex items-center gap-3">
               {/* Poderes de Trilha (modal) */}
               {characterTrail?.id && (currentTrailAbilities.length > 0 || futureTrailAbilities.length > 0) && (
-                <button
-                  onClick={() => onTrailPowersOpenChange(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Poderes de Trilha
-                </button>
-              )}
-              {/* Escolher Trilha */}
-              {hasNoTrail && classTrails.length > 0 && (
+                  <button
+                    onClick={() => onTrailPowersOpenChange(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Poderes de Trilha
+                  </button>
+                )}
+                {/* Trocar Trilha (se já tem uma) */}
+                {characterTrail && (
+                  <button
+                    onClick={onOpenTrailModal}
+                    className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-md text-sm font-medium transition-colors"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    Trocar Trilha
+                  </button>
+                )}
+                {/* Escolher Trilha (se não tem nenhuma) */}
+                {hasNoTrail && classTrails.length > 0 && (
                 <button
                   onClick={onOpenTrailModal}
                   className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 rounded-md text-sm font-medium transition-colors"
@@ -1582,7 +1726,7 @@ export default function CharacterTabsCard({
                 </button>
                 <AnimatePresence>
                   {expandedSections.originAbility && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
@@ -1597,7 +1741,7 @@ export default function CharacterTabsCard({
                           </p>
                         )}
                       </div>
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
               </div>
@@ -1630,7 +1774,7 @@ export default function CharacterTabsCard({
                   </button>
                   <AnimatePresence>
                     {expandedSections.classAbilities && (
-                      <motion.div
+                      <m.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
@@ -1677,7 +1821,7 @@ export default function CharacterTabsCard({
                             </div>
                           </div>
                         ))}
-                      </motion.div>
+                      </m.div>
                     )}
                   </AnimatePresence>
                 </div>
@@ -1714,7 +1858,7 @@ export default function CharacterTabsCard({
                   </button>
                   <AnimatePresence>
                     {expandedSections.chosenAbilities && (
-                      <motion.div
+                      <m.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
@@ -1868,7 +2012,7 @@ export default function CharacterTabsCard({
                             Nenhuma habilidade escolhida. Use o botão "Adicionar Habilidade" acima.
                           </div>
                         )}
-                      </motion.div>
+                      </m.div>
                     )}
                   </AnimatePresence>
                 </div>
@@ -1892,7 +2036,7 @@ export default function CharacterTabsCard({
                 </button>
                 <AnimatePresence>
                   {expandedSections.paranormalPowers && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
@@ -1969,155 +2113,12 @@ export default function CharacterTabsCard({
                           </div>
                         )
                       })}
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
               </div>
             )}
 
-            {/* ── RITUAIS APRENDIDOS (na aba habilidades) ── */}
-            {characterRituals && characterRituals.length > 0 && (
-              <div>
-                <button
-                  onClick={() => onToggleSection('rituals')}
-                  className="w-full flex items-center justify-between py-2 text-blue-500 hover:text-blue-400 font-bold uppercase text-sm tracking-wider transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                    RITUAIS APRENDIDOS
-                  </div>
-                  <ChevronDown
-                    className={`w-5 h-5 transition-transform ${expandedSections.rituals ? 'rotate-180' : ''}`}
-                  />
-                </button>
-                <AnimatePresence>
-                  {expandedSections.rituals && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="space-y-4 mt-2"
-                    >
-                      {characterRituals.map((characterRitual, idx) => {
-                        const r = characterRitual.ritual
-                        const elementColor =
-                          (
-                            {
-                              Conhecimento: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
-                              Energia: 'bg-purple-500/10 border-purple-500/30 text-purple-300',
-                              Morte: 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300',
-                              Sangue: 'bg-red-500/10 border-red-500/30 text-red-300',
-                            } as Record<string, string>
-                          )[r?.element || ''] || 'bg-zinc-500/10 border-zinc-500/30 text-zinc-300'
-                        const peInfo = calcPeAjustado(r)
-                        const temReducao = peInfo.ajustado < peInfo.base
-                        const temAcrescimo = peInfo.ajustado > peInfo.base
-
-                        return (
-                          <div
-                            key={idx}
-                            className={`p-4 rounded-lg border flex flex-col gap-3 transition-all hover:bg-zinc-950/80 ${elementColor}`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h5 className="font-bold text-base">{r?.name}</h5>
-                                  <span className="px-1.5 py-0.5 rounded bg-black/20 text-current border border-current/20 text-xs font-bold">
-                                    {r?.circle}º Círculo
-                                  </span>
-                                  <span className="text-[10px] font-black uppercase tracking-widest opacity-70">
-                                    {r?.element}
-                                  </span>
-                                  <div className="flex items-center gap-1">
-                                    {temReducao ? (
-                                      <span className="flex items-center gap-1">
-                                        <span className="text-[10px] text-zinc-400 line-through">
-                                          {peInfo.base} PE
-                                        </span>
-                                        <span className="text-[11px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded px-1.5 py-0.5">
-                                          {peInfo.ajustado} PE
-                                        </span>
-                                      </span>
-                                    ) : temAcrescimo ? (
-                                      <span className="text-[11px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
-                                        {peInfo.ajustado} PE
-                                      </span>
-                                    ) : (
-                                      <span className="text-[11px] font-black opacity-60 bg-black/20 border border-current/20 rounded px-1.5 py-0.5">
-                                        {peInfo.base} PE
-                                      </span>
-                                    )}
-                                  </div>
-                                  {hasRitualPotente && (
-                                    <span className="text-[10px] font-black text-violet-400 bg-violet-500/10 border border-violet-500/30 rounded px-1.5 py-0.5 flex items-center gap-1">
-                                      <Sparkles size={10} />+{intellect} dano/cura
-                                    </span>
-                                  )}
-                                </div>
-                                {peInfo.reducoes.length > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {peInfo.reducoes.map((red, i) => (
-                                      <span
-                                        key={i}
-                                        className="text-[9px] font-bold uppercase tracking-wide opacity-60 bg-current/5 border border-current/10 rounded px-1.5 py-0.5"
-                                      >
-                                        {red}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {hasCamuflarOcultismo && (
-                                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold uppercase tracking-wide opacity-70 hover:opacity-100 transition-opacity select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={usarCamuflar}
-                                      onChange={(e) => onSetUsarCamuflar(e.target.checked)}
-                                      className="h-3 w-3 accent-current rounded"
-                                    />
-                                    Camuflar
-                                  </label>
-                                )}
-                                <button
-                                  className="p-1 rounded text-current opacity-40 hover:opacity-100 transition-opacity"
-                                  onClick={() =>
-                                    r?.id &&
-                                    onRemoveRitual(r.id, characterRitual.characterClassAbilityId)
-                                  }
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] uppercase font-bold opacity-70">
-                              <div>
-                                <span className="opacity-50">Execução:</span> {r?.execution}
-                              </div>
-                              <div>
-                                <span className="opacity-50">Alcance:</span> {r?.range}
-                              </div>
-                              <div>
-                                <span className="opacity-50">Alvo:</span> {r?.target}
-                              </div>
-                              <div>
-                                <span className="opacity-50">Duração:</span> {r?.duration}
-                              </div>
-                            </div>
-                            {r?.description && (
-                              <p className="text-xs leading-relaxed opacity-90 italic border-t border-current/10 pt-2">
-                                {r.description}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )}
 
             {/* ── TRILHA ── */}
             {characterTrail && currentTrailAbilities && currentTrailAbilities.length > 0 && (
@@ -2126,9 +2127,21 @@ export default function CharacterTabsCard({
                   onClick={() => onToggleSection('trailAbilities')}
                   className="w-full flex items-center justify-between py-2 text-purple-500 hover:text-purple-400 font-bold uppercase text-sm tracking-wider transition-colors"
                 >
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-purple-500" />
-                    TRILHA: {characterTrail.name}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-purple-500" />
+                      TRILHA: {characterTrail.name}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onOpenTrailModal()
+                      }}
+                      className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 text-[10px] font-bold transition-all"
+                    >
+                      <Edit3 size={10} />
+                      TROCAR
+                    </button>
                   </div>
                   <ChevronDown
                     className={`w-5 h-5 transition-transform ${expandedSections.trailAbilities ? 'rotate-180' : ''}`}
@@ -2136,7 +2149,7 @@ export default function CharacterTabsCard({
                 </button>
                 <AnimatePresence>
                   {expandedSections.trailAbilities && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
@@ -2144,9 +2157,27 @@ export default function CharacterTabsCard({
                       className="space-y-2 mt-2"
                     >
                       {currentTrailAbilities.map((progression, idx) => {
+                        const isMonstruoso = characterTrail.name === 'Monstruoso'
+                        const chosenElement = characterAffinity
+
+                        // Helper para filtrar descrição do Monstruoso
+                        const filterDescription = (text: string) => {
+                          if (!isMonstruoso || !chosenElement || !text) return text
+                          const lines = text.split('\n')
+                          const filteredLines = lines.filter((line) => {
+                            const trimmed = line.trim()
+                            if (trimmed.startsWith('* ')) {
+                              return trimmed.toUpperCase().includes(chosenElement.toUpperCase())
+                            }
+                            return true
+                          })
+                          return filteredLines.join('\n')
+                        }
+
                         // Determina tipo de habilidade baseado no título
                         const title = progression.title
-                        const desc = (progression.description || '').toLowerCase()
+                        const description = filterDescription(progression.description || '')
+                        const desc = description.toLowerCase()
                         const effects = progression.effects || {}
 
                         // Detecta custo de PE
@@ -2169,7 +2200,7 @@ export default function CharacterTabsCard({
                             !isMoveAction)
 
                         // Detecta escolha permanente
-                        const isPermanentChoice = title === 'A Favorita'
+                        const isPermanentChoice = title === 'A Favorita' || (isMonstruoso && progression.nex === 10 && !chosenElement)
 
                         // Detecta toggle (modificador de comportamento)
                         const isToggle = title === 'Poder do Flagelo' || title === 'Lâmina Maldita'
@@ -2251,9 +2282,25 @@ export default function CharacterTabsCard({
                                     </span>
                                   )}
                                 </div>
-                                {progression.description && (
-                                  <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                                    {progression.description}
+                                {isMonstruoso && progression.nex === 10 && !chosenElement && (
+                                  <div className="mt-4 p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3">
+                                    <p className="text-xs text-purple-400 leading-relaxed font-medium">
+                                      Você ainda não escolheu sua <span className="font-bold uppercase">Afinidade Paranormal</span>.
+                                      Como Monstruoso, esta escolha define sua mutação e resistências iniciais.
+                                    </p>
+                                    <button
+                                      onClick={onOpenAffinityModal}
+                                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-all shadow-lg shadow-purple-900/40"
+                                    >
+                                      <Sparkles size={14} className="fill-current" />
+                                      Escolher Afinidade
+                                    </button>
+                                  </div>
+                                )}
+
+                                {description && (
+                                  <p className="text-xs leading-relaxed opacity-80 whitespace-pre-line">
+                                    {description}
                                   </p>
                                 )}
 
@@ -2353,7 +2400,7 @@ export default function CharacterTabsCard({
                           </div>
                         )
                       })}
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
               </div>
@@ -2381,7 +2428,7 @@ export default function CharacterTabsCard({
                   </button>
                   <AnimatePresence>
                     {expandedSections.acquiredAbilities && (
-                      <motion.div
+                      <m.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
@@ -2429,7 +2476,7 @@ export default function CharacterTabsCard({
                             Nenhum poder paranormal adquirido ainda
                           </div>
                         )}
-                      </motion.div>
+                      </m.div>
                     )}
                   </AnimatePresence>
                 </div>

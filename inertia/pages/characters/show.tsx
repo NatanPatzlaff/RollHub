@@ -15,7 +15,7 @@
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import { skillDescriptions } from '../../utils/skillDescriptions'
 import {
   Zap,
@@ -1727,6 +1727,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [skillFilter, setSkillFilter] = useState<string>('Todos')
   const [showSkillInfo, setShowSkillInfo] = useState<boolean>(true)
 
+  // Sync state with backend props when exiting learning mode
+  useEffect(() => {
+    if (!isLearningSkills) {
+      setTrainedSkills(initialTrainedSkills)
+      setVeteranSkills(initialVeteranSkills)
+    }
+  }, [initialTrainedSkills, initialVeteranSkills, isLearningSkills])
+
   // Ensure trained skills don't exceed the limit if intellect decreases
   useEffect(() => {
     if (trainedSkills.length === 0 && initialTrainedSkills.length > 0) {
@@ -1818,9 +1826,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
       {
         preserveState: true,
         preserveScroll: true,
+        onSuccess: () => {
+          setIsLearningSkills(false)
+        },
+        onFinish: () => {
+          setIsSavingSkills(false)
+        },
         onError: (errors) => {
           console.error('Skill save failed:', errors)
-          setIsSavingSkills(false)
         },
       }
     )
@@ -2234,26 +2247,30 @@ export default function CharacterShow(initialProps: CharacterProps) {
       </div>
 
       {/* Affinity selection banner */}
-      {character.nex >= 50 && !character.affinity && (
-        <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">
-          <button
-            onClick={() => setIsAffinityModalOpen(true)}
-            className="w-full flex items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-500/5 px-5 py-4 text-left transition-all hover:border-amber-500/70 hover:bg-amber-500/10"
-          >
-            <div>
-              <p className="text-sm font-bold text-amber-400 uppercase tracking-wider">
-                NEX 50% atingido — Escolha sua Afinidade
-              </p>
-              <p className="mt-0.5 text-xs text-amber-400/60">
-                Clique para vincular seu personagem permanentemente a um elemento do outro lado.
-              </p>
-            </div>
-            <span className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black">
-              Escolher
-            </span>
-          </button>
-        </div>
-      )}
+      {((character.trail?.name === 'Monstruoso' && character.nex >= 10) || character.nex >= 50) &&
+        !character.affinity && (
+          <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">
+            <button
+              onClick={() => setIsAffinityModalOpen(true)}
+              className="w-full flex items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-500/5 px-5 py-4 text-left transition-all hover:border-amber-500/70 hover:bg-amber-500/10"
+            >
+              <div>
+                <p className="text-sm font-bold text-amber-400 uppercase tracking-wider">
+                  NEX {character.trail?.name === 'Monstruoso' ? '10%' : '50%'} atingido — Escolha
+                  sua Afinidade
+                </p>
+                <p className="mt-0.5 text-xs text-amber-400/60">
+                  {character.trail?.name === 'Monstruoso'
+                    ? 'Como Monstruoso, você deve escolher seu elemento de afinidade que guiará sua transformação.'
+                    : 'Clique para vincular seu personagem permanentemente a um elemento do outro lado.'}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black">
+                Escolher
+              </span>
+            </button>
+          </div>
+        )}
 
       <div className="flex flex-row gap-6 max-w-7xl mx-auto p-4 md:p-8">
         {/* COLUNA ESQUERDA (Skills & Inventory) */}
@@ -2336,6 +2353,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             characterRituals={character.rituals || []}
             isOcultista={isOcultista}
             characterAffinity={character.affinity}
+            onOpenAffinityModal={() => setIsAffinityModalOpen(true)}
             onLearnRitual={() => setIsRitualSelectOpen(true)}
             onRemoveRitual={removeRitual}
             nex={character.nex}
@@ -2993,7 +3011,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         maxWidth="max-w-xl"
         title="A Favorita — Escolher Arma"
         footer={
-          <>
+          <div className="flex justify-end gap-3">
             <button
               onClick={onTrailConfigModalOpenChange}
               className="px-5 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
@@ -3005,64 +3023,44 @@ export default function CharacterShow(initialProps: CharacterProps) {
               disabled={isSavingTrailConfig || !selectedFavoriteWeapon}
               className="flex items-center gap-2 px-5 py-2 rounded-md font-medium bg-red-600 hover:bg-red-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSavingTrailConfig ? 'Salvando...' : 'Confirmar Arma Favorita'}
+              {isSavingTrailConfig ? 'Salvando...' : 'Confirmar'}
             </button>
-          </>
+          </div>
         }
       >
         <div className="space-y-4">
           <p className="text-sm text-zinc-400">
             Escolha uma arma do seu inventário para ser sua favorita. A{' '}
             <span className="text-red-400 font-bold">categoria é reduzida em I</span> e conforme
-            avança de NEX, ganha bônus adicionais (Técnica Secreta, Técnica Sublime, Máquina de
-            Matar).
+            avança de NEX, ganha bônus adicionais.
           </p>
           {inventoryWeapons.length > 0 ? (
-            <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
-              {inventoryWeapons.map((w: any, idx: number) => {
-                const isSelected = selectedFavoriteWeapon === w.name
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedFavoriteWeapon(w.name)}
-                    className={`w-full text-left p-3 rounded-lg border transition-all ${
-                      isSelected
-                        ? 'bg-red-500/20 border-red-500 ring-1 ring-red-500/50'
-                        : 'bg-zinc-950/50 border-zinc-700 hover:border-red-500/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {isSelected && <span className="text-red-400 font-black text-lg">★</span>}
-                      <div>
-                        <span className="font-bold text-white text-sm">{w.name}</span>
-                        <div className="flex gap-2 mt-0.5">
-                          {w.damage && (
-                            <span className="text-[10px] text-zinc-400">{w.damage}</span>
-                          )}
-                          {w.weaponType && (
-                            <span className="text-[10px] text-zinc-500 uppercase">
-                              {w.weaponType}
-                            </span>
-                          )}
-                          {w.range && <span className="text-[10px] text-zinc-500">{w.range}</span>}
-                        </div>
-                      </div>
+            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+              {inventoryWeapons.map((w, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setSelectedFavoriteWeapon(w.name)}
+                  className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                    selectedFavoriteWeapon === w.name
+                      ? 'bg-red-500/10 border-red-500 text-red-400'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  <div className="flex flex-col items-start text-left">
+                    <span className="font-bold text-sm">{w.name}</span>
+                    <div className="flex gap-2 text-[10px] text-zinc-500 uppercase">
+                      {w.weaponType && <span>{w.weaponType}</span>}
+                      {w.range && <span>{w.range}</span>}
                     </div>
-                  </button>
-                )
-              })}
+                  </div>
+                  {selectedFavoriteWeapon === w.name && <Check size={16} />}
+                </button>
+              ))}
             </div>
           ) : (
-            <p className="text-sm text-zinc-500 italic">
-              Nenhuma arma no inventário. Adicione armas primeiro.
+            <p className="text-sm text-zinc-500 italic text-center py-4">
+              Nenhuma arma no inventário.
             </p>
-          )}
-          {selectedFavoriteWeapon && (
-            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-              <p className="text-xs text-red-400 font-bold">
-                Arma Favorita: <span className="text-white">{selectedFavoriteWeapon}</span>
-              </p>
-            </div>
           )}
         </div>
       </BaseModal>

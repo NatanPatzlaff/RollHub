@@ -1,14 +1,10 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import CharacterStat from '#models/character_stat'
+import { updateCharacterStatsValidator } from '#validators/character_stat'
 
 export default class CharacterStatsController {
   async update({ params, request, response }: HttpContext) {
-    const { currentHp, currentPe, currentSanity, permanentSanityLoss } = request.only([
-      'currentHp',
-      'currentPe',
-      'currentSanity',
-      'permanentSanityLoss',
-    ])
+    const { currentHp, currentPe, currentSanity, permanentSanityLoss } = await request.validateUsing(updateCharacterStatsValidator)
 
     // Buscar stats do personagem
     const stat = await CharacterStat.query().where('characterId', params.id).firstOrFail()

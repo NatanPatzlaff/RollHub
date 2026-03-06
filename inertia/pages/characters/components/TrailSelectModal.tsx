@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { m, AnimatePresence } from 'framer-motion'
 import {
   Crosshair,
   Users,
@@ -137,7 +137,7 @@ export default function TrailSelectModal({
             const progression = trail.progression || []
 
             return (
-              <motion.div
+              <m.div
                 key={trail.id}
                 ref={(el) => {
                   cardRefs.current[trail.id] = el
@@ -154,7 +154,7 @@ export default function TrailSelectModal({
                 }`}
               >
                 {/* Cabeçalho */}
-                <motion.div layout="position" className="mb-3 flex items-start justify-between">
+                <m.div layout="position" className="mb-3 flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div
                       className={`rounded-lg p-2 transition-colors ${
@@ -176,31 +176,31 @@ export default function TrailSelectModal({
 
                   <AnimatePresence>
                     {isSelected && (
-                      <motion.div
+                      <m.div
                         initial={{ scale: 0, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0, opacity: 0 }}
                         className="rounded-full bg-amber-500 p-1 text-black shadow-lg"
                       >
                         <Check size={16} strokeWidth={3} />
-                      </motion.div>
+                      </m.div>
                     )}
                   </AnimatePresence>
-                </motion.div>
+                </m.div>
 
                 {/* Descrição */}
                 {trail.description && (
-                  <motion.p
+                  <m.p
                     layout="position"
                     className={`mb-4 text-sm leading-relaxed text-zinc-400 ${isSelected ? '' : 'line-clamp-2'}`}
                   >
                     {trail.description}
-                  </motion.p>
+                  </m.p>
                 )}
 
                 {/* Badges de NEX */}
                 {progression.length > 0 && (
-                  <motion.div layout="position" className="flex flex-wrap gap-2">
+                  <m.div layout="position" className="flex flex-wrap gap-2">
                     {progression.map((p) => (
                       <span
                         key={p.id}
@@ -213,13 +213,13 @@ export default function TrailSelectModal({
                         NEX {p.nex}% — {p.title}
                       </span>
                     ))}
-                  </motion.div>
+                  </m.div>
                 )}
 
                 {/* Detalhes expandidos */}
                 <AnimatePresence>
                   {isSelected && progression.length > 0 && (
-                    <motion.div
+                    <m.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
@@ -239,10 +239,10 @@ export default function TrailSelectModal({
                           </div>
                         ))}
                       </div>
-                    </motion.div>
+                    </m.div>
                   )}
                 </AnimatePresence>
-              </motion.div>
+              </m.div>
             )
           })}
         </div>

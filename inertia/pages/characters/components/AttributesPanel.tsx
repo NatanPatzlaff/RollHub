@@ -1,5 +1,5 @@
 import { Card, CardBody, CardHeader, Button } from '@heroui/react'
-import { motion } from 'framer-motion'
+import { m } from 'framer-motion'
 import {
     RadarChart, PolarGrid, PolarAngleAxis, Radar,
     ResponsiveContainer
