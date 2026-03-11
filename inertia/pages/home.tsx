@@ -28,10 +28,12 @@ export default function Home({
   classes,
   origins,
   characters = [],
+  campaigns = [],
 }: {
   classes: any[]
   origins: Origin[]
   characters?: any[]
+  campaigns?: any[]
 }) {
   const { user } = usePage().props as any
 
@@ -46,11 +48,12 @@ export default function Home({
   // paginação
   const [charPage, setCharPage] = useState(1)
   const [campPage, setCampPage] = useState(1)
-  const campaigns: any[] = []
   const charTotalPages = Math.ceil(characters.length / ITEMS_PER_PAGE)
-  const campTotalPages = Math.ceil(campaigns.length / ITEMS_PER_PAGE)
+  const campTotalPages = Math.ceil((campaigns?.length || 0) / ITEMS_PER_PAGE)
   const paginatedChars = characters.slice((charPage - 1) * ITEMS_PER_PAGE, charPage * ITEMS_PER_PAGE)
-  const paginatedCamps = campaigns.slice((campPage - 1) * ITEMS_PER_PAGE, campPage * ITEMS_PER_PAGE)
+  const paginatedCamps = (campaigns || []).slice((campPage - 1) * ITEMS_PER_PAGE, campPage * ITEMS_PER_PAGE)
+
+  const [isCreatingCampaign, setIsCreatingCampaign] = useState(false)
 
   const handleLogout = () => router.post('/logout')
 
@@ -77,6 +80,19 @@ export default function Home({
         setIsDeleting(false)
         console.error('Character deletion failed')
       },
+    })
+  }
+
+  const handleCreateCampaign = () => {
+    if (!user) { router.visit('/login'); return }
+    setIsCreatingCampaign(true)
+    
+    router.post('/campaigns', {}, {
+      onSuccess: () => setIsCreatingCampaign(false),
+      onError: () => {
+        setIsCreatingCampaign(false)
+        console.error('Failed to create campaign')
+      }
     })
   }
 
@@ -153,6 +169,8 @@ export default function Home({
               <Button
                 className="bg-accent text-white font-bold hover:bg-accent/90"
                 startContent={<Plus className="h-4 w-4" />}
+                onPress={handleCreateCampaign}
+                isLoading={isCreatingCampaign}
               >
                 Criar Campanha
               </Button>
@@ -167,7 +185,12 @@ export default function Home({
                 </div>
               ) : (
                 paginatedCamps.map((campaign, i) => (
-                  <CampaignCard key={campaign.id} campaign={campaign} index={i} />
+                  <CampaignCard
+                    key={campaign.id}
+                    campaign={campaign}
+                    index={i}
+                    onClick={() => router.visit(`/campaigns/${campaign.id}`)}
+                  />
                 ))
               )}
             </div>

@@ -1,6 +1,6 @@
 import { Button, Chip } from '@heroui/react'
 import { Link } from '@inertiajs/react'
-import { User, Edit3, Menu } from 'lucide-react'
+import { User, Edit3, Dices } from 'lucide-react'
 
 interface CharacterTopBarProps {
     character: {
@@ -10,9 +10,10 @@ interface CharacterTopBarProps {
         origin?: { id: number; name: string }
     }
     onEditModal: (step: number) => void
+    onDiceClick: () => void
 }
 
-export default function CharacterTopBar({ character, onEditModal }: CharacterTopBarProps) {
+export default function CharacterTopBar({ character, onEditModal, onDiceClick }: CharacterTopBarProps) {
     return (
         <div className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
             <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
@@ -55,8 +56,13 @@ export default function CharacterTopBar({ character, onEditModal }: CharacterTop
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button size="sm" variant="flat" className="bg-zinc-800 text-zinc-300">
-                        <Menu size={16} />
+                    <Button 
+                        size="sm" 
+                        variant="flat" 
+                        className="bg-zinc-800 text-zinc-300 hover:text-amber-400 transition-colors"
+                        onPress={onDiceClick}
+                    >
+                        <Dices size={16} />
                     </Button>
                 </div>
             </div>

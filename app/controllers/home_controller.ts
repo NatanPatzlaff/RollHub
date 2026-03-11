@@ -2,6 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import Class from '#models/class'
 import Origin from '#models/origin'
 import Character from '#models/character'
+import Campaign from '#models/campaign'
 
 export default class HomeController {
     async index({ auth, inertia }: HttpContext) {
@@ -14,11 +15,19 @@ export default class HomeController {
             .orderBy('name', 'asc')
 
         let characters: Character[] = []
+        let campaigns: Campaign[] = []
+        
         if (auth.user) {
             characters = await Character.query()
                 .where('user_id', auth.user.id)
                 .preload('class')
                 .preload('origin')
+                .orderBy('created_at', 'desc')
+                
+            campaigns = await Campaign.query()
+                .where('game_master_id', auth.user.id)
+                .orWhereHas('players', (query) => query.where('user_id', auth.user!.id))
+                .withCount('players')
                 .orderBy('created_at', 'desc')
         }
 
@@ -26,6 +35,7 @@ export default class HomeController {
             classes,
             origins,
             characters,
+            campaigns,
         })
     }
 }

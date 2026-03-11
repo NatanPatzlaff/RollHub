@@ -1,42 +1,22 @@
-﻿import {
-  Card,
-  CardBody,
-  Button,
-  Progress,
-  Chip,
-  Divider,
-  Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
-  useDisclosure,
-  Input,
-} from '@heroui/react'
+import { Card, CardBody, Button, Progress, Chip, Divider, useDisclosure } from '@heroui/react'
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { m, AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { skillDescriptions } from '../../utils/skillDescriptions'
 import {
   Zap,
-  Activity,
-  Trash2,
   Plus,
-  Filter,
   Dumbbell,
   Brain,
   Wind,
   Heart,
   Ghost,
   User,
-  Menu,
+  Dices,
   RotateCcw,
-  Save,
   Check,
   Edit3,
-  ChevronDown,
-  Sparkles,
-  Sword,
   Search,
 } from 'lucide-react'
 import TrailSelectModal from './components/TrailSelectModal'
@@ -53,6 +33,7 @@ import SkillsCard from './components/SkillsCard'
 import CharacterTabsCard from './components/CharacterTabsCard'
 import CreateCharacterModal from '../home/CreateCharacterModal'
 import RitualBuffModal from './components/RitualBuffModal'
+import RollHistorySidebar from './components/RollHistorySidebar'
 import {
   getRitualBuff,
   rollDiceExpression,
@@ -500,6 +481,29 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [isAffinityModalOpen, setIsAffinityModalOpen] = useState(false)
   const [isAffinityLoading, setIsAffinityLoading] = useState(false)
   const [isParanormalSelectOpen, setIsParanormalSelectOpen] = useState(false)
+
+  // Roll History Sidebar state
+  const [isRollHistoryOpen, setIsRollHistoryOpen] = useState(false)
+  const [campaignRolls, setCampaignRolls] = useState<any[]>([])
+
+  // Buscar histórico de rolagens da campanha
+  const loadCampaignRolls = async () => {
+    try {
+      // Assumindo que o personagem tem uma relations campaign_id
+      const response = await axios.get(`/api/characters/${character.id}/campaign-rolls`)
+      setCampaignRolls(response.data.rolls || [])
+    } catch (error) {
+      console.error('Erro ao buscar histórico de rolagens:', error)
+      setCampaignRolls([])
+    }
+  }
+
+  // Carregar rolls quando abre a sidebar
+  useEffect(() => {
+    if (isRollHistoryOpen) {
+      loadCampaignRolls()
+    }
+  }, [isRollHistoryOpen])
 
   // --- Affinity selection ---------------------------------------------------
   const selectAffinity = (affinity: string) => {
@@ -1276,13 +1280,34 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   // Mapeamento de perícia → atributo base (espelha SkillsCard ALL_SKILLS)
   const SKILL_ATTR: Record<string, string> = {
-    Acrobacia: 'AGI', Adestramento: 'PRE', Artes: 'PRE', Atletismo: 'FOR',
-    Atualidades: 'INT', Ciências: 'INT', Crime: 'AGI', Diplomacia: 'PRE',
-    Enganação: 'PRE', Fortitude: 'VIG', Furtividade: 'AGI', Iniciativa: 'AGI',
-    Intimidação: 'PRE', Intuição: 'PRE', Investigação: 'INT', Luta: 'FOR',
-    Medicina: 'INT', Ocultismo: 'INT', Percepção: 'PRE', Pilotagem: 'AGI',
-    Pontaria: 'AGI', Profissão: 'INT', Reflexos: 'AGI', Religião: 'PRE',
-    Sobrevivência: 'INT', Tática: 'INT', Tecnologia: 'INT', Vontade: 'PRE',
+    Acrobacia: 'AGI',
+    Adestramento: 'PRE',
+    Artes: 'PRE',
+    Atletismo: 'FOR',
+    Atualidades: 'INT',
+    Ciências: 'INT',
+    Crime: 'AGI',
+    Diplomacia: 'PRE',
+    Enganação: 'PRE',
+    Fortitude: 'VIG',
+    Furtividade: 'AGI',
+    Iniciativa: 'AGI',
+    Intimidação: 'PRE',
+    Intuição: 'PRE',
+    Investigação: 'INT',
+    Luta: 'FOR',
+    Medicina: 'INT',
+    Ocultismo: 'INT',
+    Percepção: 'PRE',
+    Pilotagem: 'AGI',
+    Pontaria: 'AGI',
+    Profissão: 'INT',
+    Reflexos: 'AGI',
+    Religião: 'PRE',
+    Sobrevivência: 'INT',
+    Tática: 'INT',
+    Tecnologia: 'INT',
+    Vontade: 'PRE',
   }
 
   /** Ativa uma habilidade (trilha ou origem): desconta PE e registra buff ativo */
@@ -1295,9 +1320,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
     if (peCost > 0) handleDeductPe(peCost)
 
     // Garante que effects é um objeto (proteção extra caso ainda chegue como string)
-    const eff = typeof effects === 'string'
-      ? (() => { try { return JSON.parse(effects) } catch { return {} } })()
-      : (effects || {})
+    const eff =
+      typeof effects === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(effects)
+            } catch {
+              return {}
+            }
+          })()
+        : effects || {}
 
     // Infere duration se não presente no effects
     let duration = eff.duration
@@ -1312,14 +1344,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
 
     // Gera effect_label se ausente
-    const effectLabel = eff.effect_label
-      || (eff.threat_range_bonus ? `+${eff.threat_range_bonus} margem de ameaça` : null)
-      || (eff.attack_bonus && eff.damage_bonus ? `+${eff.attack_bonus} atk / +${eff.damage_bonus} dano` : null)
-      || (eff.attack_bonus ? `+${eff.attack_bonus} no ataque` : null)
-      || (eff.damage_bonus ? `+${eff.damage_bonus} no dano` : null)
-      || (eff.bonus && eff.skill_bonus_attr ? `+${eff.bonus} em ${Array.isArray(eff.skill_bonus_attr) ? eff.skill_bonus_attr.join('/') : eff.skill_bonus_attr}` : null)
-      || (eff.bonus ? `+${eff.bonus} bônus` : null)
-      || abilityName
+    const effectLabel =
+      eff.effect_label ||
+      (eff.threat_range_bonus ? `+${eff.threat_range_bonus} margem de ameaça` : null) ||
+      (eff.attack_bonus && eff.damage_bonus
+        ? `+${eff.attack_bonus} atk / +${eff.damage_bonus} dano`
+        : null) ||
+      (eff.attack_bonus ? `+${eff.attack_bonus} no ataque` : null) ||
+      (eff.damage_bonus ? `+${eff.damage_bonus} no dano` : null) ||
+      (eff.bonus && eff.skill_bonus_attr
+        ? `+${eff.bonus} em ${Array.isArray(eff.skill_bonus_attr) ? eff.skill_bonus_attr.join('/') : eff.skill_bonus_attr}`
+        : null) ||
+      (eff.bonus ? `+${eff.bonus} bônus` : null) ||
+      abilityName
 
     const enrichedEffects = { ...eff, duration, effect_label: effectLabel }
 
@@ -1340,7 +1377,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   const resetSceneUses = () => {
     setAbilityUsesThisScene({})
-    setActiveAbilityBuffs([])  }
+    setActiveAbilityBuffs([])
+  }
 
   // ── Totais derivados dos buffs ativos de rituais ────────────────────────────
   const ritualDefenseBonus = activeRitualBuffs.reduce((s, b) => s + b.defenseBonus, 0)
@@ -1495,9 +1533,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
     const obtained = trailProgressions.filter((p) => p.nex <= character.nex)
     let reduction = 0
     for (const prog of obtained) {
-      if (prog.title === 'Máquina de Matar') { reduction = 3; break }
-      if (prog.title === 'Técnica Secreta') { reduction = 2 }
-      if (prog.title === 'A Favorita' && reduction < 1) { reduction = 1 }
+      if (prog.title === 'Máquina de Matar') {
+        reduction = 3
+        break
+      }
+      if (prog.title === 'Técnica Secreta') {
+        reduction = 2
+      }
+      if (prog.title === 'A Favorita' && reduction < 1) {
+        reduction = 1
+      }
     }
     return reduction
   }, [favoriteWeaponName, character.trail?.name, character.nex, trailProgressions])
@@ -1727,14 +1772,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [skillFilter, setSkillFilter] = useState<string>('Todos')
   const [showSkillInfo, setShowSkillInfo] = useState<boolean>(true)
 
-  // Sync state with backend props when exiting learning mode
-  useEffect(() => {
-    if (!isLearningSkills) {
-      setTrainedSkills(initialTrainedSkills)
-      setVeteranSkills(initialVeteranSkills)
-    }
-  }, [initialTrainedSkills, initialVeteranSkills, isLearningSkills])
-
   // Ensure trained skills don't exceed the limit if intellect decreases
   useEffect(() => {
     if (trainedSkills.length === 0 && initialTrainedSkills.length > 0) {
@@ -1826,14 +1863,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
       {
         preserveState: true,
         preserveScroll: true,
-        onSuccess: () => {
-          setIsLearningSkills(false)
-        },
-        onFinish: () => {
-          setIsSavingSkills(false)
-        },
         onError: (errors) => {
           console.error('Skill save failed:', errors)
+          setIsSavingSkills(false)
         },
       }
     )
@@ -2239,38 +2271,41 @@ export default function CharacterShow(initialProps: CharacterProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="flat" className="bg-zinc-800 text-zinc-300">
-              <Menu size={16} />
+            <Button
+              isIconOnly
+              size="sm"
+              variant="flat"
+              className="bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 transition-colors"
+              onPress={() => setIsRollHistoryOpen(true)}
+              title="Histórico de Rolagens da Campanha"
+            >
+              <Dices size={18} />
             </Button>
           </div>
         </div>
       </div>
 
       {/* Affinity selection banner */}
-      {((character.trail?.name === 'Monstruoso' && character.nex >= 10) || character.nex >= 50) &&
-        !character.affinity && (
-          <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">
-            <button
-              onClick={() => setIsAffinityModalOpen(true)}
-              className="w-full flex items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-500/5 px-5 py-4 text-left transition-all hover:border-amber-500/70 hover:bg-amber-500/10"
-            >
-              <div>
-                <p className="text-sm font-bold text-amber-400 uppercase tracking-wider">
-                  NEX {character.trail?.name === 'Monstruoso' ? '10%' : '50%'} atingido — Escolha
-                  sua Afinidade
-                </p>
-                <p className="mt-0.5 text-xs text-amber-400/60">
-                  {character.trail?.name === 'Monstruoso'
-                    ? 'Como Monstruoso, você deve escolher seu elemento de afinidade que guiará sua transformação.'
-                    : 'Clique para vincular seu personagem permanentemente a um elemento do outro lado.'}
-                </p>
-              </div>
-              <span className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black">
-                Escolher
-              </span>
-            </button>
-          </div>
-        )}
+      {character.nex >= 50 && !character.affinity && (
+        <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">
+          <button
+            onClick={() => setIsAffinityModalOpen(true)}
+            className="w-full flex items-center justify-between gap-4 rounded-xl border border-amber-500/40 bg-amber-500/5 px-5 py-4 text-left transition-all hover:border-amber-500/70 hover:bg-amber-500/10"
+          >
+            <div>
+              <p className="text-sm font-bold text-amber-400 uppercase tracking-wider">
+                NEX 50% atingido — Escolha sua Afinidade
+              </p>
+              <p className="mt-0.5 text-xs text-amber-400/60">
+                Clique para vincular seu personagem permanentemente a um elemento do outro lado.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black">
+              Escolher
+            </span>
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-row gap-6 max-w-7xl mx-auto p-4 md:p-8">
         {/* COLUNA ESQUERDA (Skills & Inventory) */}
@@ -2301,7 +2336,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
               const skillAttr = SKILL_ATTR[skill] ?? ''
               const relevantBuffs = activeAbilityBuffs.filter((b) => {
                 if (!b.effects.bonus) return false
-                if (b.effects.duration !== 'next_test' && b.effects.duration !== 'scene') return false
+                if (b.effects.duration !== 'next_test' && b.effects.duration !== 'scene')
+                  return false
                 if (b.effects.exclude_skills?.includes(skill)) return false
                 const target = b.effects.skill_bonus_target
                 const attrTarget = b.effects.skill_bonus_attr
@@ -2327,7 +2363,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 )
               }
               diceTrayRef.current?.openDiceTray()
-              diceTrayRef.current?.rollDice(20, attrVal, label, 'highest', trainingBonus + extraBonus)
+              diceTrayRef.current?.rollDice(
+                20,
+                attrVal,
+                label,
+                'highest',
+                trainingBonus + extraBonus
+              )
             }}
             onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
           />
@@ -2353,7 +2395,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
             characterRituals={character.rituals || []}
             isOcultista={isOcultista}
             characterAffinity={character.affinity}
-            onOpenAffinityModal={() => setIsAffinityModalOpen(true)}
             onLearnRitual={() => setIsRitualSelectOpen(true)}
             onRemoveRitual={removeRitual}
             nex={character.nex}
@@ -2367,7 +2408,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
               const wType = isMelee ? 'melee' : 'ranged'
               // Filtra buffs de combate: ataque, dano e margem de ameaça
               const combatBuffs = activeAbilityBuffs.filter((b) => {
-                if (b.effects.duration !== 'next_attack' && b.effects.duration !== 'scene') return false
+                if (b.effects.duration !== 'next_attack' && b.effects.duration !== 'scene')
+                  return false
                 const wt = b.effects.weapon_type
                 if (wt && wt !== 'all' && wt !== wType) return false
                 return (
@@ -2376,9 +2418,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   (b.effects.threat_range_bonus ?? 0) > 0
                 )
               })
-              const extraAttackBonus = combatBuffs.reduce((s, b) => s + (b.effects.attack_bonus ?? 0), 0)
-              const extraDamageBonus = combatBuffs.reduce((s, b) => s + (b.effects.damage_bonus ?? 0), 0)
-              const extraCritBonus = combatBuffs.reduce((s, b) => s + (b.effects.threat_range_bonus ?? 0), 0)
+              const extraAttackBonus = combatBuffs.reduce(
+                (s, b) => s + (b.effects.attack_bonus ?? 0),
+                0
+              )
+              const extraDamageBonus = combatBuffs.reduce(
+                (s, b) => s + (b.effects.damage_bonus ?? 0),
+                0
+              )
+              const extraCritBonus = combatBuffs.reduce(
+                (s, b) => s + (b.effects.threat_range_bonus ?? 0),
+                0
+              )
               // Consome buffs de duração 'next_attack' após a rolagem
               if (combatBuffs.length > 0) {
                 setActiveAbilityBuffs((prev) =>
@@ -3011,7 +3062,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         maxWidth="max-w-xl"
         title="A Favorita — Escolher Arma"
         footer={
-          <div className="flex justify-end gap-3">
+          <>
             <button
               onClick={onTrailConfigModalOpenChange}
               className="px-5 py-2 rounded-md font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
@@ -3023,44 +3074,64 @@ export default function CharacterShow(initialProps: CharacterProps) {
               disabled={isSavingTrailConfig || !selectedFavoriteWeapon}
               className="flex items-center gap-2 px-5 py-2 rounded-md font-medium bg-red-600 hover:bg-red-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSavingTrailConfig ? 'Salvando...' : 'Confirmar'}
+              {isSavingTrailConfig ? 'Salvando...' : 'Confirmar Arma Favorita'}
             </button>
-          </div>
+          </>
         }
       >
         <div className="space-y-4">
           <p className="text-sm text-zinc-400">
             Escolha uma arma do seu inventário para ser sua favorita. A{' '}
             <span className="text-red-400 font-bold">categoria é reduzida em I</span> e conforme
-            avança de NEX, ganha bônus adicionais.
+            avança de NEX, ganha bônus adicionais (Técnica Secreta, Técnica Sublime, Máquina de
+            Matar).
           </p>
           {inventoryWeapons.length > 0 ? (
-            <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-              {inventoryWeapons.map((w, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedFavoriteWeapon(w.name)}
-                  className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
-                    selectedFavoriteWeapon === w.name
-                      ? 'bg-red-500/10 border-red-500 text-red-400'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
-                  }`}
-                >
-                  <div className="flex flex-col items-start text-left">
-                    <span className="font-bold text-sm">{w.name}</span>
-                    <div className="flex gap-2 text-[10px] text-zinc-500 uppercase">
-                      {w.weaponType && <span>{w.weaponType}</span>}
-                      {w.range && <span>{w.range}</span>}
+            <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+              {inventoryWeapons.map((w: any, idx: number) => {
+                const isSelected = selectedFavoriteWeapon === w.name
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedFavoriteWeapon(w.name)}
+                    className={`w-full text-left p-3 rounded-lg border transition-all ${
+                      isSelected
+                        ? 'bg-red-500/20 border-red-500 ring-1 ring-red-500/50'
+                        : 'bg-zinc-950/50 border-zinc-700 hover:border-red-500/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {isSelected && <span className="text-red-400 font-black text-lg">★</span>}
+                      <div>
+                        <span className="font-bold text-white text-sm">{w.name}</span>
+                        <div className="flex gap-2 mt-0.5">
+                          {w.damage && (
+                            <span className="text-[10px] text-zinc-400">{w.damage}</span>
+                          )}
+                          {w.weaponType && (
+                            <span className="text-[10px] text-zinc-500 uppercase">
+                              {w.weaponType}
+                            </span>
+                          )}
+                          {w.range && <span className="text-[10px] text-zinc-500">{w.range}</span>}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  {selectedFavoriteWeapon === w.name && <Check size={16} />}
-                </button>
-              ))}
+                  </button>
+                )
+              })}
             </div>
           ) : (
-            <p className="text-sm text-zinc-500 italic text-center py-4">
-              Nenhuma arma no inventário.
+            <p className="text-sm text-zinc-500 italic">
+              Nenhuma arma no inventário. Adicione armas primeiro.
             </p>
+          )}
+          {selectedFavoriteWeapon && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <p className="text-xs text-red-400 font-bold">
+                Arma Favorita: <span className="text-white">{selectedFavoriteWeapon}</span>
+              </p>
+            </div>
           )}
         </div>
       </BaseModal>
@@ -3313,7 +3384,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
         <div className="space-y-5">
           {/* Modificações Atuais */}
           <div>
-            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Modificações Atuais</p>
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
+              Modificações Atuais
+            </p>
             <div className="flex flex-wrap gap-1.5">
               {modifyingWeapon?.modifications && modifyingWeapon.modifications.length > 0 ? (
                 modifyingWeapon.modifications.map((mod: any) => {
@@ -3325,12 +3398,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     Conhecimento: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
                   }
                   const cls = isCurse
-                    ? (elemClasses[mod.element] || 'bg-red-500/10 text-red-300 border-red-500/30')
+                    ? elemClasses[mod.element] || 'bg-red-500/10 text-red-300 border-red-500/30'
                     : 'bg-blue-500/10 text-blue-300 border-blue-500/20'
                   return (
                     <button
                       key={mod.id}
-                      onClick={() => toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')}
+                      onClick={() =>
+                        toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')
+                      }
                       title="Clique para remover"
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all hover:opacity-70 ${cls}`}
                     >
@@ -3359,7 +3434,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
                     onClick={() => setModTypeFilter(type)}
                     className={`px-4 h-7 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
                       isActive
-                        ? type === 'Melhoria' ? 'bg-blue-600 text-white' : 'bg-red-600 text-white'
+                        ? type === 'Melhoria'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-red-600 text-white'
                         : 'text-zinc-500 hover:text-zinc-300'
                     }`}
                   >
@@ -3374,30 +3451,67 @@ export default function CharacterShow(initialProps: CharacterProps) {
           <div className="space-y-5">
             {modTypeFilter === 'Maldição' ? (
               (['Sangue', 'Morte', 'Energia', 'Conhecimento'] as const).map((element) => {
-                const elemMods = catalogAmmunitions.filter((m) => m.type === 'Maldição' && m.element === element)
+                const elemMods = catalogAmmunitions.filter(
+                  (m) => m.type === 'Maldição' && m.element === element
+                )
                 if (elemMods.length === 0) return null
 
-                const elemColor = { Sangue: 'text-red-400', Morte: 'text-zinc-400', Energia: 'text-purple-400', Conhecimento: 'text-amber-400' }[element]
-                const activeBg   = { Sangue: 'bg-red-500/20',    Morte: 'bg-zinc-500/20',   Energia: 'bg-purple-500/20',  Conhecimento: 'bg-amber-500/20'  }[element]
-                const activeBorder = { Sangue: 'border-red-500',  Morte: 'border-zinc-500',  Energia: 'border-purple-500', Conhecimento: 'border-amber-500' }[element]
-                const activeRing  = { Sangue: 'ring-red-500/40',  Morte: 'ring-zinc-500/40', Energia: 'ring-purple-500/40',Conhecimento: 'ring-amber-500/40'}[element]
+                const elemColor = {
+                  Sangue: 'text-red-400',
+                  Morte: 'text-zinc-400',
+                  Energia: 'text-purple-400',
+                  Conhecimento: 'text-amber-400',
+                }[element]
+                const activeBg = {
+                  Sangue: 'bg-red-500/20',
+                  Morte: 'bg-zinc-500/20',
+                  Energia: 'bg-purple-500/20',
+                  Conhecimento: 'bg-amber-500/20',
+                }[element]
+                const activeBorder = {
+                  Sangue: 'border-red-500',
+                  Morte: 'border-zinc-500',
+                  Energia: 'border-purple-500',
+                  Conhecimento: 'border-amber-500',
+                }[element]
+                const activeRing = {
+                  Sangue: 'ring-red-500/40',
+                  Morte: 'ring-zinc-500/40',
+                  Energia: 'ring-purple-500/40',
+                  Conhecimento: 'ring-amber-500/40',
+                }[element]
 
                 return (
                   <div key={element}>
-                    <p className={`text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1.5 mb-2 ${elemColor}`}>
+                    <p
+                      className={`text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1.5 mb-2 ${elemColor}`}
+                    >
                       <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
                       {element}
                     </p>
                     <div className="space-y-2">
                       {elemMods.map((mod) => {
-                        const isActive = modifyingWeapon?.modifications?.some((m: any) => m.modificationId === mod.id)
-                        const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
+                        const isActive = modifyingWeapon?.modifications?.some(
+                          (m: any) => m.modificationId === mod.id
+                        )
+                        const validation = !isActive
+                          ? canApplyModification(modifyingWeapon, mod.category)
+                          : { allowed: true }
                         const isBlocked = !isActive && !validation.allowed
                         return (
                           <button
                             key={mod.id}
                             disabled={isBlocked}
-                            onClick={isBlocked ? undefined : () => toggleModification(modifyingWeapon!.id, mod.id, isActive ? 'remove' : 'add')}
+                            onClick={
+                              isBlocked
+                                ? undefined
+                                : () =>
+                                    toggleModification(
+                                      modifyingWeapon!.id,
+                                      mod.id,
+                                      isActive ? 'remove' : 'add'
+                                    )
+                            }
                             title={isBlocked ? validation.reason : undefined}
                             className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
                               isBlocked
@@ -3408,14 +3522,24 @@ export default function CharacterShow(initialProps: CharacterProps) {
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
-                              <span className={`font-semibold text-sm ${ isActive ? elemColor : 'text-zinc-200' }`}>{mod.name}</span>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">+{mod.category} CAT</span>
+                              <span
+                                className={`font-semibold text-sm ${isActive ? elemColor : 'text-zinc-200'}`}
+                              >
+                                {mod.name}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">
+                                +{mod.category} CAT
+                              </span>
                             </div>
                             {mod.description && (
-                              <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">{mod.description}</p>
+                              <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">
+                                {mod.description}
+                              </p>
                             )}
                             <div className="mt-1.5 flex items-center justify-between">
-                              <span className={`text-[9px] uppercase font-bold ${ isBlocked ? 'text-red-500' : isActive ? elemColor : 'text-zinc-600' }`}>
+                              <span
+                                className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-500' : isActive ? elemColor : 'text-zinc-600'}`}
+                              >
                                 {isBlocked ? validation.reason : 'MALDIÇÃO'}
                               </span>
                               {isActive && <Check size={11} className={elemColor} />}
@@ -3429,40 +3553,65 @@ export default function CharacterShow(initialProps: CharacterProps) {
               })
             ) : (
               <div className="space-y-2">
-                {catalogAmmunitions.filter((m) => m.type === 'Melhoria').map((mod) => {
-                  const isActive = modifyingWeapon?.modifications?.some((m: any) => m.modificationId === mod.id)
-                  const validation = !isActive ? canApplyModification(modifyingWeapon, mod.category) : { allowed: true }
-                  const isBlocked = !isActive && !validation.allowed
-                  return (
-                    <button
-                      key={mod.id}
-                      disabled={isBlocked}
-                      onClick={isBlocked ? undefined : () => toggleModification(modifyingWeapon!.id, mod.id, isActive ? 'remove' : 'add')}
-                      title={isBlocked ? validation.reason : undefined}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
-                        isBlocked
-                          ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                          : isActive
-                            ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/40'
-                            : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className={`font-semibold text-sm ${ isActive ? 'text-blue-300' : 'text-zinc-200' }`}>{mod.name}</span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">+{mod.category} CAT</span>
-                      </div>
-                      {mod.description && (
-                        <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">{mod.description}</p>
-                      )}
-                      <div className="mt-1.5 flex items-center justify-between">
-                        <span className={`text-[9px] uppercase font-bold ${ isBlocked ? 'text-red-500' : isActive ? 'text-blue-400' : 'text-zinc-600' }`}>
-                          {isBlocked ? validation.reason : 'MELHORIA'}
-                        </span>
-                        {isActive && <Check size={11} className="text-blue-400" />}
-                      </div>
-                    </button>
-                  )
-                })}
+                {catalogAmmunitions
+                  .filter((m) => m.type === 'Melhoria')
+                  .map((mod) => {
+                    const isActive = modifyingWeapon?.modifications?.some(
+                      (m: any) => m.modificationId === mod.id
+                    )
+                    const validation = !isActive
+                      ? canApplyModification(modifyingWeapon, mod.category)
+                      : { allowed: true }
+                    const isBlocked = !isActive && !validation.allowed
+                    return (
+                      <button
+                        key={mod.id}
+                        disabled={isBlocked}
+                        onClick={
+                          isBlocked
+                            ? undefined
+                            : () =>
+                                toggleModification(
+                                  modifyingWeapon!.id,
+                                  mod.id,
+                                  isActive ? 'remove' : 'add'
+                                )
+                        }
+                        title={isBlocked ? validation.reason : undefined}
+                        className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+                          isBlocked
+                            ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                            : isActive
+                              ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/40'
+                              : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span
+                            className={`font-semibold text-sm ${isActive ? 'text-blue-300' : 'text-zinc-200'}`}
+                          >
+                            {mod.name}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">
+                            +{mod.category} CAT
+                          </span>
+                        </div>
+                        {mod.description && (
+                          <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">
+                            {mod.description}
+                          </p>
+                        )}
+                        <div className="mt-1.5 flex items-center justify-between">
+                          <span
+                            className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-500' : isActive ? 'text-blue-400' : 'text-zinc-600'}`}
+                          >
+                            {isBlocked ? validation.reason : 'MELHORIA'}
+                          </span>
+                          {isActive && <Check size={11} className="text-blue-400" />}
+                        </div>
+                      </button>
+                    )
+                  })}
               </div>
             )}
           </div>
@@ -3491,6 +3640,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
           }}
         />
       )}
+
+      {/* Roll History Sidebar */}
+      <RollHistorySidebar
+        isOpen={isRollHistoryOpen}
+        onClose={() => setIsRollHistoryOpen(false)}
+        rolls={campaignRolls}
+        onClear={() => setCampaignRolls([])}
+      />
     </div>
   )
 }

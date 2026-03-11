@@ -18,6 +18,12 @@ export default class Campaign extends BaseModel {
   @column()
   declare description: string | null
 
+  @column()
+  declare inviteCode: string | null
+
+  @column()
+  declare dddiceRoomSlug: string | null
+
   @belongsTo(() => User, {
     foreignKey: 'gameMasterId',
   })
@@ -25,11 +31,15 @@ export default class Campaign extends BaseModel {
 
   @manyToMany(() => User, {
     pivotTable: 'campaign_members',
+    pivotColumns: ['role', 'character_id'],
+    pivotTimestamps: true,
   })
   declare players: ManyToMany<typeof User>
 
   @manyToMany(() => Character, {
     pivotTable: 'campaign_members',
+    pivotColumns: ['role', 'character_id'],
+    pivotTimestamps: true,
   })
   declare characters: ManyToMany<typeof Character>
 

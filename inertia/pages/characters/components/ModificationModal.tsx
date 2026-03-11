@@ -122,7 +122,7 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                 <span className={`p-1.5 rounded-lg ${iconBg} border border-white/5 ${iconColor}`}>
                                     <Activity size={18} />
                                 </span>
-                                <h2 className={`text-xl font-bold bg-gradient-to-r ${itemType === 'Weapon' ? 'from-blue-400 to-blue-200' : itemType === 'Protection' ? 'from-sky-400 to-sky-200' : 'from-orange-400 to-orange-200'} bg-clip-text text-transparent`}>
+                                <h2 className={`text-xl font-bold bg-linear-to-r ${itemType === 'Weapon' ? 'from-blue-400 to-blue-200' : itemType === 'Protection' ? 'from-sky-400 to-sky-200' : 'from-orange-400 to-orange-200'} bg-clip-text text-transparent`}>
                                     {title}
                                 </h2>
                             </div>

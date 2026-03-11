@@ -69,30 +69,16 @@ export default class CharactersController {
     const defaultVigor = 1
     const defaultPresence = 1
 
-    // Calculate max HP: base + (vigor bonus if applicable) + (hp_per_level * levels beyond 1)
-    let maxHp = characterClass.baseHp
-    if (characterClass.hpAttribute === 'vigor') {
-      maxHp += defaultVigor
-    }
+    // Calculate max HP: base + vigor + (level - 1) * (hp_per_level + vigor)
+    let maxHp = characterClass.baseHp + defaultVigor
     if (level > 1) {
-      if (characterClass.hpAttribute === 'vigor') {
-        maxHp += (characterClass.hpPerLevel + defaultVigor) * (level - 1)
-      } else {
-        maxHp += characterClass.hpPerLevel * (level - 1)
-      }
+      maxHp += (characterClass.hpPerLevel + defaultVigor) * (level - 1)
     }
 
-    // Calculate max PE: base + (presence bonus if applicable) + (pe_per_level * levels beyond 1)
-    let maxPe = characterClass.basePe
-    if (characterClass.peAttribute === 'presence') {
-      maxPe += defaultPresence
-    }
+    // Calculate max PE: base + presence + (level - 1) * (pe_per_level + presence)
+    let maxPe = characterClass.basePe + defaultPresence
     if (level > 1) {
-      if (characterClass.peAttribute === 'presence') {
-        maxPe += (characterClass.pePerLevel + defaultPresence) * (level - 1)
-      } else {
-        maxPe += characterClass.pePerLevel * (level - 1)
-      }
+      maxPe += (characterClass.pePerLevel + defaultPresence) * (level - 1)
     }
 
     // Calculate max Sanity: base + (sanity_per_level * levels beyond 1)
@@ -167,8 +153,7 @@ export default class CharactersController {
     const allClassAbilities = await ClassAbility.query().where('classId', character.classId)
 
     // Buscar todas as abilities existentes do personagem em batch (evita N+1)
-    const existingAbilities = await CharacterClassAbility.query()
-      .where('characterId', character.id)
+    const existingAbilities = await CharacterClassAbility.query().where('characterId', character.id)
     const existingMap = new Map(existingAbilities.map((a) => [a.classAbilityId, a]))
 
     for (const ability of allClassAbilities) {
@@ -221,6 +206,7 @@ export default class CharactersController {
         .preload('classAbilities', (query) => query.preload('classAbility'))
         .preload('paranormalPowers', (query) => query.preload('paranormalPower'))
         .preload('rituals', (query) => query.preload('ritual'))
+        .preload('campaigns')
         .first()
 
       if (!character) {
@@ -292,44 +278,33 @@ export default class CharactersController {
       const level = Math.floor(nex / 5)
 
       // Recalculate max stats based on current attributes and NEX
-      let calculatedMaxHp = classData.baseHp
-      if (classData.hpAttribute === 'vigor' && attributes) {
-        calculatedMaxHp += attributes.vigor
-      }
+      // HP: Base + Vigor + (Level - 1) * (BasePerLevel + Vigor)
+      let calculatedMaxHp = classData.baseHp + (attributes?.vigor || 0)
       if (level > 1) {
-        // Add vigor at each level if hp_attribute is 'vigor'
-        if (classData.hpAttribute === 'vigor' && attributes) {
-          calculatedMaxHp += (classData.hpPerLevel + attributes.vigor) * (level - 1)
-        } else {
-          calculatedMaxHp += classData.hpPerLevel * (level - 1)
-        }
+        calculatedMaxHp += (classData.hpPerLevel + (attributes?.vigor || 0)) * (level - 1)
       }
 
-      let calculatedMaxPe = classData.basePe
-      if (classData.peAttribute === 'presence' && attributes) {
-        calculatedMaxPe += attributes.presence
-      }
+      // PE: Base + Presence + (Level - 1) * (pePerLevel + Presence)
+      let calculatedMaxPe = classData.basePe + (attributes?.presence || 0)
       if (level > 1) {
-        if (classData.peAttribute === 'presence' && attributes) {
-          calculatedMaxPe += (classData.pePerLevel + attributes.presence) * (level - 1)
-        } else {
-          calculatedMaxPe += classData.pePerLevel * (level - 1)
-        }
+        calculatedMaxPe += (classData.pePerLevel + (attributes?.presence || 0)) * (level - 1)
       }
 
-      let calculatedMaxSanity = classData.baseSanity
+      // Gross max sanity (stored in DB — no permanent loss subtracted here)
+      let calculatedMaxSanityGross = classData.baseSanity
       if (level > 1) {
-        calculatedMaxSanity += classData.sanityPerLevel * (level - 1)
+        calculatedMaxSanityGross += classData.sanityPerLevel * (level - 1)
       }
 
       // Each Transcend ability acquired subtracts the level bonus
       const transcendCount =
         character.classAbilities?.filter((ca) => ca.classAbility?.name === 'Transcender').length ||
         0
-      calculatedMaxSanity -= transcendCount * classData.sanityPerLevel
+      calculatedMaxSanityGross -= transcendCount * classData.sanityPerLevel
 
-      // Subtract permanent sanity loss
-      calculatedMaxSanity -= character.stats?.permanentSanityLoss || 0
+      // Net max sanity (for display) = gross - permanent loss
+      const permanentSanityLoss = character.stats?.permanentSanityLoss || 0
+      const calculatedMaxSanity = Math.max(0, calculatedMaxSanityGross - permanentSanityLoss)
 
       // Calculate defense (10 + AGI + armor)
       const baseDefense = 10 + (attributes?.agility || 0)
@@ -398,7 +373,11 @@ export default class CharactersController {
             'weapon_modifications.name as mod_name',
             'weapon_modifications.type as mod_type',
             'weapon_modifications.element as mod_element',
-            'weapon_modifications.category as mod_category'
+            'weapon_modifications.category as mod_category',
+            'weapon_modifications.attack_bonus as mod_attack_bonus',
+            'weapon_modifications.damage_bonus as mod_damage_bonus',
+            'weapon_modifications.critical_bonus as mod_critical_bonus',
+            'weapon_modifications.special_properties as mod_special_properties'
           ),
         db
           .from('character_protections')
@@ -577,6 +556,14 @@ export default class CharactersController {
             type: m.mod_type,
             element: m.mod_element,
             category: m.mod_category,
+            attackBonus: m.mod_attack_bonus || 0,
+            damageBonus: m.mod_damage_bonus || null,
+            criticalBonus: m.mod_critical_bonus || 0,
+            specialProperties: m.mod_special_properties
+              ? typeof m.mod_special_properties === 'string'
+                ? JSON.parse(m.mod_special_properties)
+                : m.mod_special_properties
+              : null,
           })),
       }))
 
@@ -631,6 +618,59 @@ export default class CharactersController {
         ? await OriginAbility.query().where('originId', character.originId)
         : []
 
+      // ── Sync DB stats if calculated maxes diverge from stored values ──────────
+      // This corrects characters created before formula fixes and keeps stats
+      // in sync after attribute or NEX changes without requiring an explicit save.
+      if (character.stats) {
+        let statsChanged = false
+
+        // Sync maxHp / currentHp
+        if (character.stats.maxHp !== calculatedMaxHp) {
+          const diff = calculatedMaxHp - character.stats.maxHp
+          if (diff > 0) {
+            character.stats.currentHp = Math.min(character.stats.currentHp + diff, calculatedMaxHp)
+          } else {
+            character.stats.currentHp = Math.min(character.stats.currentHp, calculatedMaxHp)
+          }
+          character.stats.maxHp = calculatedMaxHp
+          statsChanged = true
+        }
+
+        // Sync maxPe / currentPe
+        if (character.stats.maxPe !== calculatedMaxPe) {
+          const diff = calculatedMaxPe - character.stats.maxPe
+          if (diff > 0) {
+            character.stats.currentPe = Math.min(character.stats.currentPe + diff, calculatedMaxPe)
+          } else {
+            character.stats.currentPe = Math.min(character.stats.currentPe, calculatedMaxPe)
+          }
+          character.stats.maxPe = calculatedMaxPe
+          statsChanged = true
+        }
+
+        // Sync maxSanity / currentSanity (compare against GROSS value, not net)
+        if (character.stats.maxSanity !== calculatedMaxSanityGross) {
+          const diff = calculatedMaxSanityGross - character.stats.maxSanity
+          if (diff > 0) {
+            character.stats.currentSanity = Math.min(
+              character.stats.currentSanity + diff,
+              calculatedMaxSanity // cap current at NET max
+            )
+          } else {
+            character.stats.currentSanity = Math.min(
+              character.stats.currentSanity,
+              calculatedMaxSanity
+            )
+          }
+          character.stats.maxSanity = calculatedMaxSanityGross
+          statsChanged = true
+        }
+
+        if (statsChanged) {
+          await character.stats.save()
+        }
+      }
+
       return inertia.render('characters/show', {
         character,
         classes,
@@ -646,7 +686,10 @@ export default class CharactersController {
           maxSanity: calculatedMaxSanity,
           currentHp: character.stats?.currentHp || calculatedMaxHp,
           currentPe: character.stats?.currentPe || calculatedMaxPe,
-          currentSanity: character.stats?.currentSanity || calculatedMaxSanity,
+          currentSanity: Math.min(
+            character.stats?.currentSanity || calculatedMaxSanity,
+            calculatedMaxSanity
+          ),
           permanentSanityLoss: character.stats?.permanentSanityLoss || 0,
           defense:
             baseDefense + (character.stats?.defenseMisc || 0) + (character.stats?.defenseTemp || 0),
@@ -654,9 +697,15 @@ export default class CharactersController {
         },
         classInfo: {
           hpFormula: `${classData.baseHp} + ${classData.hpAttribute?.toUpperCase() || ''} | +${classData.hpPerLevel} PV (+${classData.hpAttribute?.substring(0, 3).toUpperCase() || ''}) por NEX`,
-          peFormula: `${classData.basePe} + ${classData.peAttribute?.toUpperCase() || ''} | +${classData.pePerLevel} PE (+${classData.peAttribute?.substring(0, 3).toUpperCase() || ''}) por NEX`,
+          peFormula: `${classData.basePe} + ${classData.peAttribute?.toUpperCase() || ''} | +${classData.pePerLevel} PE por NEX`,
           sanityFormula: `${classData.baseSanity} | +${classData.sanityPerLevel} SAN por NEX`,
           proficiencies: classData.proficiencies,
+          baseHp: classData.baseHp,
+          hpPerLevel: classData.hpPerLevel,
+          basePe: classData.basePe,
+          pePerLevel: classData.pePerLevel,
+          baseSanity: classData.baseSanity,
+          sanityPerLevel: classData.sanityPerLevel,
         },
         attributeBonusFromNex,
         trailProgressions,
@@ -687,7 +736,8 @@ export default class CharactersController {
       .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
 
-    const { strength, agility, intellect, vigor, presence } = await request.validateUsing(updateAttributesValidator)
+    const { strength, agility, intellect, vigor, presence } =
+      await request.validateUsing(updateAttributesValidator)
 
     // Calculate attribute bonus from NEX (Aumento de Atributo at 20%, 50%, 80%, 95%)
     const nex = character.nex
@@ -733,28 +783,14 @@ export default class CharactersController {
     const classData = character.class
     const level = Math.floor(nex / 5)
 
-    let maxHp = classData.baseHp
-    if (classData.hpAttribute === 'vigor') {
-      maxHp += vigor
-    }
+    let maxHp = classData.baseHp + vigor
     if (level > 1) {
-      if (classData.hpAttribute === 'vigor') {
-        maxHp += (classData.hpPerLevel + vigor) * (level - 1)
-      } else {
-        maxHp += classData.hpPerLevel * (level - 1)
-      }
+      maxHp += (classData.hpPerLevel + vigor) * (level - 1)
     }
 
-    let maxPe = classData.basePe
-    if (classData.peAttribute === 'presence') {
-      maxPe += presence
-    }
+    let maxPe = classData.basePe + presence
     if (level > 1) {
-      if (classData.peAttribute === 'presence') {
-        maxPe += (classData.pePerLevel + presence) * (level - 1)
-      } else {
-        maxPe += classData.pePerLevel * (level - 1)
-      }
+      maxPe += (classData.pePerLevel + presence) * (level - 1)
     }
 
     let maxSanity = classData.baseSanity
@@ -790,7 +826,8 @@ export default class CharactersController {
       .preload('skills')
       .firstOrFail()
 
-    const { name, classId, originId, nex, rank } = await request.validateUsing(updateCharacterValidator)
+    const { name, classId, originId, nex, rank } =
+      await request.validateUsing(updateCharacterValidator)
 
     // Store old classId to detect if class changed
     const oldClassId = character.classId
@@ -807,6 +844,59 @@ export default class CharactersController {
       // If NEX drops below 50, affinity is lost
       if (nex < 50 && character.affinity) {
         character.affinity = null
+      }
+
+      // Recalculate max stats when NEX changes
+      await character.load('stats')
+      await character.load('attributes')
+      await character.load('class')
+      const classData = character.class
+      const attrs = character.attributes
+
+      if (classData && character.stats) {
+        const level = Math.floor(nex / 5)
+        const vigor = attrs?.vigor || 0
+        const presence = attrs?.presence || 0
+
+        let newMaxHp = classData.baseHp + vigor
+        if (level > 1) {
+          newMaxHp += (classData.hpPerLevel + vigor) * (level - 1)
+        }
+
+        let newMaxPe = classData.basePe + presence
+        if (level > 1) {
+          newMaxPe += (classData.pePerLevel + presence) * (level - 1)
+        }
+
+        let newMaxSanity = classData.baseSanity
+        if (level > 1) {
+          newMaxSanity += classData.sanityPerLevel * (level - 1)
+        }
+
+        // Only increase current values if max grew (never reduce current below 1 or above new max)
+        if (newMaxHp > character.stats.maxHp) {
+          character.stats.currentHp = Math.min(
+            character.stats.currentHp + (newMaxHp - character.stats.maxHp),
+            newMaxHp
+          )
+        }
+        if (newMaxPe > character.stats.maxPe) {
+          character.stats.currentPe = Math.min(
+            character.stats.currentPe + (newMaxPe - character.stats.maxPe),
+            newMaxPe
+          )
+        }
+        if (newMaxSanity > character.stats.maxSanity) {
+          character.stats.currentSanity = Math.min(
+            character.stats.currentSanity + (newMaxSanity - character.stats.maxSanity),
+            newMaxSanity
+          )
+        }
+
+        character.stats.maxHp = newMaxHp
+        character.stats.maxPe = newMaxPe
+        character.stats.maxSanity = newMaxSanity
+        await character.stats.save()
       }
     }
     if (rank) character.rank = rank
@@ -1017,7 +1107,8 @@ export default class CharactersController {
       .firstOrFail()
 
     // Get the data from request
-    const { trainedSkills = [], veteranSkills = [] } = await request.validateUsing(updateSkillsValidator)
+    const { trainedSkills = [], veteranSkills = [] } =
+      await request.validateUsing(updateSkillsValidator)
 
     // Get origin's initial skills
     const originSkillNames = character.origin
@@ -1044,7 +1135,7 @@ export default class CharactersController {
       await query.delete()
 
       // 2. Prepare all unique skill names to process
-      // Deduplicate: a skill should only be processed once. 
+      // Deduplicate: a skill should only be processed once.
       // If it's in veteranSkills, we give it 10. Otherwise if trained, 5.
       const uniqueSkillNames = Array.from(new Set([...trainedSkills, ...veteranSkills]))
 
@@ -2179,5 +2270,38 @@ export default class CharactersController {
       .delete()
 
     return response.redirect().back()
+  }
+
+  /**
+   * Retorna o histórico de rolagens da campanha do personagem
+   */
+  async getCampaignRolls({ params, response, auth }: HttpContext) {
+    const character = await Character.findOrFail(params.id)
+
+    // Verificar se o usuário tem permissão de acessar este personagem
+    if (character.userId !== auth.user!.id) {
+      return response.forbidden({ error: 'Acesso negado' })
+    }
+
+    // Buscar a campanha principal do personagem (primeira encontrada)
+    const campaignMember = await db
+      .from('campaign_members')
+      .where('character_id', character.id)
+      .first()
+
+    if (!campaignMember) {
+      return response.ok({ rolls: [] })
+    }
+
+    const campaignId = campaignMember.campaign_id
+
+    // Buscar as rolagens da campanha
+    const rolls = await db
+      .from('campaign_rolls')
+      .where('campaign_id', campaignId)
+      .orderBy('rolled_at', 'desc')
+      .limit(100)
+
+    return response.ok({ rolls })
   }
 }

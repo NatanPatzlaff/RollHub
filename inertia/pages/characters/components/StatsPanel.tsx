@@ -129,7 +129,7 @@ export default function StatsPanel({
                             <span className="text-4xl font-black text-white">{hp}</span>
                             <div className="flex-1">
                                 <Progress aria-label="PV" value={(hp / maxHp) * 100} className="h-3"
-                                    classNames={{ indicator: 'bg-gradient-to-r from-red-500 to-rose-500', track: 'bg-zinc-950 border border-zinc-800' }} />
+                                    classNames={{ indicator: 'bg-linear-to-r from-red-500 to-rose-500', track: 'bg-zinc-950 border border-zinc-800' }} />
                             </div>
                             <span className="text-sm text-zinc-500 font-bold">{maxHp}</span>
                         </div>
@@ -172,7 +172,7 @@ export default function StatsPanel({
                             <span className="text-4xl font-black text-white">{pe}</span>
                             <div className="flex-1">
                                 <Progress aria-label="PE" value={(pe / maxPe) * 100} className="h-3"
-                                    classNames={{ indicator: 'bg-gradient-to-r from-amber-400 to-yellow-400', track: 'bg-zinc-950 border border-zinc-800' }} />
+                                    classNames={{ indicator: 'bg-linear-to-r from-amber-400 to-yellow-400', track: 'bg-zinc-950 border border-zinc-800' }} />
                             </div>
                             <span className="text-sm text-zinc-500 font-bold">{maxPe}</span>
                         </div>
@@ -212,7 +212,7 @@ export default function StatsPanel({
                             <span className="text-4xl font-black text-white">{san}</span>
                             <div className="flex-1">
                                 <Progress aria-label="Sanidade" value={(san / maxSan) * 100} className="h-3"
-                                    classNames={{ indicator: 'bg-gradient-to-r from-purple-400 to-fuchsia-400', track: 'bg-zinc-950 border border-zinc-800' }} />
+                                    classNames={{ indicator: 'bg-linear-to-r from-purple-400 to-fuchsia-400', track: 'bg-zinc-950 border border-zinc-800' }} />
                             </div>
                             <span className="text-sm text-zinc-500 font-bold">{maxSan}</span>
                         </div>

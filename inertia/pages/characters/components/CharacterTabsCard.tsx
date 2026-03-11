@@ -146,6 +146,19 @@ export interface CharacterTabsCardProps {
   }) => void
   /** Callback disparado quando um ritual com buff passa no teste */
   onRitualBuffSuccess?: (ritualName: string, version: 'base' | 'discente' | 'verdadeiro') => void
+  // Rituais sustentados ativos
+  sustainedRituals?: Array<{
+    charRitualId: number
+    ritualName: string
+    version: 'base' | 'discente' | 'verdadeiro'
+  }>
+  onDeactivateSustainedRitual?: (ritualName: string) => void
+  // Buffs de ritual aplicados em armas
+  activeRitualWeaponBuffs?: Array<{
+    id: string
+    label: string
+    weaponDuration?: string
+  }>
   // Buffs ativos de habilidades (trilha / origem)
   activeAbilityBuffs?: Array<{
     id: string
@@ -240,6 +253,9 @@ export default function CharacterTabsCard({
   onDeductPermSan,
   onRollRitual,
   onRitualBuffSuccess,
+  sustainedRituals = [],
+  onDeactivateSustainedRitual,
+  activeRitualWeaponBuffs = [],
   activeAbilityBuffs = [],
   abilityUsesThisScene = {},
   onActivateAbility,
@@ -806,6 +822,26 @@ export default function CharacterTabsCard({
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="text-lg font-bold text-zinc-100">{ritual.name}</h4>
+                          {/* Switch de ritual sustentado ativo */}
+                          {sustainedRituals.some((sr) => sr.ritualName.toLowerCase() === ritual.name.toLowerCase()) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onDeactivateSustainedRitual?.(ritual.name)
+                              }}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-all bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/30"
+                              title="Desativar ritual sustentado"
+                            >
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                              Sustentando
+                            </button>
+                          )}
+                          {/* Indicador de buff de arma ativo (cena/sustentado) */}
+                          {activeRitualWeaponBuffs.some((b) => b.label.toLowerCase().startsWith(ritual.name.toLowerCase())) && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-orange-500/10 text-orange-400 border border-orange-500/30">
+                              ⚔ Buff Ativo
+                            </span>
+                          )}
                           <span className="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 text-xs font-bold border border-zinc-800">
                             {ritual.circle}º Círculo
                           </span>

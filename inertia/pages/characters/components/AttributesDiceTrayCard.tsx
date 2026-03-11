@@ -47,6 +47,25 @@ export interface AttributesDiceTrayCardProps {
   // dddice (opcionais — se ausentes, apenas rolagem local)
   dddiceApiKey?: string
   dddiceRoomSlug?: string
+
+  // Nome do jogador para as rolagens
+  playerName?: string
+
+  /** Callback quando uma rolagem acontece (local ou remota) */
+  onNewRoll?: (roll: RollEntry) => void
+}
+
+/** Interface da rolagem para o histórico */
+export interface RollEntry {
+  id: string | number
+  player: string
+  action: string
+  roll: string
+  result: number
+  time: string
+  isCritical?: boolean
+  isFail?: boolean
+  isGM?: boolean
 }
 
 /** Métodos expostos ao componente pai via ref */
@@ -61,7 +80,7 @@ export interface AttributesDiceTrayCardHandle {
   ) => void
   /** Rola ataque + dano de uma arma e exibe na bandeja */
   rollWeapon: (
-    weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number },
+    weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number; extraDamageDice?: string[] },
     str: number,
     agi: number,
     characterSkills?: any[]
@@ -113,6 +132,8 @@ const AttributesDiceTrayCard = forwardRef<
     isSaving,
     dddiceApiKey,
     dddiceRoomSlug,
+    playerName = 'Jogador',
+    onNewRoll,
   },
   ref
 ) {
@@ -161,7 +182,9 @@ const AttributesDiceTrayCard = forwardRef<
   const attrs = [strength, agility, intellect, vigor, presence]
   const zeroBonus = attrs.filter((v) => v === 0).length
   const totalPoints = baseAttrPoints + (isMundano ? 0 : attributeBonusFromNex) + zeroBonus
-  const usedPoints = attrs.reduce((sum, v) => sum + (v - 1), 0)
+  // Each attribute starts at 1, so usedPoints = sum of (value - 1), clamped to 0 to avoid
+  // counting zero-value attributes as negative (which would otherwise double-grant the zero bonus)
+  const usedPoints = attrs.reduce((sum, v) => sum + Math.max(0, v - 1), 0)
   const availablePoints = totalPoints - usedPoints
 
   const hasChanges =
@@ -293,6 +316,31 @@ const AttributesDiceTrayCard = forwardRef<
 
       if (mounted) {
         dddiceRef.current = instance
+        
+        // Listen for new rolls (including from other players)
+        instance.on('roll:finished', (event: any) => {
+          if (!onNewRoll) return
+          
+          const roll = event.roll
+          const isLocal = event.isLocal
+          
+          // Se for de outro player (não local), adiciona ao histórico
+          // Ou se for local, a gente já gerou manual mas o dddice também avisa.
+          // Para evitar duplicidade no histórico local, vamos deixar que o 
+          // AttributesDiceTrayCard chame onNewRoll manual após gerar o seu resultado randômico.
+          // Porém, para rolagens EXTERNAs, este é o único lugar.
+          if (!isLocal) {
+            onNewRoll({
+              id: roll.uuid,
+              player: roll.user.username || roll.user.name || 'Outro Jogador',
+              action: 'Rolagem dddice',
+              roll: roll.equation,
+              result: roll.total_value,
+              time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            })
+          }
+        })
+
         notifyDddiceReady()
       }
     }
@@ -346,6 +394,16 @@ const AttributesDiceTrayCard = forwardRef<
       setWeaponRollResult(null)
       setDiceResult(result)
       setDiceHistory((prev) => [{ label: diceLabel, total }, ...prev].slice(0, 8))
+      
+      onNewRoll?.({
+        id: Date.now(),
+        player: playerName,
+        action: diceLabel,
+        roll: `${count}d${sides}${bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''}`,
+        result: total,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      })
+
       setIsRolling(false)
 
       // Animação 3D em paralelo (fire-and-forget)
@@ -372,7 +430,7 @@ const AttributesDiceTrayCard = forwardRef<
   // ── rollWeapon ─────────────────────────────────────────────────────────────
   const rollWeapon = useCallback(
     async (
-      weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number },
+      weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number; extraDamageDice?: string[] },
       str: number,
       agi: number,
       characterSkills: any[] = []
@@ -411,7 +469,29 @@ const AttributesDiceTrayCard = forwardRef<
       const damageRolls = Array.from({ length: dmgCount }, () =>
         Math.ceil(Math.random() * dmgSides)
       )
-      const baseDamage = damageRolls.reduce((a, b) => a + b, 0) + extraDmg
+
+      // Dados extras de rituais (ex: Amaldiçoar Arma 2d6, Decadência 3d8+3)
+      let extraDiceTotal = 0
+      let extraDiceFlat = 0
+      const extraDiceRolls: { dice: string; rolls: number[]; flat: number }[] = []
+      if (weapon.extraDamageDice && weapon.extraDamageDice.length > 0) {
+        for (const diceStr of weapon.extraDamageDice) {
+          // Parse "2d6", "3d8+3", "4d8"
+          const match = diceStr.match(/^(\d+)d(\d+)(?:\+(\d+))?$/i)
+          if (match) {
+            const count = parseInt(match[1])
+            const sides = parseInt(match[2])
+            const flat = match[3] ? parseInt(match[3]) : 0
+            const rolls = Array.from({ length: count }, () => Math.ceil(Math.random() * sides))
+            const total = rolls.reduce((a, b) => a + b, 0) + flat
+            extraDiceTotal += total
+            extraDiceFlat += flat
+            extraDiceRolls.push({ dice: diceStr, rolls, flat })
+          }
+        }
+      }
+
+      const baseDamage = damageRolls.reduce((a, b) => a + b, 0) + extraDmg + extraDiceTotal
       const damageTotal = isCritical ? baseDamage * critMultiplier : baseDamage
 
       const atkBonusStr = (trainingBonus + extraAtk) > 0 ? `+${trainingBonus + extraAtk}` : ''
@@ -420,15 +500,16 @@ const AttributesDiceTrayCard = forwardRef<
         extraAtk > 0 ? ` [+${extraAtk} hab.]` : ''
       }${critInfo}`
 
+      const extraDiceLabel = extraDiceRolls.map((e) => `+${e.dice}`).join('')
       const critLabel = isCritical ? ` CRÍTICO ${weapon.criticalMultiplier || 'x2'}!` : ''
-      const damageLabel = `${weapon.damage}${extraDmg > 0 ? `+${extraDmg}` : ''}${critLabel}`
+      const damageLabel = `${weapon.damage}${extraDmg > 0 ? `+${extraDmg}` : ''}${extraDiceLabel}${critLabel}`
 
       setWeaponRollResult({
         weapon: weapon.name,
         attack: { total: attackTotal, rolls: attackRolls, label: attackLabel, skill, isCritical, critThreshold },
         damage: {
           total: damageTotal,
-          rolls: damageRolls,
+          rolls: [...damageRolls, ...extraDiceRolls.flatMap((e) => e.rolls)],
           label: damageLabel,
           isCritical,
           critMultiplier: isCritical ? critMultiplier : undefined,
@@ -442,6 +523,27 @@ const AttributesDiceTrayCard = forwardRef<
           ...prev,
         ].slice(0, 8)
       )
+
+      onNewRoll?.({
+        id: Date.now() + '-atk',
+        player: playerName,
+        action: `${weapon.name} (Ataque)`,
+        roll: attackLabel,
+        result: attackTotal,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isCritical,
+      })
+      
+      onNewRoll?.({
+        id: Date.now() + '-dmg',
+        player: playerName,
+        action: `${weapon.name} (Dano)`,
+        roll: damageLabel,
+        result: damageTotal,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isCritical,
+      })
+
       setIsRolling(false)
 
       // Animação 3D em paralelo
@@ -457,6 +559,12 @@ const AttributesDiceTrayCard = forwardRef<
             ...damageRolls.map((v) =>
               theme ? { type: `d${dmgSides}`, theme, value: v } : { type: `d${dmgSides}`, value: v }
             ),
+            ...extraDiceRolls.flatMap((e) => {
+              const sides = e.dice.match(/d(\d+)/)?.[1] || '6'
+              return e.rolls.map((v) =>
+                theme ? { type: `d${sides}`, theme, value: v } : { type: `d${sides}`, value: v }
+              )
+            }),
           ]
           await (dddiceRef.current as any).rollLocal(allDice, {}, { uuid: 'local-user' })
         } catch (e) {
@@ -539,6 +647,28 @@ const AttributesDiceTrayCard = forwardRef<
         if (damageResult !== undefined) entries.push({ label: `${name} Dano`, total: damageResult })
         return [...entries, ...prev].slice(0, 8)
       })
+
+      onNewRoll?.({
+        id: Date.now() + '-rit-atk',
+        player: playerName,
+        action: `${name} (${versionLabel})`,
+        roll: `Ocultismo (${diceCount}d20+${trainingBonus})`,
+        result: total,
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isFail: !success,
+      })
+
+      if (damageResult !== undefined) {
+        onNewRoll?.({
+          id: Date.now() + '-rit-dmg',
+          player: playerName,
+          action: `${name} (Dano)`,
+          roll: damageDice || '',
+          result: damageResult,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        })
+      }
+
       setIsRolling(false)
 
       // Callback with raw results so caller can apply game effects

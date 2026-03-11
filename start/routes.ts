@@ -14,14 +14,23 @@ const RegisterController = () => import('#controllers/register_controller')
 const LogoutController = () => import('#controllers/logout_controller')
 const CharactersController = () => import('#controllers/characters_controller')
 const CharacterStatsController = () => import('#controllers/character_stats_controller')
+const CampaignsController = () => import('#controllers/campaigns_controller')
+const CampaignInvitesController = () => import('#controllers/campaign_invites_controller')
 
 import { middleware } from '#start/kernel'
 
 router.get('/', [HomeController, 'index'])
+router.get('/join/:code', [CampaignInvitesController, 'show'])
 router
   .group(() => {
+    router.post('/campaigns/join', [CampaignInvitesController, 'store'])
+    router.post('/campaigns', [CampaignsController, 'store'])
+    router.get('/campaigns/:id', [CampaignsController, 'show'])
+    router.get('/campaigns/:id/shield', [CampaignsController, 'shield'])
+    router.put('/campaigns/:id', [CampaignsController, 'update'])
     router.post('/characters', [CharactersController, 'store'])
     router.get('/characters/:id', [CharactersController, 'show'])
+    router.get('/api/characters/:id/campaign-rolls', [CharactersController, 'getCampaignRolls'])
     router.put('/characters/:id', [CharactersController, 'update'])
     router.put('/characters/:id/attributes', [CharactersController, 'updateAttributes'])
     router.post('/characters/:id/abilities', [CharactersController, 'addAbility'])
