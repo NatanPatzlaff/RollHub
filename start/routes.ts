@@ -35,6 +35,7 @@ router
     router.post('/characters', [CharactersController, 'store'])
     router.get('/characters/:id', [CharactersController, 'show'])
     router.get('/api/characters/:id/campaign-rolls', [CharactersController, 'getCampaignRolls'])
+    router.post('/api/characters/:id/rolls', [CharactersController, 'saveRoll'])
     router.put('/characters/:id', [CharactersController, 'update'])
     router.put('/characters/:id/attributes', [CharactersController, 'updateAttributes'])
     router.post('/characters/:id/abilities', [CharactersController, 'addAbility'])

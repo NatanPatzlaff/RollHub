@@ -138,6 +138,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
 
   // ── Estado interno da bandeja ──────────────────────────────────────────────
   const [isDiceTray, setIsDiceTray] = useState(false)
+  const [isPreparing, setIsPreparing] = useState(false)
   const [isRolling, setIsRolling] = useState(false)
   const [diceResult, setDiceResult] = useState<{
     label: string
@@ -175,13 +176,22 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
   const pendingRollTypeRef = useRef<'attribute' | 'weapon' | 'ritual' | null>(null)
   const pendingRollParamsRef = useRef<any>(null)
   const [isConnected, setIsConnected] = useState<boolean>(false)
+  const rollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Refs do dddice ─────────────────────────────────────────────────────────
   const diceCanvasRef = useRef<HTMLCanvasElement>(null)
   const dddiceRef = useRef<any>(null)
   const diceThemeRef = useRef<string | undefined>(undefined)
   const pusherChannelRef = useRef<any>(null)
-  const pusherHandlerRef = useRef<any>(null)
+
+  // ── Refs espelho para estabilidade do Listener ──────────────────────
+  const playerNameRef = useRef(playerName)
+  const onNewRollRef = useRef(onNewRoll)
+  const pagePropsUserRef = useRef(pageProps.user)
+
+  useEffect(() => { playerNameRef.current = playerName }, [playerName])
+  useEffect(() => { onNewRollRef.current = onNewRoll }, [onNewRoll])
+  useEffect(() => { pagePropsUserRef.current = pageProps.user }, [pageProps.user])
 
   // Cache de pré-carregamento (sobrevive a re-renders, compartilhado entre effects)
   const preloadRef = useRef<{
@@ -240,10 +250,49 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           const idx = dddiceReadyResolvers.current.indexOf(resolve)
           if (idx >= 0) dddiceReadyResolvers.current.splice(idx, 1)
           resolve()
-        }, 5000)
+        }, 15000)
       }),
     []
   )
+
+  // ── Helpers de Timeout de Rolagem ───────────────────────────────────────
+  const clearRollTimeout = useCallback(() => {
+    if (rollTimeoutRef.current) {
+      clearTimeout(rollTimeoutRef.current)
+      rollTimeoutRef.current = null
+    }
+  }, [])
+
+  const startRollTimeout = useCallback(() => {
+    clearRollTimeout()
+    rollTimeoutRef.current = setTimeout(() => {
+      setIsRolling(false)
+      isWaitingForRollRef.current = false
+      rollTimeoutRef.current = null
+      console.warn('[RollHub] Timeout: evento dddice não recebido em 20s')
+    }, 20000)
+  }, [clearRollTimeout])
+
+  // ── Helper: aguarda subscrição do Pusher ──────────────────────────────
+  const waitForSubscription = useCallback((channel: any): Promise<void> => {
+    return new Promise((resolve) => {
+      if (channel?.subscribed) {
+        resolve()
+        return
+      }
+      const interval = setInterval(() => {
+        if (channel?.subscribed) {
+          clearInterval(interval)
+          resolve()
+        }
+      }, 100)
+      // Timeout de segurança: resolve após 5s mesmo sem confirmar
+      setTimeout(() => {
+        clearInterval(interval)
+        resolve()
+      }, 5000)
+    })
+  }, [])
 
   // ── Pré-carregamento: módulo dddice + tema (roda no mount, ANTES do toggle) ──
   useEffect(() => {
@@ -270,6 +319,202 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       diceThemeRef.current = 'dddice-standard'
     }
   }, [dddiceApiKey])
+
+  // ── Listener do Pusher (Extraído para estabilidade) ──────────────────
+  const handleRollCreate = useCallback((event: any) => {
+    const roll = event.data
+    console.log('[USER DEBUG] pageProps.user:', pagePropsUserRef.current)
+    console.log('[USER DEBUG] roll.user:', roll?.user)
+    console.log('[PUSHER] Evento recebido:', roll?.uuid, 'isWaiting:', isWaitingForRollRef.current)
+    
+    if (!roll) return
+    const isOwnRoll = dddiceUserUuidRef.current
+      ? roll.user?.uuid === dddiceUserUuidRef.current
+      : true // fallback
+
+    // 1. Rolagem LOCAL que estamos aguardando
+    if (isWaitingForRollRef.current && isOwnRoll) {
+      isWaitingForRollRef.current = false
+      const rollType = pendingRollTypeRef.current
+      const rollParams = pendingRollParamsRef.current
+      const bonus = pendingBonusRef.current
+
+      if (rollType === 'attribute') {
+        const mainDice = roll.values
+          .filter((v: any) => v.type === 'd20' && !v.is_dropped)
+          .map((v: any) => v.value)
+        const extraDice = roll.values
+          .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
+          .map((v: any) => v.value)
+        const isHighest = rollParams?.mode === 'highest'
+        const baseValue = isHighest ? Math.max(...mainDice) : mainDice.reduce((acc: number, v: number) => acc + v, 0)
+        const extraValue = extraDice.reduce((acc: number, v: number) => acc + v, 0)
+        const total = baseValue + bonus + extraValue
+
+        setDiceResult({
+          label: rollParams?.label || 'Atributo',
+          total,
+          rolls: mainDice,
+          extraRolls: extraDice,
+          bonus,
+        })
+        setDiceHistory((prev) => [{ label: rollParams?.label || 'Atributo', total }, ...prev].slice(0, 8))
+        onNewRollRef.current?.({
+          id: roll.uuid,
+          player: playerNameRef.current,
+          action: rollParams?.label || 'Atributo',
+          roll: roll.equation + (bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''),
+          result: total,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        })
+      } else if (rollType === 'weapon') {
+        const weapon = rollParams?.weapon
+        const atkDice = roll.values
+          .filter((v: any) => v.type === 'd20' && !v.is_dropped)
+          .map((v: any) => v.value)
+        const dmgDice = roll.values
+          .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
+          .map((v: any) => v.value)
+        const atkBonus = rollParams?.atkBonus || 0
+        const dmgBonus = rollParams?.dmgBonus || 0
+        const atkTotal = Math.max(...atkDice) + atkBonus
+        const baseDmgTotal = dmgDice.reduce((acc: number, val: number) => acc + val, 0) + dmgBonus
+        const isCritical = atkDice.some((val: number) => val >= (rollParams?.critThreshold || 20))
+        const finalDmg = isCritical ? baseDmgTotal * (rollParams?.critMultiplier || 2) : baseDmgTotal
+
+        setWeaponRollResult({
+          weapon: weapon.name,
+          attack: {
+            total: atkTotal,
+            rolls: atkDice,
+            label: rollParams?.atkLabel,
+            skill: rollParams?.skill,
+            isCritical,
+            critThreshold: rollParams?.critThreshold,
+          },
+          damage: {
+            total: finalDmg,
+            rolls: dmgDice,
+            label: rollParams?.dmgLabel,
+            isCritical,
+            critMultiplier: isCritical ? rollParams?.critMultiplier : undefined,
+            baseDamage: isCritical ? baseDmgTotal : undefined,
+          },
+        })
+        setDiceHistory((prev) => [
+          { label: `${weapon.name} Ataque`, total: atkTotal },
+          { label: `${weapon.name} Dano`, total: finalDmg },
+          ...prev,
+        ].slice(0, 8))
+        onNewRollRef.current?.({
+          id: roll.uuid + '-atk',
+          player: playerNameRef.current,
+          action: `${weapon.name} (Ataque)`,
+          roll: rollParams?.atkLabel,
+          result: atkTotal,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isCritical,
+        })
+        onNewRollRef.current?.({
+          id: roll.uuid + '-dmg',
+          player: playerNameRef.current,
+          action: `${weapon.name} (Dano)`,
+          roll: rollParams?.dmgLabel,
+          result: finalDmg,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isCritical,
+        })
+      } else if (rollType === 'ritual') {
+        const ritualName = rollParams?.name
+        const atkDice = roll.values
+          .filter((v: any) => v.type === 'd20' && !v.is_dropped)
+          .map((v: any) => v.value)
+        const dmgDice = roll.values
+          .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
+          .map((v: any) => v.value)
+        const bestAtk = Math.max(...atkDice)
+        const totalAtk = bestAtk + (rollParams?.trainingBonus || 0)
+        const success = totalAtk >= (rollParams?.dt || 0)
+        const dmgTotal = dmgDice.length > 0
+          ? dmgDice.reduce((acc: number, val: number) => acc + val, 0) + (rollParams?.dmgMod || 0)
+          : undefined
+
+        setRitualRollResult({
+          ...rollParams,
+          rolls: atkDice,
+          best: bestAtk,
+          total: totalAtk,
+          success,
+          damageTotal: dmgTotal,
+          damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
+        })
+        setDiceHistory((prev) => {
+          const entries = [{ label: `${ritualName}`, total: totalAtk }]
+          if (dmgTotal !== undefined) entries.push({ label: `${ritualName} Dano`, total: dmgTotal })
+          return [...entries, ...prev].slice(0, 8)
+        })
+        onNewRollRef.current?.({
+          id: roll.uuid + '-rit-atk',
+          player: playerNameRef.current,
+          action: `${ritualName}`,
+          roll: `Ocultismo (${atkDice.length}d20+${rollParams?.trainingBonus})`,
+          result: totalAtk,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isFail: !success,
+        })
+        if (dmgTotal !== undefined) {
+          onNewRollRef.current?.({
+            id: roll.uuid + '-rit-dmg',
+            player: playerNameRef.current,
+            action: `${ritualName} (Dano)`,
+            roll: rollParams?.damageDice || '',
+            result: dmgTotal,
+            time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          })
+        }
+        rollParams?.onResult?.({
+          rolls: atkDice,
+          best: bestAtk,
+          total: totalAtk,
+          damageResult: dmgTotal,
+          damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
+        })
+      }
+
+      setIsRolling(false)
+      clearRollTimeout()
+      return
+    }
+
+    // 2. Rolagem de OUTROS jogadores
+    if (!isOwnRoll && onNewRollRef.current) {
+      onNewRollRef.current({
+        id: roll.uuid,
+        player: roll.user?.username || roll.user?.name || 'Outro Jogador',
+        action: 'Rolagem dddice',
+        roll: roll.equation,
+        result: Number(roll.total_value),
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      })
+    }
+  }, [clearRollTimeout])
+
+  // ── Registro Independente do Listener Pusher ────────────────────────
+  useEffect(() => {
+    if (!isConnected || !dddiceRef.current) return
+    const channel = (dddiceRef.current.api as any)?.roomConnection?.subscription
+    if (!channel) return
+
+    console.log('[PUSHER] Ativando listener RollCreateEvent')
+    pusherChannelRef.current = channel
+    channel.bind('App\\Events\\RollCreateEvent', handleRollCreate)
+
+    return () => {
+      console.log('[PUSHER] Desativando listener RollCreateEvent')
+      try { channel.unbind('App\\Events\\RollCreateEvent', handleRollCreate) } catch (_) {}
+      pusherChannelRef.current = null
+    }
+  }, [isConnected, handleRollCreate])
 
   // ── Inicialização dddice (quando bandeja abre, usa cache do preload) ───────
   useEffect(() => {
@@ -300,6 +545,10 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       if (dddiceRoomSlug && dddiceApiKey) {
         try {
           instance.connect(dddiceRoomSlug)
+          const channel = (instance.api as any)?.roomConnection?.subscription
+          await waitForSubscription(channel)
+          console.log('[PUSHER] channel subscribed:', channel?.subscribed)
+
           // Busca o UUID real do usuário logado no dddice usando a API Key
           fetch('https://dddice.com/api/1.0/user', {
             headers: { Authorization: `Bearer ${dddiceApiKey}` },
@@ -336,193 +585,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       if (mounted) {
         dddiceRef.current = instance
         ;(window as any).__dddice = instance
-
         setIsConnected(true)
-
-        const channel = (instance.api as any)?.roomConnection?.subscription
-        pusherChannelRef.current = channel
-
-        const handleRollCreate = (event: any) => {
-          const roll = event.data
-          console.log('[USER DEBUG] pageProps.user:', pageProps.user)
-          console.log('[USER DEBUG] roll.user:', roll?.user)
-          console.log('[PUSHER] Evento recebido:', roll?.uuid, 'isWaiting:', isWaitingForRollRef.current, 'userMatch:', roll?.user?.uuid === pageProps.user?.uuid)
-          if (!roll) return
-          const isOwnRoll = dddiceUserUuidRef.current
-            ? roll.user?.uuid === dddiceUserUuidRef.current
-            : true // fallback: assume que é própria se não tiver o UUID ainda
-
-          // 1. Rolagem LOCAL que estamos aguardando
-          if (isWaitingForRollRef.current && isOwnRoll) {
-            isWaitingForRollRef.current = false
-            const rollType = pendingRollTypeRef.current
-            const rollParams = pendingRollParamsRef.current
-            const bonus = pendingBonusRef.current
-
-            if (rollType === 'attribute') {
-              const mainDice = roll.values
-                .filter((v: any) => v.type === 'd20' && !v.is_dropped)
-                .map((v: any) => v.value)
-              const extraDice = roll.values
-                .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
-                .map((v: any) => v.value)
-              const isHighest = rollParams?.mode === 'highest'
-              const baseValue = isHighest ? Math.max(...mainDice) : mainDice.reduce((acc: number, v: number) => acc + v, 0)
-              const extraValue = extraDice.reduce((acc: number, v: number) => acc + v, 0)
-              const total = baseValue + bonus + extraValue
-
-              setDiceResult({
-                label: rollParams?.label || 'Atributo',
-                total,
-                rolls: mainDice,
-                extraRolls: extraDice,
-                bonus,
-              })
-              setDiceHistory((prev) => [{ label: rollParams?.label || 'Atributo', total }, ...prev].slice(0, 8))
-              onNewRoll?.({
-                id: roll.uuid,
-                player: playerName,
-                action: rollParams?.label || 'Atributo',
-                roll: roll.equation + (bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''),
-                result: total,
-                time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-              })
-            } else if (rollType === 'weapon') {
-              const weapon = rollParams?.weapon
-              const atkDice = roll.values
-                .filter((v: any) => v.type === 'd20' && !v.is_dropped)
-                .map((v: any) => v.value)
-              const dmgDice = roll.values
-                .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
-                .map((v: any) => v.value)
-              const atkBonus = rollParams?.atkBonus || 0
-              const dmgBonus = rollParams?.dmgBonus || 0
-              const atkTotal = Math.max(...atkDice) + atkBonus
-              const baseDmgTotal = dmgDice.reduce((acc: number, val: number) => acc + val, 0) + dmgBonus
-              const isCritical = atkDice.some((val: number) => val >= (rollParams?.critThreshold || 20))
-              const finalDmg = isCritical ? baseDmgTotal * (rollParams?.critMultiplier || 2) : baseDmgTotal
-
-              setWeaponRollResult({
-                weapon: weapon.name,
-                attack: {
-                  total: atkTotal,
-                  rolls: atkDice,
-                  label: rollParams?.atkLabel,
-                  skill: rollParams?.skill,
-                  isCritical,
-                  critThreshold: rollParams?.critThreshold,
-                },
-                damage: {
-                  total: finalDmg,
-                  rolls: dmgDice,
-                  label: rollParams?.dmgLabel,
-                  isCritical,
-                  critMultiplier: isCritical ? rollParams?.critMultiplier : undefined,
-                  baseDamage: isCritical ? baseDmgTotal : undefined,
-                },
-              })
-              setDiceHistory((prev) => [
-                { label: `${weapon.name} Ataque`, total: atkTotal },
-                { label: `${weapon.name} Dano`, total: finalDmg },
-                ...prev,
-              ].slice(0, 8))
-              onNewRoll?.({
-                id: roll.uuid + '-atk',
-                player: playerName,
-                action: `${weapon.name} (Ataque)`,
-                roll: rollParams?.atkLabel,
-                result: atkTotal,
-                time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-                isCritical,
-              })
-              onNewRoll?.({
-                id: roll.uuid + '-dmg',
-                player: playerName,
-                action: `${weapon.name} (Dano)`,
-                roll: rollParams?.dmgLabel,
-                result: finalDmg,
-                time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-                isCritical,
-              })
-            } else if (rollType === 'ritual') {
-              const ritualName = rollParams?.name
-              const atkDice = roll.values
-                .filter((v: any) => v.type === 'd20' && !v.is_dropped)
-                .map((v: any) => v.value)
-              const dmgDice = roll.values
-                .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
-                .map((v: any) => v.value)
-              const bestAtk = Math.max(...atkDice)
-              const totalAtk = bestAtk + (rollParams?.trainingBonus || 0)
-              const success = totalAtk >= (rollParams?.dt || 0)
-              const dmgTotal = dmgDice.length > 0
-                ? dmgDice.reduce((acc: number, val: number) => acc + val, 0) + (rollParams?.dmgMod || 0)
-                : undefined
-
-              setRitualRollResult({
-                ...rollParams,
-                rolls: atkDice,
-                best: bestAtk,
-                total: totalAtk,
-                success,
-                damageTotal: dmgTotal,
-                damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
-              })
-              setDiceHistory((prev) => {
-                const entries = [{ label: `${ritualName}`, total: totalAtk }]
-                if (dmgTotal !== undefined) entries.push({ label: `${ritualName} Dano`, total: dmgTotal })
-                return [...entries, ...prev].slice(0, 8)
-              })
-              onNewRoll?.({
-                id: roll.uuid + '-rit-atk',
-                player: playerName,
-                action: `${ritualName}`,
-                roll: `Ocultismo (${atkDice.length}d20+${rollParams?.trainingBonus})`,
-                result: totalAtk,
-                time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-                isFail: !success,
-              })
-              if (dmgTotal !== undefined) {
-                onNewRoll?.({
-                  id: roll.uuid + '-rit-dmg',
-                  player: playerName,
-                  action: `${ritualName} (Dano)`,
-                  roll: rollParams?.damageDice || '',
-                  result: dmgTotal,
-                  time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-                })
-              }
-              rollParams?.onResult?.({
-                rolls: atkDice,
-                best: bestAtk,
-                total: totalAtk,
-                damageResult: dmgTotal,
-                damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
-              })
-            }
-
-            setIsRolling(false)
-            return
-          }
-
-          // 2. Rolagem de OUTROS jogadores (apenas para o histórico)
-          if (!isOwnRoll && onNewRoll) {
-            onNewRoll({
-              id: roll.uuid,
-              player: roll.user?.username || roll.user?.name || 'Outro Jogador',
-              action: 'Rolagem dddice',
-              roll: roll.equation,
-              result: Number(roll.total_value),
-              time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            })
-          }
-        }
-
-        pusherHandlerRef.current = handleRollCreate
-        if (channel) {
-          channel.bind('App\\Events\\RollCreateEvent', handleRollCreate)
-        }
-
         notifyDddiceReady()
       }
     }
@@ -543,29 +606,16 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
 
     return () => {
       mounted = false
-      if (pusherChannelRef.current && pusherHandlerRef.current) {
-        try { pusherChannelRef.current.unbind('App\\Events\\RollCreateEvent', pusherHandlerRef.current) } catch (_) {}
-      }
       if (dddiceRef.current) {
         try { dddiceRef.current.disconnect?.() } catch (_) {}
         try { dddiceRef.current.stop() } catch (_) {}
       }
       dddiceRef.current = null
-      pusherChannelRef.current = null
-      pusherHandlerRef.current = null
+      setIsConnected(false)
+      clearRollTimeout()
     }
-  }, [isDiceTray, dddiceApiKey, dddiceRoomSlug, notifyDddiceReady])
+  }, [isDiceTray, dddiceApiKey, dddiceRoomSlug, notifyDddiceReady, clearRollTimeout])
 
-  // ── Timeout de Segurança (Rede/SDK) ────────────────────────────────────────
-  useEffect(() => {
-    if (!isRolling || !isWaitingForRollRef.current) return
-    const timeout = setTimeout(() => {
-      setIsRolling(false)
-      isWaitingForRollRef.current = false
-      console.warn('[RollHub] Timeout: evento dddice não recebido em 8s')
-    }, 8000)
-    return () => clearTimeout(timeout)
-  }, [isRolling])
 
   // ── rollDice ───────────────────────────────────────────────────────────────
   const rollDice = useCallback(
@@ -577,8 +627,23 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       bonus = 0,
       extraDice: string[] = []
     ) => {
-      if (!dddiceRef.current || !dddiceRoomSlug) return
+      if (!dddiceRoomSlug) {
+        console.warn('[DICE] abortou: sem roomSlug')
+        return
+      }
 
+      console.log('[DICE] iniciando, isDiceTray:', isDiceTray)
+      setIsPreparing(true)
+      await waitForDddice()
+      setIsPreparing(false)
+      console.log('[DICE] waitForDddice concluído, dddiceRef:', !!dddiceRef.current)
+
+      if (!dddiceRef.current) {
+        console.warn('[DICE] abortou: ref null após wait')
+        return
+      }
+
+      console.log('[DICE] chegou no setIsRolling')
       const diceLabel = label || `${count}d${sides}${bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''}`
 
       setIsRolling(true)
@@ -586,10 +651,8 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       setWeaponRollResult(null)
       setRitualRollResult(null)
 
-      if (isDiceTray && dddiceRef.current) {
-        try {
-          await waitForDddice()
-          const themeSlug = diceThemeRef.current || 'dddice-standard'
+      try {
+        const themeSlug = diceThemeRef.current || 'dddice-standard'
 
           const diceToRoll = [
             ...Array.from({ length: count }, () => ({
@@ -613,17 +676,15 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           ]
 
           isWaitingForRollRef.current = true
+          startRollTimeout()
           pendingBonusRef.current = bonus
           pendingRollTypeRef.current = 'attribute'
           pendingRollParamsRef.current = { label: diceLabel, mode }
 
-          await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
-        } catch (e) {
-          console.error(`[DICE-ERROR] Erro ao iniciar rolagem dddice:`, e)
-          setIsRolling(false)
-        }
-      } else {
-        console.warn('[RollHub] dddice não disponível')
+        console.log('[DICE] chamando dddice.roll()')
+        await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
+      } catch (e) {
+        console.error(`[DICE-ERROR] Erro ao iniciar rolagem dddice:`, e)
         setIsRolling(false)
       }
     },
@@ -638,7 +699,13 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       agi: number,
       characterSkills: any[] = []
     ) => {
-      if (!dddiceRef.current || !dddiceRoomSlug) return
+      if (!dddiceRoomSlug) return
+
+      setIsPreparing(true)
+      await waitForDddice()
+      setIsPreparing(false)
+
+      if (!dddiceRef.current) return
 
       setIsRolling(true)
       setDiceResult(null)
@@ -663,10 +730,8 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       const dmgCount = damageMatch ? parseInt(damageMatch[1]) : 1
       const dmgSides = damageMatch ? parseInt(damageMatch[2]) : 6
 
-      if (isDiceTray && dddiceRef.current) {
-        try {
-          await waitForDddice()
-          const themeSlug = diceThemeRef.current || 'dddice-standard'
+      try {
+        const themeSlug = diceThemeRef.current || 'dddice-standard'
 
           const diceToRoll: any[] = [
             ...Array.from({ length: attrVal }, () => ({
@@ -693,6 +758,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           const dmgLabel = `${weapon.damage}${extraDmg > 0 ? `+${extraDmg}` : ''}`
 
           isWaitingForRollRef.current = true
+          startRollTimeout()
           pendingRollTypeRef.current = 'weapon'
           pendingRollParamsRef.current = {
             weapon,
@@ -705,12 +771,9 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
             skill,
           }
 
-          await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
-        } catch (e) {
-          console.error(`[DICE-ERROR] Erro dddice arma:`, e)
-          setIsRolling(false)
-        }
-      } else {
+        await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
+      } catch (e) {
+        console.error(`[DICE-ERROR] Erro dddice arma:`, e)
         setIsRolling(false)
       }
     },
@@ -735,19 +798,23 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         damageRolls: number[] | undefined
       }) => void
     }) => {
-      if (!dddiceRef.current || !dddiceRoomSlug) return
+      if (!dddiceRoomSlug) return
 
-      const { diceCount, damageDice } = params
+      setIsPreparing(true)
+      await waitForDddice()
+      setIsPreparing(false)
+
+      if (!dddiceRef.current) return
 
       setIsRolling(true)
       setDiceResult(null)
       setWeaponRollResult(null)
       setRitualRollResult(null)
 
-      if (isDiceTray && dddiceRef.current) {
-        try {
-          await waitForDddice()
-          const themeSlug = diceThemeRef.current || 'dddice-standard'
+      const { diceCount, damageDice } = params
+
+      try {
+        const themeSlug = diceThemeRef.current || 'dddice-standard'
 
           const diceToRoll: any[] = [
             ...Array.from({ length: Math.max(1, diceCount) }, () => ({
@@ -769,15 +836,13 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           }
 
           isWaitingForRollRef.current = true
+          startRollTimeout()
           pendingRollTypeRef.current = 'ritual'
           pendingRollParamsRef.current = { ...params, dmgMod }
 
-          await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
-        } catch (e) {
-          console.error(`[DICE-ERROR] Erro dddice ritual:`, e)
-          setIsRolling(false)
-        }
-      } else {
+        await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
+      } catch (e) {
+        console.error(`[DICE-ERROR] Erro dddice ritual:`, e)
         setIsRolling(false)
       }
     },
@@ -961,9 +1026,20 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
               <canvas ref={diceCanvasRef} className="absolute inset-0 w-full h-full" />
             </div>
 
-            {(diceResult || weaponRollResult || ritualRollResult || isRolling) && (
+            {(diceResult || weaponRollResult || ritualRollResult || isRolling || isPreparing) && (
               <div className="px-1">
-                {isRolling ? (
+                {isPreparing ? (
+                  <div className="flex items-center gap-2 text-zinc-400 text-sm font-bold animate-pulse">
+                    <m.span
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                      style={{ display: 'inline-block' }}
+                    >
+                      ⟳
+                    </m.span>
+                    Abrindo bandeja...
+                  </div>
+                ) : isRolling ? (
                   <div className="flex items-center gap-2 text-amber-400 text-sm font-bold">
                     <m.span
                       animate={{ rotate: 360 }}

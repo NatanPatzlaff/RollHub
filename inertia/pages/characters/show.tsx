@@ -481,7 +481,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }
 
-  // Carregar rolls quando abre a sidebar
+  // Carregar rolls quando abre a sidebar ou no mount inicial
+  useEffect(() => {
+    loadCampaignRolls()
+  }, [])
+
+  // Configurar polling de 10 segundos para novas rolagens da campanha
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadCampaignRolls()
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Carregar rolls quando abre a sidebar especificamente (forçar refresh)
   useEffect(() => {
     if (isRollHistoryOpen) {
       loadCampaignRolls()
@@ -2634,7 +2647,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 onFinish: () => setIsSaving(false),
               })
             }}
-            onNewRoll={(roll) => setCampaignRolls((prev) => [roll, ...prev])}
+            onNewRoll={(roll) => {
+              // Adicionar localmente para feedback imediato
+              setCampaignRolls((prev) => [roll, ...prev])
+              
+              // Persistir no banco de dados
+              axios.post(`/api/characters/${character.id}/rolls`, {
+                action: roll.action,
+                roll_expression: roll.roll,
+                result: roll.result,
+                is_critical: roll.isCritical,
+                is_fail: roll.isFail,
+                is_gm: roll.isGM
+              }).catch(err => console.error('Erro ao persistir rolagem:', err))
+            }}
             dddiceApiKey={import.meta.env.VITE_DDDICE_API_KEY as string | undefined}
             dddiceRoomSlug={
               (character.campaigns?.[0]?.dddiceRoomSlug as string | undefined) ||

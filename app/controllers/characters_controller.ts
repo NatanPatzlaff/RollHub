@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import Character from '#models/character'
@@ -16,6 +17,7 @@ import CharacterRitual from '#models/character_ritual'
 import ParanormalPower from '#models/paranormal_power'
 import CharacterParanormalPower from '#models/character_paranormal_power'
 import OriginAbility from '#models/origin_ability'
+import CampaignRoll from '#models/campaign_roll'
 import {
   storeCharacterValidator,
   updateCharacterValidator,
@@ -2319,15 +2321,56 @@ export default class CharactersController {
       return response.ok({ rolls: [] })
     }
 
-    const campaignId = campaignMember.campaign_id
-
     // Buscar as rolagens da campanha
     const rolls = await db
       .from('campaign_rolls')
-      .where('campaign_id', campaignId)
+      .where('campaign_id', campaignMember.campaign_id)
+      .orWhere('character_id', character.id) // Inclui rolagens pessoais mesmo que mude de campanha
       .orderBy('rolled_at', 'desc')
       .limit(100)
 
     return response.ok({ rolls })
+  }
+
+  /**
+   * Salva uma nova rolagem no banco de dados
+   */
+  async saveRoll({ params, request, response, auth }: HttpContext) {
+    const character = await Character.findOrFail(params.id)
+
+    // Verificar se o usuário tem permissão para este personagem
+    if (character.userId !== auth.user!.id) {
+      return response.forbidden({ error: 'Acesso negado' })
+    }
+
+    const data = request.only([
+      'action',
+      'roll_expression',
+      'result',
+      'is_critical',
+      'is_fail',
+      'is_gm',
+    ])
+
+    // Buscar a campanha se existir
+    const campaignMember = await db
+      .from('campaign_members')
+      .where('character_id', character.id)
+      .first()
+
+    const roll = await CampaignRoll.create({
+      campaignId: campaignMember?.campaign_id,
+      characterId: character.id,
+      playerName: character.name,
+      action: data.action,
+      rollExpression: data.roll_expression,
+      result: data.result,
+      isCritical: data.is_critical || false,
+      isFail: data.is_fail || false,
+      isGm: data.is_gm || false,
+      rolledAt: DateTime.now(),
+    })
+
+    return response.created({ roll })
   }
 }
