@@ -30,7 +30,7 @@ export default function RollHistorySidebar({ isOpen, onClose, rolls, onClear }: 
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          className="fixed top-0 right-0 h-full w-80 md:w-96 bg-[#09090B] border-l border-zinc-800 shadow-2xl z-[60] flex flex-col"
+          className="h-full w-80 md:w-96 bg-[#09090B] border-l border-zinc-800 shadow-2xl flex flex-col shrink-0"
         >
           {/* Header */}
           <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50 backdrop-blur-md">
@@ -97,14 +97,14 @@ export default function RollHistorySidebar({ isOpen, onClose, rolls, onClear }: 
                     animate={{ opacity: 1, y: 0 }}
                     className={`bg-zinc-900/50 border ${borderColor} rounded-xl p-3 text-sm relative group overflow-hidden`}
                   >
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className={`font-bold text-xs uppercase tracking-wider ${roll.isGM ? 'text-purple-400' : 'text-zinc-400'}`}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className={`font-bold text-sm tracking-wider ${roll.isGM ? 'text-purple-400' : 'text-zinc-300'}`}>
                         {roll.player}
                       </span>
-                      <span className="text-[10px] text-zinc-600 font-medium">{roll.time}</span>
+                      <span className="text-[10px] text-zinc-500 font-medium">{roll.time}</span>
                     </div>
                     
-                    <div className="text-zinc-200 mb-2.5 font-medium">{roll.action}</div>
+                    <div className="text-zinc-400 mb-2 font-medium text-xs uppercase tracking-tighter">{roll.action}</div>
                     
                     <div className="flex justify-between items-center bg-zinc-950/80 p-2.5 rounded-lg border border-zinc-800/50 shadow-inner">
                       <span className="text-xs text-zinc-500 font-mono tracking-tighter">{roll.roll}</span>

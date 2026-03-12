@@ -229,6 +229,7 @@ export default function SkillsCard({
               const isLocked = isFromOrigin || isClassMandatory
               const skillPool = classSkillPools.find((pool) => pool.skills.includes(skill.name))
               const isClassPool = !!skillPool
+              const canInteractLocked = isLocked && isTrained && (isVeteran || characterNex >= 35)
 
               /* Verifica se o pool já atingiu o mínimo */
               let isPoolComplete = false
@@ -250,7 +251,7 @@ export default function SkillsCard({
                   variant="flat"
                   color={isVeteran ? 'secondary' : isTrained ? 'primary' : 'default'}
                   onPress={() => {
-                    if (isLearningSkills && !isLocked) {
+                    if (isLearningSkills && (!isLocked || canInteractLocked)) {
                       onToggleSkill(skill.name)
                     } else if (!isLearningSkills) {
                       const attrVal = Math.max(1, attrMap[skill.attr] ?? 1)
@@ -265,7 +266,7 @@ export default function SkillsCard({
                   }}
                   onContextMenu={(e) => onSkillContextMenu(skill.name, e)}
                   className={`h-auto py-2 flex flex-col items-center justify-center gap-1 rounded-lg transition-all relative group ${
-                    isLearningSkills && !isLocked
+                    isLearningSkills && (!isLocked || canInteractLocked)
                       ? 'cursor-pointer hover:scale-105'
                       : isLocked && isTrained
                         ? 'cursor-not-allowed opacity-75'

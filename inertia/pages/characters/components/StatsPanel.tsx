@@ -1,4 +1,4 @@
-import { Button, Card, CardBody, CardHeader, Progress, Chip, Divider } from '@heroui/react'
+import { Button, Card, CardBody, CardHeader, Chip, Divider } from '@heroui/react'
 import { Heart, Zap, Brain, Shield, RotateCcw } from 'lucide-react'
 
 interface StatsPanelProps {
@@ -128,8 +128,16 @@ export default function StatsPanel({
                         <div className="flex items-center gap-4">
                             <span className="text-4xl font-black text-white">{hp}</span>
                             <div className="flex-1">
-                                <Progress aria-label="PV" value={(hp / maxHp) * 100} className="h-3"
-                                    classNames={{ indicator: 'bg-linear-to-r from-red-500 to-rose-500', track: 'bg-zinc-950 border border-zinc-800' }} />
+                                <div className="h-3 w-full rounded-full overflow-hidden shadow-inner" style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}>
+                                    <div 
+                                      className="h-full transition-all duration-300 ease-out" 
+                                      style={{ 
+                                        width: `${Math.min(100, Math.max(0, (hp / (maxHp || 1)) * 100))}%`, 
+                                        backgroundColor: '#EF4444', 
+                                        boxShadow: '0 0 10px rgba(239, 68, 68, 0.4)' 
+                                      }} 
+                                    />
+                                </div>
                             </div>
                             <span className="text-sm text-zinc-500 font-bold">{maxHp}</span>
                         </div>
@@ -171,8 +179,16 @@ export default function StatsPanel({
                         <div className="flex items-center gap-4">
                             <span className="text-4xl font-black text-white">{pe}</span>
                             <div className="flex-1">
-                                <Progress aria-label="PE" value={(pe / maxPe) * 100} className="h-3"
-                                    classNames={{ indicator: 'bg-linear-to-r from-amber-400 to-yellow-400', track: 'bg-zinc-950 border border-zinc-800' }} />
+                                <div className="h-3 w-full rounded-full overflow-hidden shadow-inner" style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}>
+                                    <div 
+                                      className="h-full transition-all duration-300 ease-out" 
+                                      style={{ 
+                                        width: `${Math.min(100, Math.max(0, (pe / (maxPe || 1)) * 100))}%`, 
+                                        backgroundColor: '#F59E0B', 
+                                        boxShadow: '0 0 10px rgba(245, 158, 11, 0.4)' 
+                                      }} 
+                                    />
+                                </div>
                             </div>
                             <span className="text-sm text-zinc-500 font-bold">{maxPe}</span>
                         </div>
@@ -211,8 +227,16 @@ export default function StatsPanel({
                         <div className="flex items-center gap-4">
                             <span className="text-4xl font-black text-white">{san}</span>
                             <div className="flex-1">
-                                <Progress aria-label="Sanidade" value={(san / maxSan) * 100} className="h-3"
-                                    classNames={{ indicator: 'bg-linear-to-r from-purple-400 to-fuchsia-400', track: 'bg-zinc-950 border border-zinc-800' }} />
+                                <div className="h-3 w-full rounded-full overflow-hidden shadow-inner" style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}>
+                                    <div 
+                                      className="h-full transition-all duration-300 ease-out" 
+                                      style={{ 
+                                        width: `${Math.min(100, Math.max(0, (san / (maxSan || 1)) * 100))}%`, 
+                                        backgroundColor: '#A855F7', 
+                                        boxShadow: '0 0 10px rgba(168, 85, 247, 0.4)' 
+                                      }} 
+                                    />
+                                </div>
                             </div>
                             <span className="text-sm text-zinc-500 font-bold">{maxSan}</span>
                         </div>

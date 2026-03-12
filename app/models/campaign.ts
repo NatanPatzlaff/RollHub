@@ -4,6 +4,7 @@ import type { BelongsTo, ManyToMany, HasMany } from '@adonisjs/lucid/types/relat
 import User from '#models/user'
 import Character from '#models/character'
 import Combat from '#models/combat'
+import CampaignNote from '#models/campaign_note'
 
 export default class Campaign extends BaseModel {
   @column({ isPrimary: true })
@@ -45,6 +46,9 @@ export default class Campaign extends BaseModel {
 
   @hasMany(() => Combat)
   declare combats: HasMany<typeof Combat>
+
+  @hasMany(() => CampaignNote)
+  declare notes: HasMany<typeof CampaignNote>
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

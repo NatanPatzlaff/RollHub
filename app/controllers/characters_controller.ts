@@ -1127,36 +1127,62 @@ export default class CharactersController {
     }
 
     await db.transaction(async (trx) => {
-      // 1. Delete all non-origin skills for this character
-      const query = CharacterSkill.query({ client: trx }).where('characterId', character.id)
-      if (originSkillIds.size > 0) {
-        query.whereNotIn('skillId', [...originSkillIds])
+      // 1. Prepare all skill names to process
+      const uniqueSkillNames = Array.from(new Set([...trainedSkills, ...veteranSkills]))
+      const allSkills = await Skill.query({ client: trx }).whereIn('name', uniqueSkillNames)
+      const skillNameMap = new Map(allSkills.map((s) => [s.name, s]))
+
+      // 2. Identify skills to keep (Origin + new ones)
+      const originSkills = await Skill.query({ client: trx }).whereIn('name', originSkillNames)
+      const originSkillIdMap = new Map(originSkills.map((s) => [s.name, s.id]))
+      const originIds = new Set(originSkills.map((s) => s.id))
+
+      // 3. Delete non-origin skills that are no longer in the list
+      const query = CharacterSkill.query({ client: trx }).where('character_id', character.id)
+      if (originIds.size > 0) {
+        query.whereNotIn('skill_id', [...originIds])
+      }
+      // Only keep skills that are in the new list (handled by delete non-matches)
+      const newSkillIds = allSkills.map((s) => s.id)
+      if (newSkillIds.length > 0 || originIds.size > 0) {
+        const idsToKeep = new Set([...newSkillIds, ...originIds])
+        query.whereNotIn('skill_id', [...idsToKeep])
       }
       await query.delete()
 
-      // 2. Prepare all unique skill names to process
-      // Deduplicate: a skill should only be processed once.
-      // If it's in veteranSkills, we give it 10. Otherwise if trained, 5.
-      const uniqueSkillNames = Array.from(new Set([...trainedSkills, ...veteranSkills]))
+      // 4. Update or Insert skills
+      for (const skillName of uniqueSkillNames) {
+        const skill = skillNameMap.get(skillName)
+        if (!skill) continue
 
-      if (uniqueSkillNames.length > 0) {
-        const skills = await Skill.query({ client: trx }).whereIn('name', uniqueSkillNames)
+        const degree = veteranSkills.includes(skillName) ? 10 : 5
 
-        const skillsToInsert = []
+        // Use updateOrCreate for all skills (including origin) to update degree
+        await CharacterSkill.updateOrCreate(
+          {
+            characterId: character.id,
+            skillId: skill.id,
+          },
+          {
+            trainingDegree: degree,
+          },
+          { client: trx }
+        )
+      }
 
-        for (const skill of skills) {
-          if (!originSkillIds.has(skill.id)) {
-            const degree = veteranSkills.includes(skill.name) ? 10 : 5
-            skillsToInsert.push({
+      // 5. Ensure origin skills that were NOT in the request (if any) are still degree 5
+      for (const [name, id] of originSkillIdMap) {
+        if (!uniqueSkillNames.includes(name)) {
+          await CharacterSkill.updateOrCreate(
+            {
               characterId: character.id,
-              skillId: skill.id,
-              trainingDegree: degree,
-            })
-          }
-        }
-
-        if (skillsToInsert.length > 0) {
-          await CharacterSkill.createMany(skillsToInsert, { client: trx })
+              skillId: id,
+            },
+            {
+              trainingDegree: 5,
+            },
+            { client: trx }
+          )
         }
       }
     })

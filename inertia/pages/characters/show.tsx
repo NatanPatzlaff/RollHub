@@ -1,4 +1,4 @@
-import { Card, CardBody, Button, Progress, Chip, Divider, useDisclosure } from '@heroui/react'
+import { Card, CardBody, Button, Chip, Divider, useDisclosure } from '@heroui/react'
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
 import { useState, useMemo, useEffect, useRef } from 'react'
@@ -264,6 +264,7 @@ interface CharacterProps {
     currentSanity: number
     defense: number
     dodge: number
+    permanentSanityLoss?: number
   }
   classInfo?: {
     hpFormula: string
@@ -400,26 +401,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
   interface ActiveAbilityBuff {
     id: string
     abilityName: string
-    source: 'trail' | 'origin'
-    effects: {
-      pe_cost?: number
-      duration?: 'next_test' | 'next_attack' | 'scene' | 'instant' | 'passive'
-      bonus?: number
-      attack_bonus?: number
-      damage_bonus?: number
-      critical_bonus?: number
-      skill_bonus_target?: string | string[]
-      skill_bonus_attr?: string | string[]
-      weapon_type?: 'melee' | 'ranged' | 'all'
-      exclude_skills?: string[]
-      skill_substitute?: string
-      trained_any_skill?: boolean
-      extra_move_action?: boolean
-      damage_reduction?: number
-      then_attack_bonus?: number
-      effect_label?: string
-      [key: string]: any
-    }
+    source: 'trail' | 'origin' | 'class'
+    effects: any
   }
   const [activeAbilityBuffs, setActiveAbilityBuffs] = useState<ActiveAbilityBuff[]>([])
   const [abilityUsesThisScene, setAbilityUsesThisScene] = useState<Record<string, number>>({})
@@ -494,7 +477,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       setCampaignRolls(response.data.rolls || [])
     } catch (error) {
       console.error('Erro ao buscar histórico de rolagens:', error)
-      setCampaignRolls([])
+      // Evita limpar as rolagens locais já feitas na sessão se a API não existir ainda
     }
   }
 
@@ -562,7 +545,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   // --- Toggles opcionais de uso de habilidades -----------------------------
   const [usarCamuflar, setUsarCamuflar] = useState(false)
-  const [usarPeritoSkill, setUsarPeritoSkill] = useState<string | null>(null)
 
   // --- Trail Config (habilidades de trilha configuráveis) ------------------
   const trailConfig = character.trailConfig || {}
@@ -697,7 +679,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [isConfiguringAbility, setIsConfiguringAbility] = useState(false)
   const [selectedRitual, setSelectedRitual] = useState<string>('')
   const [selectedElement, setSelectedElement] = useState<string>('')
-
+  
   // Perito PE spending state
   const [peritoPeSpending, setPeritoPeSpending] = useState<Record<string, number>>({})
 
@@ -1274,9 +1256,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
   })()
 
   // Ritual roll deduction callbacks
-  const handleDeductPe = (amount: number) => setPe((prev) => Math.max(0, prev - amount))
-  const handleDeductSan = (amount: number) => setSan((prev) => Math.max(0, prev - amount))
-  const handleDeductPermSan = (amount: number) => setPermSanLoss((prev) => prev + amount)
+  const handleDeductPe = (amount: number) => setPe((prev: number) => Math.max(0, prev - amount))
+  const handleDeductSan = (amount: number) => setSan((prev: number) => Math.max(0, prev - amount))
+  const handleDeductPermSan = (amount: number) => setPermSanLoss((prev: number) => prev + amount)
 
   // Mapeamento de perícia → atributo base (espelha SkillsCard ALL_SKILLS)
   const SKILL_ATTR: Record<string, string> = {
@@ -1313,7 +1295,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   /** Ativa uma habilidade (trilha ou origem): desconta PE e registra buff ativo */
   const handleActivateAbility = (
     abilityName: string,
-    source: 'trail' | 'origin',
+    source: 'trail' | 'origin' | 'class',
     peCost: number,
     effects: any
   ) => {
@@ -1334,7 +1316,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
     // Infere duration se não presente no effects
     let duration = eff.duration
     if (!duration) {
-      if (eff.attack_bonus || eff.damage_bonus || eff.threat_range_bonus) {
+      if (abilityName === 'Eclético') {
+        duration = 'next_test'
+      } else if (eff.attack_bonus || eff.damage_bonus || eff.threat_range_bonus) {
         duration = 'next_attack'
       } else if (eff.bonus && (eff.skill_bonus_attr || eff.skill_bonus_target)) {
         duration = 'next_test'
@@ -1863,8 +1847,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
       {
         preserveState: true,
         preserveScroll: true,
+        onSuccess: () => {
+          setIsLearningSkills(false)
+        },
         onError: (errors) => {
           console.error('Skill save failed:', errors)
+        },
+        onFinish: () => {
           setIsSavingSkills(false)
         },
       }
@@ -1921,10 +1910,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
       }
     } else if (isTrained && !isVeteran && character.nex >= 35) {
       // Trained -> Make Veteran (if limit allows)
+      // NOTE: Origin skills CAN be upgraded to Veteran even if they are locked for removal
       if (veteranSkills.length < totalVeteranSkillsAllowed) {
         setVeteranSkills((prev) => [...prev, skillName])
       } else {
-        // If can't make veteran, try to untrain
+        // If can't make veteran, try to untrain (unless locked)
         if (!isLocked) {
           if (skillPool) {
             const poolChosenCount = getPoolChosenCount(skillPool)
@@ -1932,31 +1922,33 @@ export default function CharacterShow(initialProps: CharacterProps) {
             if (poolChosenCount > skillPool.required) {
               setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
             }
-            // If exactly at required, can swap with another from same pool
-            else if (poolChosenCount === skillPool.required) {
-              // Allow swap by checking if clicking would select another
-              // For now, don't untrain - user must click another to swap
-            }
           } else {
             setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
           }
         }
       }
+    } else if (isVeteran) {
+      // Veteran -> Untrain or Downgrade
+      if (isLocked) {
+        // Locked skill (origin/mandatory) -> Only remove Veteran degree, keeping it Trained (+5)
+        setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
+      } else {
+        // Regular skill -> Remove both degrees (back to 0)
+        setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
+        setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
+      }
     } else if (!isLocked) {
-      // Veteran (or Trained but NEX < 35) -> Untrain completely
+      // Trained (but not Veteran) -> Untrain completely
       if (skillPool) {
         const poolChosenCount = getPoolChosenCount(skillPool)
         if (poolChosenCount > skillPool.required) {
           // Extra skill from pool, can remove freely
-          setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
           setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
         } else {
           // At minimum required or below - just untrain, user will need to pick again
-          setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
           setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
         }
       } else {
-        setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
         setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
       }
     }
@@ -2217,9 +2209,84 @@ export default function CharacterShow(initialProps: CharacterProps) {
           ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
           : 'bg-orange-500/10 text-orange-400 border-orange-500/30'
 
+  const handleRollSkill = (
+    skill: string,
+    attrVal: number,
+    trainingBonus: number,
+    label: string,
+    providedExtraDice?: string[]
+  ) => {
+    // Detecta buffs de habilidade que se aplicam a esta perícia
+    const skillAttr = SKILL_ATTR[skill] ?? ''
+    const relevantBuffs = activeAbilityBuffs.filter((b) => {
+      if (b.abilityName === 'Eclético') return false // Tratado separadamente
+      if (!b.effects.bonus) return false
+      if (b.effects.duration !== 'next_test' && b.effects.duration !== 'scene')
+        return false
+      if (b.effects.exclude_skills?.includes(skill)) return false
+      const target = b.effects.skill_bonus_target
+      const attrTarget = b.effects.skill_bonus_attr
+      if (target) {
+        if (Array.isArray(target)) return target.includes(skill)
+        return target === skill
+      }
+      if (attrTarget) {
+        if (Array.isArray(attrTarget)) return attrTarget.includes(skillAttr)
+        return attrTarget === skillAttr
+      }
+      return false
+    })
+
+    // Bônus do Eclético: +5 (+10/+15 com Engenhosidade) se não treinado
+    const ecleticoBuff = activeAbilityBuffs.find((b) => b.abilityName === 'Eclético')
+    let ecleticoBonusValue = 0
+    if (ecleticoBuff && trainingBonus === 0) {
+      ecleticoBonusValue = ecleticoBuff.effects.bonus || 5
+    }
+
+    const extraBonus = relevantBuffs.reduce((s, b) => s + (b.effects.bonus ?? 0), 0)
+
+    // Bônus de Dados (ex: Perito)
+    const peritoBuffs = activeAbilityBuffs.filter((b) => {
+      if (b.abilityName !== 'Perito') return false
+      if (b.effects.duration !== 'next_test') return false
+      const target = b.effects.skill_bonus_target
+      return target === skill
+    })
+    const extraDice = [
+      ...peritoBuffs.map((b) => b.effects.bonus_dice).filter(Boolean),
+      ...(providedExtraDice || []),
+    ]
+
+    // Coleta todos os buffs a serem consumidos (duração next_test)
+    const buffsToConsume = [...relevantBuffs, ...peritoBuffs]
+    if (ecleticoBuff) buffsToConsume.push(ecleticoBuff)
+
+    if (buffsToConsume.length > 0) {
+      setActiveAbilityBuffs((prev) =>
+        prev.filter(
+          (b) =>
+            !buffsToConsume.some((bc) => bc.id === b.id) ||
+            b.effects.duration !== 'next_test'
+        )
+      )
+    }
+
+    diceTrayRef.current?.openDiceTray()
+    diceTrayRef.current?.rollDice(
+      20,
+      attrVal,
+      ecleticoBuff && trainingBonus === 0 ? `${label} (Eclético)` : label,
+      'highest',
+      trainingBonus + extraBonus + ecleticoBonusValue,
+      extraDice
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-black text-slate-100 font-sans selection:bg-blue-500/30">
-      <Head title={`${character.name} - Escudo do Mestre`} />
+    <div className="flex bg-[#09090b] h-screen overflow-hidden text-slate-100 font-sans selection:bg-blue-500/30">
+      <div className="flex-1 overflow-y-auto custom-scrollbar relative pb-24">
+        <Head title={`${character.name} - Escudo do Mestre`} />
 
       {/* Top Bar / Navigation */}
       <div className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
@@ -2331,46 +2398,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onSaveSkills={saveSkills}
             onToggleSkill={toggleSkillTraining}
             onSkillContextMenu={handleSkillContextMenu}
-            onRollSkill={(skill, attrVal, trainingBonus, label) => {
-              // Detecta buffs de habilidade que se aplicam a esta perícia
-              const skillAttr = SKILL_ATTR[skill] ?? ''
-              const relevantBuffs = activeAbilityBuffs.filter((b) => {
-                if (!b.effects.bonus) return false
-                if (b.effects.duration !== 'next_test' && b.effects.duration !== 'scene')
-                  return false
-                if (b.effects.exclude_skills?.includes(skill)) return false
-                const target = b.effects.skill_bonus_target
-                const attrTarget = b.effects.skill_bonus_attr
-                if (target) {
-                  if (Array.isArray(target)) return target.includes(skill)
-                  return target === skill
-                }
-                if (attrTarget) {
-                  if (Array.isArray(attrTarget)) return attrTarget.includes(skillAttr)
-                  return attrTarget === skillAttr
-                }
-                return false
-              })
-              const extraBonus = relevantBuffs.reduce((s, b) => s + (b.effects.bonus ?? 0), 0)
-              if (extraBonus > 0) {
-                // Consome buffs de duração 'next_test'
-                setActiveAbilityBuffs((prev) =>
-                  prev.filter(
-                    (b) =>
-                      !relevantBuffs.find((rb) => rb.id === b.id) ||
-                      b.effects.duration !== 'next_test'
-                  )
-                )
-              }
-              diceTrayRef.current?.openDiceTray()
-              diceTrayRef.current?.rollDice(
-                20,
-                attrVal,
-                label,
-                'highest',
-                trainingBonus + extraBonus
-              )
-            }}
+            onRollSkill={handleRollSkill}
             onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
           />
 
@@ -2482,7 +2510,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             ritualPrediletoConfig={ritualPrediletoConfig}
             usarCamuflar={usarCamuflar}
             calcPeAjustado={calcPeAjustado}
-            onToggleSection={toggleSection}
+            onToggleSection={toggleSection as any}
             onTrailPowersOpenChange={onTrailPowersOpenChange}
             onOpenTrailModal={onTrailModalOpen}
             onOpenAbilitySelect={onAbilitySelectOpen}
@@ -2520,11 +2548,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onActivateAbility={handleActivateAbility}
             onClearAbilityBuff={clearAbilityBuff}
             onResetSceneUses={resetSceneUses}
+            onRollSkill={handleRollSkill}
             onRollRitual={(params) => {
               diceTrayRef.current?.openDiceTray()
               diceTrayRef.current?.rollRitual(params)
             }}
             onRitualBuffSuccess={handleRitualBuffSuccess}
+            characterSkills={character.skills || []}
+            attrMap={{
+              FOR: strength,
+              AGI: agility,
+              INT: intellect,
+              VIG: vigor,
+              PRE: presence,
+            }}
           />
         </div>
 
@@ -2549,14 +2586,21 @@ export default function CharacterShow(initialProps: CharacterProps) {
             attributeBonusFromNex={attributeBonusFromNex}
             initialAttrs={initialAttrs}
             isSaving={isSaving}
-            onSaveAttributes={(attrs) => {
+            onSaveAttributes={() => {
               setIsSaving(true)
-              router.put(`/characters/${character.id}/attributes`, attrs, {
+              router.put(`/characters/${character.id}/attributes`, {
+                strength,
+                agility,
+                intellect,
+                vigor,
+                presence,
+              }, {
                 preserveScroll: true,
                 preserveState: true,
                 onFinish: () => setIsSaving(false),
               })
             }}
+            onNewRoll={(roll) => setCampaignRolls((prev) => [roll, ...prev])}
             dddiceApiKey={import.meta.env.VITE_DDDICE_API_KEY as string | undefined}
             dddiceRoomSlug={import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined}
           />
@@ -2615,19 +2659,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       const effectiveTotal = hp + tempHp
                       const barMax = Math.max(maxHp, effectiveTotal)
                       return (
-                        <div className="relative h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                        <div className="relative h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden shadow-inner">
                           {/* Segmento vermelho — HP real */}
                           <div
-                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-500 to-rose-500 transition-all duration-300"
-                            style={{ width: `${(hp / barMax) * 100}%` }}
+                            className="absolute inset-y-0 left-0 transition-all duration-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]"
+                            style={{ width: `${(hp / barMax) * 100}%`, backgroundColor: '#EF4444' }}
                           />
                           {/* Segmento azul — HP temporário (emplilhado após o vermelho) */}
                           {tempHp > 0 && (
                             <div
-                              className="absolute inset-y-0 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300"
+                              className="absolute inset-y-0 transition-all duration-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]"
                               style={{
                                 left: `${(hp / barMax) * 100}%`,
                                 width: `${(tempHp / barMax) * 100}%`,
+                                backgroundColor: '#06B6D4'
                               }}
                             />
                           )}
@@ -2716,19 +2761,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       const effectiveTotal = pe + tempPe
                       const barMax = Math.max(maxPe, effectiveTotal)
                       return (
-                        <div className="relative h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                        <div className="relative h-3 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden shadow-inner">
                           {/* Segmento amarelo — PE real */}
                           <div
-                            className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-400 to-yellow-400 transition-all duration-300"
-                            style={{ width: `${(pe / barMax) * 100}%` }}
+                            className="absolute inset-y-0 left-0 transition-all duration-300 shadow-[0_0_10px_rgba(251,191,36,0.3)]"
+                            style={{ width: `${(pe / barMax) * 100}%`, backgroundColor: '#F59E0B' }}
                           />
                           {/* Segmento azul — PE temporário */}
                           {tempPe > 0 && (
                             <div
-                              className="absolute inset-y-0 bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300"
+                              className="absolute inset-y-0 transition-all duration-300 shadow-[0_0_10px_rgba(6,182,212,0.3)]"
                               style={{
                                 left: `${(pe / barMax) * 100}%`,
                                 width: `${(tempPe / barMax) * 100}%`,
+                                backgroundColor: '#06B6D4'
                               }}
                             />
                           )}
@@ -2803,15 +2849,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 <div className="flex items-center gap-4">
                   <span className="text-4xl font-black text-white">{san}</span>
                   <div className="flex-1">
-                    <Progress
-                      aria-label="Sanidade"
-                      value={(san / maxSan) * 100}
-                      className="h-3"
-                      classNames={{
-                        indicator: 'bg-gradient-to-r from-purple-400 to-fuchsia-400',
-                        track: 'bg-zinc-950 border border-zinc-800',
-                      }}
-                    />
+                    <div className="h-3 w-full rounded-full overflow-hidden shadow-inner" style={{ backgroundColor: '#09090b', border: '1px solid #27272a' }}>
+                        <div 
+                           className="h-full transition-all duration-300 ease-out shadow-[0_0_10px_rgba(168,85,247,0.3)]" 
+                           style={{ 
+                             width: `${Math.min(100, Math.max(0, (san / (maxSan || 1)) * 100))}%`, 
+                             backgroundColor: '#A855F7'
+                           }} 
+                        />
+                    </div>
                   </div>
                   <span className="text-sm text-zinc-500 font-bold">{maxSan}</span>
                 </div>
@@ -3640,6 +3686,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           }}
         />
       )}
+      </div>
 
       {/* Roll History Sidebar */}
       <RollHistorySidebar

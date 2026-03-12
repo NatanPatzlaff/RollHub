@@ -16,6 +16,7 @@ const CharactersController = () => import('#controllers/characters_controller')
 const CharacterStatsController = () => import('#controllers/character_stats_controller')
 const CampaignsController = () => import('#controllers/campaigns_controller')
 const CampaignInvitesController = () => import('#controllers/campaign_invites_controller')
+const CampaignNotesController = () => import('#controllers/campaign_notes_controller')
 
 import { middleware } from '#start/kernel'
 
@@ -63,6 +64,12 @@ router
 
     router.delete('/characters/:id', [CharactersController, 'destroy'])
     router.put('/characters/:id/stats', [CharacterStatsController, 'update'])
+
+    // Campaign Notes
+    router.get('/api/campaigns/:id/notes', [CampaignNotesController, 'index'])
+    router.post('/api/campaigns/:id/notes', [CampaignNotesController, 'store'])
+    router.put('/api/campaigns/notes/:id', [CampaignNotesController, 'update'])
+    router.delete('/api/campaigns/notes/:id', [CampaignNotesController, 'destroy'])
   })
   .use(middleware.auth())
 

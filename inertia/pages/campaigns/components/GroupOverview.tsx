@@ -12,12 +12,19 @@ export default function GroupOverview({ players }: GroupOverviewProps) {
   const copyInviteLink = () => {
     if (!campaign?.inviteCode) return
     const url = `${window.location.origin}/join/${campaign.inviteCode}`
-    navigator.clipboard.writeText(url)
-    alert('Link de convite copiado para a área de transferência!')
+    
+    // Tratamento para ambientes sem HTTPS (onde navigator.clipboard é undefined)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(url)
+        .then(() => alert('Link de convite copiado para a área de transferência!'))
+        .catch(() => prompt('Copie o link manualmente:', url))
+    } else {
+      prompt('Copie o link abaixo para convidar jogadores:', url)
+    }
   }
 
   return (
-    <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-5 md:p-6 flex flex-col h-full">
+    <div className="bg-[#18181B] border border-[#27272A] rounded-b-xl rounded-tr-xl p-5 md:p-6 flex flex-col h-full">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-bold text-white">Personagens dos Jogadores</h2>
         <button 

@@ -1,5 +1,4 @@
-import { motion } from 'framer-motion'
-import { Users, FileText } from 'lucide-react'
+import { Users, FileText, Swords, Monitor, Plus } from 'lucide-react'
 
 interface TabsProps {
   activeTab: string
@@ -8,12 +7,14 @@ interface TabsProps {
 
 export default function Tabs({ activeTab, setActiveTab }: TabsProps) {
   const tabs = [
+    { id: 'salas', label: 'Salas', icon: Monitor },
+    { id: 'combates', label: 'Combates', icon: Swords },
     { id: 'jogadores', label: 'Grupo', icon: Users },
     { id: 'anotacoes', label: 'Anotações', icon: FileText },
   ]
 
   return (
-    <div className="flex border-b border-[#27272A] mb-6">
+    <div className="flex items-center gap-1 mb-[-1px] relative z-10">
       {tabs.map((tab) => {
         const Icon = tab.icon
         const isActive = activeTab === tab.id
@@ -21,23 +22,21 @@ export default function Tabs({ activeTab, setActiveTab }: TabsProps) {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold transition-colors relative ${
-              isActive ? 'text-[#F97316]' : 'text-[#A1A1AA] hover:text-[#D4D4D8]'
+            className={`flex items-center gap-2 px-6 py-2.5 text-sm font-medium transition-all relative rounded-t-lg min-w-[140px] ${
+              isActive 
+                ? 'bg-[#18181B] text-white border-t-2 border-[#F97316]' 
+                : 'bg-[#09090B]/40 text-[#A1A1AA] hover:bg-[#18181B]/60 hover:text-[#D4D4D8] border-t-2 border-transparent'
             }`}
           >
-            <Icon size={16} />
+            <Icon size={16} className={isActive ? 'text-white' : 'text-[#A1A1AA]'} />
             {tab.label}
-            {isActive && (
-              <motion.div
-                layoutId="activeTabIndicator"
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#F97316]"
-                initial={false}
-                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              />
-            )}
           </button>
         )
       })}
+      
+      <button className="p-2.5 text-[#A1A1AA] hover:text-white transition-colors ml-1">
+        <Plus size={18} />
+      </button>
     </div>
   )
 }

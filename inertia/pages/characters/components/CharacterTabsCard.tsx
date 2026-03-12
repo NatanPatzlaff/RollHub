@@ -22,11 +22,19 @@ import {
 } from 'lucide-react'
 import BaseModal from './BaseModal'
 
-const RANK_OPTIONS = ['Recruta', 'Veterano', 'Expert']
+const RANK_OPTIONS = [
+  'Recruta',
+  'Operador',
+  'Agente Especial',
+  'Oficial de Operações',
+  'Agente de Elite',
+]
 const RANK_LIMITS: Record<string, Record<number, number>> = {
-  Recruta: { 1: 2, 2: 0, 3: 0, 4: 0 },
-  Veterano: { 1: 2, 2: 2, 3: 0, 4: 0 },
-  Expert: { 1: 2, 2: 2, 3: 1, 4: 0 },
+  'Recruta': { 1: 2, 2: 0, 3: 0, 4: 0 },
+  'Operador': { 1: 3, 2: 1, 3: 0, 4: 0 },
+  'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
+  'Oficial de Operações': { 1: 3, 2: 3, 3: 2, 4: 1 },
+  'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
 }
 const CAT_LABELS: Record<number, string> = { 0: '0', 1: 'I', 2: 'II', 3: 'III', 4: 'IV' }
 
@@ -93,7 +101,7 @@ export interface CharacterTabsCardProps {
   onRemoveAbility: (characterId: number, abilityId: number) => void
   onRemoveParanormalPower: (id: number, characterClassAbilityId?: number | null) => void
   onSetUsarCamuflar: (v: boolean) => void
-  onSetPeritoPeSpending: (v: Record<string, number>) => void
+  onPeritoSpendChange?: (skillName: string, value: number) => void
   // Trail config props
   trailConfig?: Record<string, any>
   favoriteWeaponName?: string | null
@@ -122,7 +130,6 @@ export interface CharacterTabsCardProps {
     target: string | null
     effects: any | null
   }>
-  characterAffinity?: string | null
   pe: number
   ocultismoDegree: number
   onDeductPe: (amount: number) => void
@@ -163,13 +170,22 @@ export interface CharacterTabsCardProps {
   activeAbilityBuffs?: Array<{
     id: string
     abilityName: string
-    source: 'trail' | 'origin'
+    source: 'trail' | 'origin' | 'class'
     effects: Record<string, any>
   }>
   abilityUsesThisScene?: Record<string, number>
-  onActivateAbility?: (name: string, source: 'trail' | 'origin', peCost: number, effects: any) => void
+  onActivateAbility?: (name: string, source: 'trail' | 'origin' | 'class', peCost: number, effects: any) => void
+  onRollSkill?: (
+    skill: string,
+    attrVal: number,
+    trainingBonus: number,
+    label: string,
+    extraDice?: string[]
+  ) => void
   onClearAbilityBuff?: (buffId: string) => void
   onResetSceneUses?: () => void
+  characterSkills?: any[]
+  attrMap?: Record<string, number>
 }
 
 import { canUseRitualUpgrade, circuloMaximoFromNex } from '../../../utils/ritualReqs'
@@ -241,7 +257,7 @@ export default function CharacterTabsCard({
   onOpenTrailConfigModal,
   onOpenAffinityModal,
   characterId,
-  onSetPeritoPeSpending,
+  onPeritoSpendChange,
   originAbilityName,
   originAbilityDescription,
   characterAffinity,
@@ -259,8 +275,11 @@ export default function CharacterTabsCard({
   activeAbilityBuffs = [],
   abilityUsesThisScene = {},
   onActivateAbility,
+  onRollSkill,
   onClearAbilityBuff,
   onResetSceneUses,
+  characterSkills = [],
+  attrMap = { FOR: 0, AGI: 0, INT: 0, VIG: 0, PRE: 0 },
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<string>('inventario')
 
@@ -1228,33 +1247,95 @@ export default function CharacterTabsCard({
                                       </span>
                                     </div>
                                   </div>
-                                  <button className="ml-2 p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg transition-colors">
+                                  <button
+                                    className="ml-2 p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg transition-colors"
+                                    onClick={() => {
+                                      const skillObj = characterSkills.find((cs: any) => cs.skill?.name === skillName)
+                                      const attrKey = skillObj?.skill?.attr || 'INT'
+                                      const attrVal = attrMap[attrKey] || 0
+                                      const degree = skillObj?.trainingDegree || 0
+                                      const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                                      const label = `${skillName} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
+                                      onRollSkill?.(skillName, attrVal, trainingBonus, label)
+                                    }}
+                                  >
                                     <Dices size={14} />
                                   </button>
                                 </div>
-                                {nex > 5 && maxPeritoPe > 2 && (
+                                {nex >= 10 && (
                                   <div className="space-y-2">
-                                    <div className="flex items-center justify-between text-xs">
-                                      <span className="text-zinc-400">Gastar PE:</span>
-                                      <span className="text-red-400 font-bold">{currentPe} PE</span>
-                                    </div>
-                                    <input
-                                      type="range"
-                                      min={2}
-                                      max={maxPeritoPe}
-                                      step={1}
-                                      value={currentPe}
-                                      onChange={(e) => {
-                                        onSetPeritoPeSpending({
-                                          ...peritoPeSpending,
-                                          [skillName]: parseInt(e.target.value),
-                                        })
-                                      }}
-                                      className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-red-500"
-                                    />
-                                    <div className="flex justify-between text-xs text-zinc-500 px-1">
-                                      <span>2</span>
-                                      <span>{maxPeritoPe}</span>
+                                    <div className="text-[10px] text-zinc-500 uppercase tracking-tighter">Bônus de Perito:</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          onPeritoSpendChange?.(skillName, 2)
+                                          onDeductPe?.(2)
+                                          const skillObj = characterSkills.find((cs: any) => cs.skill?.name === skillName)
+                                          const attrKey = skillObj?.skill?.attr || 'INT'
+                                          const attrVal = attrMap[attrKey] || 0
+                                          const degree = skillObj?.trainingDegree || 0
+                                          const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                                          const label = `Perito: ${skillName} (2 PE)`
+                                          onRollSkill?.(skillName, attrVal, trainingBonus, label, ['1d6'])
+                                        }}
+                                        className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${currentPe === 2 ? 'bg-red-500/30 text-red-200 border-red-500/50' : 'bg-zinc-950 text-zinc-500 border-zinc-900 hover:border-zinc-800'}`}
+                                      >
+                                        1d6 (2 PE)
+                                      </button>
+                                      {maxPeritoPe >= 3 && (
+                                        <button
+                                          onClick={() => {
+                                            onPeritoSpendChange?.(skillName, 3)
+                                            onDeductPe?.(3)
+                                            const skillObj = characterSkills.find((cs: any) => cs.skill?.name === skillName)
+                                            const attrKey = skillObj?.skill?.attr || 'INT'
+                                            const attrVal = attrMap[attrKey] || 0
+                                            const degree = skillObj?.trainingDegree || 0
+                                            const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                                            const label = `Perito: ${skillName} (3 PE)`
+                                            onRollSkill?.(skillName, attrVal, trainingBonus, label, ['1d8'])
+                                          }}
+                                          className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${currentPe === 3 ? 'bg-red-500/30 text-red-200 border-red-500/50' : 'bg-zinc-950 text-zinc-500 border-zinc-900 hover:border-zinc-800'}`}
+                                        >
+                                          1d8 (3 PE)
+                                        </button>
+                                      )}
+                                      {maxPeritoPe >= 4 && (
+                                        <button
+                                          onClick={() => {
+                                            onPeritoSpendChange?.(skillName, 4)
+                                            onDeductPe?.(4)
+                                            const skillObj = characterSkills.find((cs: any) => cs.skill?.name === skillName)
+                                            const attrKey = skillObj?.skill?.attr || 'INT'
+                                            const attrVal = attrMap[attrKey] || 0
+                                            const degree = skillObj?.trainingDegree || 0
+                                            const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                                            const label = `Perito: ${skillName} (4 PE)`
+                                            onRollSkill?.(skillName, attrVal, trainingBonus, label, ['1d10'])
+                                          }}
+                                          className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${currentPe === 4 ? 'bg-red-500/30 text-red-200 border-red-500/50' : 'bg-zinc-950 text-zinc-500 border-zinc-900 hover:border-zinc-800'}`}
+                                        >
+                                          1d10 (4 PE)
+                                        </button>
+                                      )}
+                                      {maxPeritoPe >= 5 && (
+                                        <button
+                                          onClick={() => {
+                                            onPeritoSpendChange?.(skillName, 5)
+                                            onDeductPe?.(5)
+                                            const skillObj = characterSkills.find((cs: any) => cs.skill?.name === skillName)
+                                            const attrKey = skillObj?.skill?.attr || 'INT'
+                                            const attrVal = attrMap[attrKey] || 0
+                                            const degree = skillObj?.trainingDegree || 0
+                                            const trainingBonus = degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                                            const label = `Perito: ${skillName} (5 PE)`
+                                            onRollSkill?.(skillName, attrVal, trainingBonus, label, ['1d12'])
+                                          }}
+                                          className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${currentPe === 5 ? 'bg-red-500/30 text-red-200 border-red-500/50' : 'bg-zinc-950 text-zinc-500 border-zinc-900 hover:border-zinc-800'}`}
+                                        >
+                                          1d12 (5 PE)
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 )}
@@ -1322,8 +1403,8 @@ export default function CharacterTabsCard({
                       usesPerSceneNum !== null && usesThisScene >= usesPerSceneNum
                     const canUseAbility = !isLimitReached && pe >= peCostNum
 
-                    // Filtra Perito da renderização genérica caso caia aqui
-                    if (abilityName === 'Perito') return null
+                    // Filtra Perito e Engenhosidade da renderização genérica caso caia aqui
+                    if (abilityName === 'Perito' || abilityName === 'Engenhosidade') return null
 
                     return (
                       <div
@@ -1341,6 +1422,11 @@ export default function CharacterTabsCard({
                               >
                                 {actionBadge.label}
                               </span>
+                              {activeAbilityBuffs?.some(b => b.abilityName === abilityName) && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse">
+                                  Ativo
+                                </span>
+                              )}
                             </div>
                             <div className="flex flex-wrap gap-1.5 mt-1.5">
                               {peCost && (
@@ -1369,26 +1455,67 @@ export default function CharacterTabsCard({
                             </p>
                           </div>
                           {onActivateAbility && (
-                            <button
-                              disabled={!canUseAbility}
-                              onClick={() =>
-                                canUseAbility &&
-                                onActivateAbility(abilityName, 'class' as any, peCostNum, effects)
-                              }
-                              title={
-                                isLimitReached
-                                  ? 'Limite de usos atingido'
-                                  : !canUseAbility
-                                    ? 'PE insuficiente'
-                                    : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
-                              }
-                              className={`shrink-0 self-center px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${canUseAbility
-                                ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
-                                : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
-                                }`}
-                            >
-                              {isLimitReached ? 'Usado' : 'Usar'}
-                            </button>
+                            <div className="flex flex-col gap-2 shrink-0 self-center">
+                              {abilityName === 'Eclético' ? (
+                                <>
+                                  <button
+                                    disabled={pe < 2 || activeAbilityBuffs?.some(b => b.abilityName === 'Eclético')}
+                                    onClick={() => onActivateAbility(abilityName, 'class' as any, 2, effects)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${pe >= 2 && !activeAbilityBuffs?.some(b => b.abilityName === 'Eclético')
+                                      ? 'bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border-blue-600/40'
+                                      : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                      }`}
+                                  >
+                                    Treinado (2 PE)
+                                  </button>
+                                  {hasEngenhosidade && nex >= 40 && (
+                                    <button
+                                      disabled={pe < 4 || activeAbilityBuffs?.some(b => b.abilityName === 'Eclético')}
+                                      onClick={() => onActivateAbility(abilityName, 'class' as any, 4, { ...effects, bonus: 10 })}
+                                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${pe >= 4 && !activeAbilityBuffs?.some(b => b.abilityName === 'Eclético')
+                                        ? 'bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 border-purple-600/40'
+                                        : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                        }`}
+                                    >
+                                      Veterano (4 PE)
+                                    </button>
+                                  )}
+                                  {hasEngenhosidade && nex >= 75 && (
+                                    <button
+                                      disabled={pe < 8 || activeAbilityBuffs?.some(b => b.abilityName === 'Eclético')}
+                                      onClick={() => onActivateAbility(abilityName, 'class' as any, 8, { ...effects, bonus: 15 })}
+                                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${pe >= 8 && !activeAbilityBuffs?.some(b => b.abilityName === 'Eclético')
+                                        ? 'bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 border-amber-600/40'
+                                        : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                        }`}
+                                    >
+                                      Expert (8 PE)
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <button
+                                  disabled={!canUseAbility}
+                                  onClick={() =>
+                                    canUseAbility &&
+                                    onActivateAbility(abilityName, 'class' as any, peCostNum, effects)
+                                  }
+                                  title={
+                                    isLimitReached
+                                      ? 'Limite de usos atingido'
+                                      : !canUseAbility
+                                        ? 'PE insuficiente'
+                                        : `Usar (${peCostNum > 0 ? peCostNum + ' PE' : 'grátis'})`
+                                  }
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${canUseAbility
+                                    ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border-red-500/40'
+                                    : 'opacity-40 cursor-not-allowed bg-zinc-800/50 text-zinc-500 border-zinc-700'
+                                    }`}
+                                >
+                                  {isLimitReached ? 'Usado' : 'Usar'}
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>

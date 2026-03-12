@@ -2,20 +2,85 @@ import type { HttpContext } from '@adonisjs/core/http'
 import Campaign from '#models/campaign'
 
 export default class CampaignsController {
-  async store({ auth, response }: HttpContext) {
+  async store({ request, auth, response }: HttpContext) {
     const user = auth.user
     if (!user) {
-      return response.unauthorized({ message: 'User must be logged in' })
+      return response.unauthorized({ message: 'Usuário não autenticado' })
     }
-    // ...existing code...
+
+    const { name, description } = request.only(['name', 'description'])
+
+    // Caso de uma validação básica
+    if (!name || name.length < 3) {
+      return response.badRequest({ message: 'Nome inválido' })
+    }
+
+    const campaign = await Campaign.create({
+      gameMasterId: user.id,
+      name,
+      description,
+    })
+
+    return response.redirect().toPath(`/campaigns/${campaign.id}`)
   }
 
-  async show({ params, inertia, response }: HttpContext) {
-    // ...existing code...
+  async show({ params, auth, inertia, response }: HttpContext) {
+    const user = auth.user
+    if (!user) return response.redirect().toPath('/login')
+
+    const campaign = await Campaign.query()
+      .where('id', params.id)
+      .preload('characters', (query) => {
+        query.preload('user')
+        query.preload('stats')
+        query.preload('class')
+      })
+      .first()
+
+    if (!campaign) {
+      return response.notFound({ message: 'Campanha não encontrada' })
+    }
+
+    const isGM = campaign.gameMasterId === user.id
+    const isPlayer = await campaign.related('players').query().where('user_id', user.id).first()
+
+    if (!isGM && !isPlayer) {
+      return response.forbidden({ message: 'Você não tem acesso a esta campanha' })
+    }
+
+    return inertia.render('campaigns/show', {
+      campaign,
+      isGM,
+    })
   }
 
-  async shield({ params, inertia, response }: HttpContext) {
-    // ...existing code...
+  async shield({ params, auth, inertia, response }: HttpContext) {
+    const user = auth.user
+    if (!user) return response.redirect().toPath('/login')
+
+    const campaign = await Campaign.query()
+      .where('id', params.id)
+      .preload('characters', (query) => {
+        query.preload('user')
+        query.preload('stats')
+        query.preload('class')
+      })
+      .first()
+
+    if (!campaign) {
+      return response.notFound({ message: 'Campanha não encontrada' })
+    }
+
+    const isGM = campaign.gameMasterId === user.id
+
+    if (!isGM) {
+      return response.forbidden({ message: 'Apenas o mestre pode acessar o escudo' })
+    }
+
+    return inertia.render('campaigns/shield', {
+      campaign,
+      isGM,
+    })
   }
 
   async update({ params, request, auth, response }: HttpContext) {
@@ -47,6 +112,6 @@ export default class CampaignsController {
     campaign.description = description
     await campaign.save()
 
-    return response.ok({ message: 'Campanha atualizada com sucesso', campaign })
+    return response.redirect().back()
   }
 }
