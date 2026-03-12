@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { UserPlus } from 'lucide-react'
 import { usePage } from '@inertiajs/react'
 import PlayerCard from './PlayerCard'
@@ -9,17 +10,43 @@ interface GroupOverviewProps {
 export default function GroupOverview({ players }: GroupOverviewProps) {
   const { campaign } = usePage().props as any
   
-  const copyInviteLink = () => {
-    if (!campaign?.inviteCode) return
-    const url = `${window.location.origin}/join/${campaign.inviteCode}`
-    
-    // Tratamento para ambientes sem HTTPS (onde navigator.clipboard é undefined)
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(url)
-        .then(() => alert('Link de convite copiado para a área de transferência!'))
-        .catch(() => prompt('Copie o link manualmente:', url))
-    } else {
-      prompt('Copie o link abaixo para convidar jogadores:', url)
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  const copyInviteLink = async () => {
+    setIsGenerating(true)
+    try {
+      // Extrair o token CSRF do cookie (AdonisJS Shield)
+      const xsrfToken = document.cookie
+        .split('; ')
+        .find((row) => row.startsWith('XSRF-TOKEN='))
+        ?.split('=')[1]
+
+      const response = await fetch(`/campaigns/${campaign.id}/invite`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-XSRF-TOKEN': xsrfToken ? decodeURIComponent(xsrfToken) : '',
+        }
+      })
+      
+      const data = await response.json()
+      
+      if (data.token) {
+        const url = `${window.location.origin}/invite/${data.token}`
+        
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(url)
+          alert('Link de convite copiado para a área de transferência!')
+        } else {
+          prompt('Copie o link abaixo para convidar jogadores:', url)
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao gerar convite:', error)
+      alert('Falha ao gerar link de convite.')
+    } finally {
+      setIsGenerating(false)
     }
   }
 
@@ -29,10 +56,11 @@ export default function GroupOverview({ players }: GroupOverviewProps) {
         <h2 className="text-lg font-bold text-white">Personagens dos Jogadores</h2>
         <button 
           onClick={copyInviteLink}
-          className="bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-4 py-2 rounded-md font-semibold flex items-center gap-2 text-sm transition-colors shadow-lg shadow-[#7C3AED]/20"
+          disabled={isGenerating}
+          className={`${isGenerating ? 'opacity-50 cursor-not-allowed' : ''} bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-4 py-2 rounded-md font-semibold flex items-center gap-2 text-sm transition-colors shadow-lg shadow-[#7C3AED]/20`}
         >
-          <UserPlus size={16} />
-          Convidar Jogador
+          <UserPlus size={16} className={isGenerating ? 'animate-spin' : ''} />
+          {isGenerating ? 'Gerando...' : 'Convidar Jogador'}
         </button>
       </div>
 

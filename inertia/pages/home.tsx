@@ -87,7 +87,10 @@ export default function Home({
     if (!user) { router.visit('/login'); return }
     setIsCreatingCampaign(true)
     
-    router.post('/campaigns', {}, {
+    router.post('/campaigns', {
+      name: 'Nova Campanha',
+      description: ''
+    }, {
       onSuccess: () => setIsCreatingCampaign(false),
       onError: () => {
         setIsCreatingCampaign(false)

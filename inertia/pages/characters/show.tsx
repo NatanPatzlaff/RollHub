@@ -248,9 +248,9 @@ interface CharacterProps {
     rituals?: Array<{
       id: number
       ritualId: number
-      characterClassAbilityId?: number | null
       ritual?: Ritual
     }>
+    campaigns?: Array<{ dddiceRoomSlug: string | null }>
   }
   classes: CharacterClass[]
   origins: Origin[]
@@ -1682,7 +1682,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       : character.class?.name === 'Ocultista'
         ? 3
         : character.class?.name === 'Combatente'
-          ? 1
+          ? 2
           : 0
   const totalSkillsAllowed = baseSkills + intellect
 
@@ -1720,15 +1720,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const availableSkillsToChoose = totalSkillsAllowed
 
   // Calculate available veteran skills (+10) based on class and intellect (unlocked at NEX 35%)
-  const baseVeteranSkills =
+  const baseUpgradesAllowed =
     character.class?.name === 'Especialista'
-      ? 5
+      ? 7
       : character.class?.name === 'Ocultista'
         ? 3
         : character.class?.name === 'Combatente'
           ? 2
           : 0
-  const totalVeteranSkillsAllowed = character.nex >= 35 ? baseVeteranSkills + intellect : 0
+  const totalVeteranSkillsAllowed = character.nex >= 35 ? baseUpgradesAllowed + intellect : 0
+
+  // Calculate available expert skills (+15) based on class and intellect (unlocked at NEX 70%)
+  const totalExpertSkillsAllowed = character.nex >= 70 ? baseUpgradesAllowed + intellect : 0
 
   const [isLearningSkills, setIsLearningSkills] = useState(false)
 
@@ -1751,8 +1754,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
     [character.skills]
   )
 
+  const initialExpertSkills = useMemo(
+    () =>
+      (character.skills || [])
+        .filter((cs: any) => cs.trainingDegree >= 15)
+        .map((cs: any) => cs.skill?.name)
+        .filter(Boolean),
+    [character.skills]
+  )
+
   const [trainedSkills, setTrainedSkills] = useState<string[]>(initialTrainedSkills)
   const [veteranSkills, setVeteranSkills] = useState<string[]>(initialVeteranSkills)
+  const [expertSkills, setExpertSkills] = useState<string[]>(initialExpertSkills)
   const [skillFilter, setSkillFilter] = useState<string>('Todos')
   const [showSkillInfo, setShowSkillInfo] = useState<boolean>(true)
 
@@ -1820,6 +1833,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setVeteranSkills((prev) => prev.slice(0, totalVeteranSkillsAllowed))
   }, [totalVeteranSkillsAllowed])
 
+  // Ensure expert skills don't exceed the limit
+  useEffect(() => {
+    setExpertSkills((prev) => prev.slice(0, totalExpertSkillsAllowed))
+  }, [totalExpertSkillsAllowed])
+
   // Auto-train class mandatory skills (e.g., Ocultismo + Vontade for Ocultista)
   useEffect(() => {
     if (classMandatorySkills.length > 0) {
@@ -1843,6 +1861,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       {
         trainedSkills,
         veteranSkills,
+        expertSkills,
       },
       {
         preserveState: true,
@@ -1865,6 +1884,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     const isTrained = trainedSkills.includes(skillName)
     const isVeteran = veteranSkills.includes(skillName)
+    const isExpert = expertSkills.includes(skillName)
     const isFromOrigin = originSkillsFromOrigin.includes(skillName)
     const isClassMandatory = classMandatorySkills.includes(skillName)
     const isLocked = isFromOrigin || isClassMandatory
@@ -1910,7 +1930,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
       }
     } else if (isTrained && !isVeteran && character.nex >= 35) {
       // Trained -> Make Veteran (if limit allows)
-      // NOTE: Origin skills CAN be upgraded to Veteran even if they are locked for removal
       if (veteranSkills.length < totalVeteranSkillsAllowed) {
         setVeteranSkills((prev) => [...prev, skillName])
       } else {
@@ -1918,7 +1937,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
         if (!isLocked) {
           if (skillPool) {
             const poolChosenCount = getPoolChosenCount(skillPool)
-            // Can untrain if more than required in pool
             if (poolChosenCount > skillPool.required) {
               setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
             }
@@ -1927,13 +1945,29 @@ export default function CharacterShow(initialProps: CharacterProps) {
           }
         }
       }
+    } else if (isVeteran && !isExpert && character.nex >= 70) {
+      // Veteran -> Make Expert (if limit allows)
+      if (expertSkills.length < totalExpertSkillsAllowed) {
+        setExpertSkills((prev) => [...prev, skillName])
+      } else {
+        // Se não puder fazer expert, volta para treinado ou remove conforme as regras de bloqueio
+        setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
+        if (!isLocked) {
+          setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
+        }
+      }
+    } else if (isExpert) {
+      // Expert -> Untrain or Downgrade
+      setExpertSkills((prev) => prev.filter((s) => s !== skillName))
+      setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
+      if (!isLocked) {
+        setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
+      }
     } else if (isVeteran) {
-      // Veteran -> Untrain or Downgrade
+      // Veteran -> Untrain or Downgrade (se NEX < 70 ou sem slots de Expert)
       if (isLocked) {
-        // Locked skill (origin/mandatory) -> Only remove Veteran degree, keeping it Trained (+5)
         setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
       } else {
-        // Regular skill -> Remove both degrees (back to 0)
         setVeteranSkills((prev) => prev.filter((s) => s !== skillName))
         setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
       }
@@ -1942,10 +1976,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
       if (skillPool) {
         const poolChosenCount = getPoolChosenCount(skillPool)
         if (poolChosenCount > skillPool.required) {
-          // Extra skill from pool, can remove freely
           setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
         } else {
-          // At minimum required or below - just untrain, user will need to pick again
           setTrainedSkills((prev) => prev.filter((s) => s !== skillName))
         }
       } else {
@@ -2381,12 +2413,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
           <SkillsCard
             trainedSkills={trainedSkills}
             veteranSkills={veteranSkills}
+            expertSkills={expertSkills}
             skillFilter={skillFilter}
             isLearningSkills={isLearningSkills}
             isSavingSkills={isSavingSkills}
             showSkillInfo={showSkillInfo}
             availableSkillsToChoose={availableSkillsToChoose}
             totalVeteranSkillsAllowed={totalVeteranSkillsAllowed}
+            totalExpertSkillsAllowed={totalExpertSkillsAllowed}
             originSkillsFromOrigin={originSkillsFromOrigin}
             classMandatorySkills={classMandatorySkills}
             classSkillPools={classSkillPools}
@@ -2602,7 +2636,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
             }}
             onNewRoll={(roll) => setCampaignRolls((prev) => [roll, ...prev])}
             dddiceApiKey={import.meta.env.VITE_DDDICE_API_KEY as string | undefined}
-            dddiceRoomSlug={import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined}
+            dddiceRoomSlug={
+              (character.campaigns?.[0]?.dddiceRoomSlug as string | undefined) ||
+              (import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined)
+            }
           />
 
           {/* COMBAT DEFENSES */}

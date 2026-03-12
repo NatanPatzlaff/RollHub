@@ -21,10 +21,13 @@ const CampaignNotesController = () => import('#controllers/campaign_notes_contro
 import { middleware } from '#start/kernel'
 
 router.get('/', [HomeController, 'index'])
-router.get('/join/:code', [CampaignInvitesController, 'show'])
+
+// Rotas de Convite (Públicas)
+router.get('/invite/:token', [CampaignInvitesController, 'preview'])
 router
   .group(() => {
-    router.post('/campaigns/join', [CampaignInvitesController, 'store'])
+    router.post('/invite/:token/accept', [CampaignInvitesController, 'accept'])
+    router.post('/campaigns/:id/invite', [CampaignInvitesController, 'generate'])
     router.post('/campaigns', [CampaignsController, 'store'])
     router.get('/campaigns/:id', [CampaignsController, 'show'])
     router.get('/campaigns/:id/shield', [CampaignsController, 'shield'])

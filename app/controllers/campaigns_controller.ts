@@ -1,27 +1,28 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Campaign from '#models/campaign'
+import { createCampaignValidator, updateCampaignValidator } from '#validators/campaign'
 
 export default class CampaignsController {
-  async store({ request, auth, response }: HttpContext) {
+  async store({ request, auth, response, session }: HttpContext) {
     const user = auth.user
     if (!user) {
       return response.unauthorized({ message: 'Usuário não autenticado' })
     }
 
-    const { name, description } = request.only(['name', 'description'])
+    try {
+      const payload = await request.validateUsing(createCampaignValidator)
 
-    // Caso de uma validação básica
-    if (!name || name.length < 3) {
-      return response.badRequest({ message: 'Nome inválido' })
+      const campaign = await Campaign.create({
+        gameMasterId: user.id,
+        name: payload.name,
+        description: payload.description,
+      })
+
+      return response.redirect().toPath(`/campaigns/${campaign.id}`)
+    } catch (error) {
+      session.flash('errors', error.messages || { name: 'Erro ao criar campanha' })
+      return response.redirect().back()
     }
-
-    const campaign = await Campaign.create({
-      gameMasterId: user.id,
-      name,
-      description,
-    })
-
-    return response.redirect().toPath(`/campaigns/${campaign.id}`)
   }
 
   async show({ params, auth, inertia, response }: HttpContext) {
@@ -83,7 +84,7 @@ export default class CampaignsController {
     })
   }
 
-  async update({ params, request, auth, response }: HttpContext) {
+  async update({ params, request, auth, response, session }: HttpContext) {
     const user = auth.user
     if (!user) {
       return response.unauthorized({ message: 'Usuário não autenticado' })
@@ -98,20 +99,17 @@ export default class CampaignsController {
       return response.forbidden({ message: 'Apenas o mestre pode editar a campanha' })
     }
 
-    const name = request.input('name', '').trim()
-    const description = request.input('description', '').trim()
+    try {
+      const payload = await request.validateUsing(updateCampaignValidator)
 
-    if (!name || name.length < 3 || name.length > 64) {
-      return response.badRequest({ message: 'Nome inválido (3-64 caracteres)' })
+      campaign.name = payload.name
+      campaign.description = payload.description || ''
+      await campaign.save()
+
+      return response.redirect().back()
+    } catch (error) {
+      session.flash('errors', error.messages || { name: 'Erro ao atualizar campanha' })
+      return response.redirect().back()
     }
-    if (description.length > 256) {
-      return response.badRequest({ message: 'Descrição muito longa (máx. 256 caracteres)' })
-    }
-
-    campaign.name = name
-    campaign.description = description
-    await campaign.save()
-
-    return response.redirect().back()
   }
 }

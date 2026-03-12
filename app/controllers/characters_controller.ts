@@ -1107,7 +1107,7 @@ export default class CharactersController {
       .firstOrFail()
 
     // Get the data from request
-    const { trainedSkills = [], veteranSkills = [] } =
+    const { trainedSkills = [], veteranSkills = [], expertSkills = [] } =
       await request.validateUsing(updateSkillsValidator)
 
     // Get origin's initial skills
@@ -1128,7 +1128,7 @@ export default class CharactersController {
 
     await db.transaction(async (trx) => {
       // 1. Prepare all skill names to process
-      const uniqueSkillNames = Array.from(new Set([...trainedSkills, ...veteranSkills]))
+      const uniqueSkillNames = Array.from(new Set([...trainedSkills, ...veteranSkills, ...expertSkills]))
       const allSkills = await Skill.query({ client: trx }).whereIn('name', uniqueSkillNames)
       const skillNameMap = new Map(allSkills.map((s) => [s.name, s]))
 
@@ -1155,7 +1155,7 @@ export default class CharactersController {
         const skill = skillNameMap.get(skillName)
         if (!skill) continue
 
-        const degree = veteranSkills.includes(skillName) ? 10 : 5
+        const degree = expertSkills.includes(skillName) ? 15 : veteranSkills.includes(skillName) ? 10 : 5
 
         // Use updateOrCreate for all skills (including origin) to update degree
         await CharacterSkill.updateOrCreate(

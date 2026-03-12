@@ -5,6 +5,7 @@ import User from '#models/user'
 import Character from '#models/character'
 import Combat from '#models/combat'
 import CampaignNote from '#models/campaign_note'
+import CampaignInvite from '#models/campaign_invite'
 
 export default class Campaign extends BaseModel {
   @column({ isPrimary: true })
@@ -49,6 +50,9 @@ export default class Campaign extends BaseModel {
 
   @hasMany(() => CampaignNote)
   declare notes: HasMany<typeof CampaignNote>
+
+  @hasMany(() => CampaignInvite)
+  declare invites: HasMany<typeof CampaignInvite>
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

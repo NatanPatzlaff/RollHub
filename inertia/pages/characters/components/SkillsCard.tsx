@@ -46,12 +46,14 @@ const ALL_SKILLS: { name: string; attr: string }[] = [
 export interface SkillsCardProps {
   trainedSkills: string[]
   veteranSkills: string[]
+  expertSkills: string[]
   skillFilter: string
   isLearningSkills: boolean
   isSavingSkills: boolean
   showSkillInfo: boolean
   availableSkillsToChoose: number
   totalVeteranSkillsAllowed: number
+  totalExpertSkillsAllowed: number
   originSkillsFromOrigin: string[]
   classMandatorySkills: string[]
   classSkillPools: Array<{ name: string; skills: string[]; required: number }>
@@ -74,12 +76,14 @@ export interface SkillsCardProps {
 export default function SkillsCard({
   trainedSkills,
   veteranSkills,
+  expertSkills,
   skillFilter,
   isLearningSkills,
   isSavingSkills,
   showSkillInfo,
   availableSkillsToChoose,
   totalVeteranSkillsAllowed,
+  totalExpertSkillsAllowed,
   originSkillsFromOrigin,
   classMandatorySkills,
   classSkillPools,
@@ -197,11 +201,26 @@ export default function SkillsCard({
                 .
                 {characterNex >= 35 && (
                   <span className="ml-4 border-l border-blue-500/30 pl-4">
-                    E{' '}
-                    <strong className="text-purple-400">
-                      {totalVeteranSkillsAllowed - veteranSkills.length}
-                    </strong>{' '}
-                    para Veterano (+10).
+                    {characterNex >= 70 ? (
+                      <>
+                        <strong className="text-purple-400">
+                          {totalVeteranSkillsAllowed - veteranSkills.length}
+                        </strong>{' '}
+                        Veterano (+10) e{' '}
+                        <strong className="text-amber-400">
+                          {totalExpertSkillsAllowed - expertSkills.length}
+                        </strong>{' '}
+                        Expert (+15).
+                      </>
+                    ) : (
+                      <>
+                        E{' '}
+                        <strong className="text-purple-400">
+                          {totalVeteranSkillsAllowed - veteranSkills.length}
+                        </strong>{' '}
+                        para Veterano (+10).
+                      </>
+                    )}
                   </span>
                 )}
               </span>
@@ -224,12 +243,13 @@ export default function SkillsCard({
             (skill, index) => {
               const isTrained = trainedSkills.includes(skill.name)
               const isVeteran = veteranSkills.includes(skill.name)
+              const isExpert = expertSkills.includes(skill.name)
               const isFromOrigin = originSkillsFromOrigin.includes(skill.name)
               const isClassMandatory = classMandatorySkills.includes(skill.name)
               const isLocked = isFromOrigin || isClassMandatory
               const skillPool = classSkillPools.find((pool) => pool.skills.includes(skill.name))
               const isClassPool = !!skillPool
-              const canInteractLocked = isLocked && isTrained && (isVeteran || characterNex >= 35)
+              const canInteractLocked = isLocked && isTrained && (isExpert || isVeteran || characterNex >= 35)
 
               /* Verifica se o pool já atingiu o mínimo */
               let isPoolComplete = false
@@ -249,7 +269,7 @@ export default function SkillsCard({
                 <Button
                   key={index}
                   variant="flat"
-                  color={isVeteran ? 'secondary' : isTrained ? 'primary' : 'default'}
+                  color={isExpert ? 'warning' : isVeteran ? 'secondary' : isTrained ? 'primary' : 'default'}
                   onPress={() => {
                     if (isLearningSkills && (!isLocked || canInteractLocked)) {
                       onToggleSkill(skill.name)
@@ -312,7 +332,9 @@ export default function SkillsCard({
                   </span>
                   <div className="flex items-center gap-1 text-[10px]">
                     <span className="opacity-70">{skill.attr}</span>
-                    {isVeteran ? (
+                    {isExpert ? (
+                      <span className="font-bold text-amber-500">+15</span>
+                    ) : isVeteran ? (
                       <span className="font-bold text-purple-400">+10</span>
                     ) : isTrained ? (
                       <span className="font-bold text-blue-400">+5</span>

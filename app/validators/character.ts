@@ -52,6 +52,7 @@ export const updateSkillsValidator = vine.compile(
   vine.object({
     trainedSkills: vine.array(vine.string().trim()).optional(),
     veteranSkills: vine.array(vine.string().trim()).optional(),
+    expertSkills: vine.array(vine.string().trim()).optional(),
   })
 )
 
