@@ -5,9 +5,10 @@ import PlayerCard from './PlayerCard'
 
 interface GroupOverviewProps {
   players: any[]
+  showStats: boolean
 }
 
-export default function GroupOverview({ players }: GroupOverviewProps) {
+export default function GroupOverview({ players, showStats }: GroupOverviewProps) {
   const { campaign } = usePage().props as any
   
   const [isGenerating, setIsGenerating] = useState(false)
@@ -54,6 +55,7 @@ export default function GroupOverview({ players }: GroupOverviewProps) {
     <div className="bg-[#18181B] border border-[#27272A] rounded-b-xl rounded-tr-xl p-5 md:p-6 flex flex-col h-full">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-lg font-bold text-white">Personagens dos Jogadores</h2>
+        
         <button 
           onClick={copyInviteLink}
           disabled={isGenerating}
@@ -66,7 +68,7 @@ export default function GroupOverview({ players }: GroupOverviewProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {players.map(player => (
-          <PlayerCard key={player.id} character={player} />
+          <PlayerCard key={player.id} character={player} showStats={showStats} />
         ))}
         
         <button 

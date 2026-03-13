@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useForm } from '@inertiajs/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
-  Users, Swords, Dices, Monitor, Search, Heart, Zap, 
-  Brain, FileText, Plus
+  Users, Swords, Dices, FileText
 } from 'lucide-react'
 import axios from 'axios'
 
@@ -15,13 +13,13 @@ import GroupOverview from './components/GroupOverview'
 
 interface GameMasterDashboardProps {
   campaign: any
-  isGM?: boolean
   auth: any
 }
 
-export default function GameMasterDashboard({ campaign, isGM, auth }: GameMasterDashboardProps) {
+export default function GameMasterDashboard({ campaign, auth }: GameMasterDashboardProps) {
   const [activeTab, setActiveTab] = useState('combates')
   const [campaignRolls, setCampaignRolls] = useState<any[]>([])
+  const [showStats, setShowStats] = useState<boolean>(Boolean(campaign.showPlayerStats ?? false))
   
   const characters = campaign.characters || []
 
@@ -74,26 +72,27 @@ export default function GameMasterDashboard({ campaign, isGM, auth }: GameMaster
     }
   }
 
+  const checkSettings = async () => {
+    try {
+      const res = await axios.get(`/campaigns/${campaign.id}/settings`)
+      const newValue = Boolean(res.data.showPlayerStats ?? false)
+      setShowStats(prev => prev !== newValue ? newValue : prev)
+    } catch (e) {
+      console.error('Erro ao buscar configurações:', e)
+    }
+  }
+
   useEffect(() => {
     loadRolls()
-    const interval = setInterval(loadRolls, 10000)
+    checkSettings()
+    const interval = setInterval(() => {
+      loadRolls()
+      checkSettings()
+    }, 10000)
     return () => clearInterval(interval)
   }, [campaign?.id])
 
-  const { data, setData, put, processing, errors } = useForm({
-    name: campaign.name || '',
-    description: campaign.description || '',
-  })
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault()
-    put(`/campaigns/${campaign.id}`, {
-      preserveScroll: true,
-    })
-  }
-
   const tabs = [
-    { id: 'salas', label: 'Salas', icon: Monitor },
     { id: 'combates', label: 'Combates', icon: Swords },
     { id: 'dados', label: 'Dados', icon: Dices },
     { id: 'jogadores', label: 'Grupo', icon: Users },
@@ -110,7 +109,7 @@ export default function GameMasterDashboard({ campaign, isGM, auth }: GameMaster
       <div className="flex flex-1 overflow-hidden">
         
         {/* Painel Esquerdo: Ordem de Turno / Personagens */}
-        <PlayersSidebar characters={characters} />
+        <PlayersSidebar characters={characters} showStats={showStats} />
         
         {/* Área Central: Conteúdo das Abas */}
         <div className="flex-1 bg-[#09090B] p-6 overflow-y-auto relative">
@@ -126,11 +125,6 @@ export default function GameMasterDashboard({ campaign, isGM, auth }: GameMaster
               >
                 <div className="flex justify-between items-center mb-2">
                   <h2 className="text-xl font-bold text-white">Painel de Combate</h2>
-                  {isGM && (
-                    <button className="bg-[#EF4444]/10 text-[#EF4444] border border-[#EF4444]/30 px-3 py-1.5 rounded text-sm font-bold hover:bg-[#EF4444]/20 transition-colors">
-                      Encerrar Combate
-                    </button>
-                  )}
                 </div>
                 
                 <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-10 flex flex-col items-center justify-center text-[#A1A1AA] flex-1">
@@ -163,28 +157,11 @@ export default function GameMasterDashboard({ campaign, isGM, auth }: GameMaster
                 exit={{ opacity: 0, y: -10 }} 
                 className="h-full"
               >
-                <GroupOverview players={characters} />
+                <GroupOverview players={characters} showStats={showStats} />
               </motion.div>
             )}
 
-            {activeTab === 'salas' && (
-              <motion.div 
-                key="salas" 
-                initial={{ opacity: 0, y: 10 }} 
-                animate={{ opacity: 1, y: 0 }} 
-                exit={{ opacity: 0, y: -10 }} 
-                className="h-full flex flex-col gap-4"
-              >
-                <h2 className="text-xl font-bold text-white mb-2">Gestor de Salas</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="bg-[#18181B] border-2 border-[#F97316] rounded-xl p-4 cursor-pointer relative overflow-hidden">
-                    <div className="absolute top-2 right-2 bg-[#F97316] text-[#09090B] text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Ativa</div>
-                    <h3 className="font-bold text-white mb-1">Cena Principal</h3>
-                    <p className="text-xs text-[#A1A1AA]">Sincronizada com todos os jogadores.</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
+
 
             {activeTab === 'dados' && (
               <motion.div 

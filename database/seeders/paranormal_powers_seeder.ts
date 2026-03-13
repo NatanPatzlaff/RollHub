@@ -20,6 +20,8 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Você recebe resistência 10 contra esse elemento. Este poder conta como um poder do elemento escolhido.',
                     affinity: 'Aumenta a resistência para 20.',
+                    damage_reduction: 10,
+                    damage_reduction_affinity: 20
                 },
             },
             // PODERES DE CONHECIMENTO
@@ -50,6 +52,8 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Você recebe +2 em Defesa e em testes de resistência.',
                     affinity: 'Você fica imune à condição desprevenido.',
+                    defense_bonus: 2,
+                    fortitude_bonus: 2
                 },
             },
             {
@@ -59,6 +63,7 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Recebe +5 em testes de Diplomacia, Intimidação e Intuição.',
                     affinity: 'Quando você faz um teste oposto usando uma dessas perícias, o oponente sofre –1d.',
+                    flat_skill_bonuses: { "Diplomacia": 5, "Intimidação": 5, "Intuição": 5 }
                 },
             },
             {
@@ -68,6 +73,8 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Você recebe +5 em testes de Percepção e enxerga no escuro.',
                     affinity: 'Você ignora camuflagem.',
+                    flat_skill_bonuses: { "Percepção": 5 },
+                    ignore_camouflage: true
                 },
             },
             // PODERES DE ENERGIA
@@ -107,6 +114,8 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Seus ataques recebem +1 na margem de ameaça.',
                     affinity: 'Seus ataques recebem +1 no multiplicador de crítico.',
+                    threat_range_bonus: 1,
+                    crit_multiplier_bonus: 1
                 },
             },
             {
@@ -146,6 +155,8 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Você recebe +1 ponto de esforço por NEX. Quando sobe de NEX, os PE que recebe por este poder aumentam de acordo.',
                     affinity: 'Você recebe +1 PE adicional por NEX (para um total de +2 PE por NEX).',
+                    pe_bonus_per_nex: 1,
+                    pe_bonus_per_nex_affinity: 2
                 },
             },
             {
@@ -176,6 +187,8 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Você tem 50% de chance (resultado par em 1d4) de ignorar o dano adicional de um acerto crítico ou ataque furtivo.',
                     affinity: 'Você é imune aos efeitos de acertos críticos e ataques furtivos.',
+                    immune_critical: true,
+                    dodge_bonus_chance: 50
                 },
             },
             {
@@ -194,6 +207,10 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Você recebe +2 pontos de vida por NEX. Quando sobe de NEX, os PV que recebe por este poder aumentam de acordo.',
                     affinity: 'Você recebe +5 em Fortitude e se torna imune a venenos e doenças.',
+                    hp_per_nex: 2,
+                    fortitude_bonus: 5,
+                    immune_poison: true,
+                    immune_disease: true
                 },
             },
             {
@@ -204,6 +221,7 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'While estiver machucado, você recebe +1 em Agilidade ou Força, à sua escolha.',
                     affinity: 'O bônus que você recebe em Agilidade ou Força aumenta para +2.',
+                    conditional_bonus: { "condition": "bloodied", "attr": "AGI", "value": 1 }
                 },
             },
             {
@@ -214,6 +232,7 @@ export default class extends BaseSeeder {
                 effects: {
                     main: 'Na primeira vez que ficar machucado durante uma cena, você recebe cura acelerada 2. Nunca cura acima da metade dos PV máximos.',
                     affinity: 'A cura acelerada aumenta para 5.',
+                    conditional_bonus: { "condition": "first_bloodied", "effect": "heal", "value": 5 }
                 },
             },
         ]

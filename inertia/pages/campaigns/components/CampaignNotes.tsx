@@ -3,11 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, FileText, ArrowLeft, Trash2 } from 'lucide-react'
 import axios from 'axios'
 import debounce from 'lodash/debounce'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Underline from '@tiptap/extension-underline'
+import Color from '@tiptap/extension-color'
+import { TextStyle } from '@tiptap/extension-text-style'
+
+const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '')
 
 interface Note {
   id: number
   title: string
   content: string
+  isPrivate: boolean
   createdAt: string
   updatedAt: string
 }
@@ -20,8 +28,36 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
   const [notes, setNotes] = useState<Note[]>([])
   const [isCreating, setIsCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
+  const [isPrivate, setIsPrivate] = useState(false)
   const [activeNoteId, setActiveNoteId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  const activeNote = notes.find(n => n.id === activeNoteId)
+
+  const editor = useEditor({
+    extensions: [StarterKit, Underline, TextStyle, Color],
+    content: activeNote?.content || '',
+    onUpdate: ({ editor }) => {
+      if (activeNoteId) {
+        handleUpdateNoteContent(activeNoteId, editor.getHTML())
+      }
+    },
+    editorProps: {
+      attributes: {
+        class: 'flex-1 p-6 text-[#E4E4E7] focus:outline-none overflow-y-auto prose prose-invert max-w-none'
+      }
+    }
+  })
+
+  // Sincronizar conteúdo quando trocar de nota
+  useEffect(() => {
+    if (editor && activeNote) {
+      const current = editor.getHTML()
+      if (current !== activeNote.content) {
+        editor.commands.setContent(activeNote.content || '')
+      }
+    }
+  }, [activeNoteId, editor])
 
   // Load from database on mount
   useEffect(() => {
@@ -32,7 +68,7 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
     try {
       setIsLoading(true)
       const response = await axios.get(`/api/campaigns/${campaignId}/notes`)
-      setNotes(response.data)
+      setNotes(response.data.notes)
     } catch (e) {
       console.error('Failed to fetch notes', e)
     } finally {
@@ -48,10 +84,12 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
       const response = await axios.post(`/api/campaigns/${campaignId}/notes`, {
         title: newTitle,
         content: '',
+        isPrivate,
       })
       const newNote = response.data
       setNotes([newNote, ...notes])
       setNewTitle('')
+      setIsPrivate(false)
       setIsCreating(false)
       setActiveNoteId(newNote.id)
     } catch (e) {
@@ -96,8 +134,6 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
       }
     }
   }
-
-  const activeNote = notes.find(n => n.id === activeNoteId)
 
   return (
     <div className="h-full bg-[#18181B] border border-[#27272A] rounded-b-xl rounded-tr-xl flex flex-col overflow-hidden">
@@ -159,12 +195,39 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
               <span>Criado: {new Date(activeNote.createdAt).toLocaleString('pt-BR')}</span>
               <span>{activeNote.updatedAt === 'Salvando...' ? 'Salvando...' : `Última edição: ${new Date(activeNote.updatedAt).toLocaleString('pt-BR')}`}</span>
             </div>
-            <textarea
-              className="flex-1 w-full bg-transparent resize-none p-6 text-[#E4E4E7] focus:outline-none custom-scrollbar leading-relaxed"
-              placeholder="Comece a digitar sua anotação aqui... Suas mudanças são salvas automaticamente."
-              value={activeNote.content}
-              onChange={(e) => handleUpdateNoteContent(activeNote.id, e.target.value)}
-              autoFocus
+
+            {/* Toolbar */}
+            <div className="flex items-center gap-1 p-2 border-b border-[#27272A] bg-[#18181B] flex-wrap px-4">
+              <button
+                onClick={() => editor?.chain().focus().toggleBold().run()}
+                className={`px-2 py-1 rounded text-sm font-bold transition-colors ${editor?.isActive('bold') ? 'bg-violet-600 text-white' : 'text-[#A1A1AA] hover:bg-[#27272A] hover:text-white'}`}
+              >B</button>
+              <button
+                onClick={() => editor?.chain().focus().toggleItalic().run()}
+                className={`px-2 py-1 rounded text-sm italic transition-colors ${editor?.isActive('italic') ? 'bg-violet-600 text-white' : 'text-[#A1A1AA] hover:bg-[#27272A] hover:text-white'}`}
+              >I</button>
+              <button
+                onClick={() => editor?.chain().focus().toggleUnderline().run()}
+                className={`px-2 py-1 rounded text-sm underline transition-colors ${editor?.isActive('underline') ? 'bg-violet-600 text-white' : 'text-[#A1A1AA] hover:bg-[#27272A] hover:text-white'}`}
+              >U</button>
+              <button
+                onClick={() => editor?.chain().focus().toggleStrike().run()}
+                className={`px-2 py-1 rounded text-sm line-through transition-colors ${editor?.isActive('strike') ? 'bg-violet-600 text-white' : 'text-[#A1A1AA] hover:bg-[#27272A] hover:text-white'}`}
+              >S</button>
+              <div className="w-px h-5 bg-[#27272A] mx-1" />
+              {['#ffffff', '#ef4444', '#f97316', '#eab308', '#10b981', '#06b6d4', '#7c3aed'].map(color => (
+                <button
+                  key={color}
+                  onClick={() => editor?.chain().focus().setColor(color).run()}
+                  className="w-5 h-5 rounded-full border border-[#27272A] hover:scale-110 transition-transform"
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+
+            <EditorContent
+              editor={editor}
+              className="flex-1 overflow-hidden flex flex-col"
             />
           </motion.div>
         ) : (
@@ -201,12 +264,27 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
                         autoFocus
                       />
                     </div>
+                    
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <span className="text-sm font-semibold text-[#A1A1AA]">Privada</span>
+                      <div className="flex items-center h-[42px]">
+                        <button
+                          type="button"
+                          onClick={() => setIsPrivate(prev => !prev)}
+                          className={`w-10 h-5 rounded-full transition-colors relative ${isPrivate ? 'bg-[#7C3AED]' : 'bg-[#27272A]'}`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${isPrivate ? 'left-5' : 'left-1'}`} />
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setIsCreating(false)
                           setNewTitle('')
+                          setIsPrivate(false)
                         }}
                         className="px-4 py-2 rounded-lg text-sm font-medium text-[#A1A1AA] hover:bg-[#3F3F46] hover:text-white transition"
                       >
@@ -248,11 +326,16 @@ export default function CampaignNotes({ campaignId }: CampaignNotesProps) {
                         <h3 className="font-bold text-white line-clamp-2 leading-tight group-hover:text-violet-400 transition-colors">
                           {note.title}
                         </h3>
+                        {note.isPrivate && (
+                          <span className="shrink-0 px-2 py-0.5 rounded bg-[#7C3AED]/20 text-[#7C3AED] text-[10px] font-bold uppercase tracking-wider">
+                            Privada
+                          </span>
+                        )}
                       </div>
                       
                       <div className="flex-1">
                         <p className="text-sm text-[#A1A1AA] line-clamp-3 whitespace-pre-wrap">
-                          {note.content || 'Anotação vazia... Clique para editar.'}
+                          {stripHtml(note.content) || 'Anotação vazia... Clique para editar.'}
                         </p>
                       </div>
                       

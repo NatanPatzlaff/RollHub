@@ -1,4 +1,4 @@
-import type { HttpContext } from '@adonisjs/core/http'
+import { HttpContext } from '@adonisjs/core/http'
 import Campaign from '#models/campaign'
 import { createCampaignValidator, updateCampaignValidator } from '#validators/campaign'
 import db from '@adonisjs/lucid/services/db'
@@ -51,7 +51,11 @@ export default class CampaignsController {
     }
 
     return inertia.render('campaigns/show', {
-      campaign,
+      campaign: {
+        ...campaign.serialize(),
+        isOwner: isGM,
+        showPlayerStats: campaign.showPlayerStats
+      },
       isGM,
     })
   }
@@ -80,8 +84,12 @@ export default class CampaignsController {
     }
 
     return inertia.render('campaigns/shield', {
-      campaign,
-      isGM,
+      campaign: {
+        ...campaign.serialize(),
+        isOwner: true,
+        showPlayerStats: campaign.showPlayerStats
+      },
+      isGM: true,
     })
   }
 
@@ -169,6 +177,24 @@ export default class CampaignsController {
     }))
 
     return response.ok({ rolls: formattedRolls })
+  }
+
+  async updateSettings({ params, request, auth, response }: HttpContext) {
+    const campaign = await Campaign.findOrFail(params.id)
+    if (campaign.gameMasterId !== auth.user!.id) {
+      return response.status(403).send('Forbidden')
+    }
+
+    const { showPlayerStats } = request.only(['showPlayerStats'])
+    campaign.showPlayerStats = showPlayerStats
+    await campaign.save()
+
+    return { success: true, showPlayerStats: campaign.showPlayerStats }
+  }
+
+  async getSettings({ params }: HttpContext) {
+    const campaign = await Campaign.findOrFail(params.id)
+    return { showPlayerStats: campaign.showPlayerStats }
   }
 
   /**

@@ -30,6 +30,14 @@ interface ActiveRitualBuff {
   preBonus: number
 }
 
+/** Interface da habilidade ativa (copiada de show.tsx) */
+export interface ActiveAbilityBuff {
+  id: string
+  abilityName: string
+  source: 'trail' | 'origin' | 'class'
+  effects: any
+}
+
 export interface CombatDefensesCardProps {
   /** Valor atual do atributo Agilidade (já inclui bônus de rituais) */
   agility: number
@@ -55,6 +63,12 @@ export interface CombatDefensesCardProps {
   tempPe?: number
   /** Callback para alterar PE temporários */
   onSetTempPe?: (v: number) => void
+  /** Bônus de habilidades passivas */
+  abilityEffects?: any
+  /** Buffs ativos de habilidades */
+  activeAbilityBuffs?: ActiveAbilityBuff[]
+  /** Callback para remover um buff de habilidade */
+  onRemoveAbilityBuff?: (buffId: string) => void
 }
 
 /**
@@ -75,6 +89,9 @@ export default function CombatDefensesCard({
   onSetTempHp,
   tempPe = 0,
   onSetTempPe,
+  abilityEffects,
+  activeAbilityBuffs = [],
+  onRemoveAbilityBuff,
 }: CombatDefensesCardProps) {
   // ─── Estado interno (bônus manuais adicionais) ────────────────────────────
   const [defenseAdditional, setDefenseAdditional] = useState(0)
@@ -108,17 +125,31 @@ export default function CombatDefensesCard({
   }, [characterSkills])
 
   // ─── Defesa e Esquiva ──────────────────────────────────────────────────────
-  // Defesa  = 10 + AGI + bônus proteções equipadas + rituais + adicional
-  // Esquiva = 10 + AGI + Reflexos - penalidade proteções + rituais + adicional
+  // Defesa  = 10 + AGI + bônus proteções equipadas + rituais + habilidades + adicional
+  // Esquiva = 10 + AGI + Reflexos - penalidade proteções + rituais + habilidades + adicional
   const defense = useMemo(() => {
-    const val = 10 + agility + equippedDefenseBonus + ritualDefenseBonus + defenseAdditional
+    const passiveBonus = abilityEffects?.defenseBonus || 0
+    const abilityBuffDefense = (activeAbilityBuffs || []).reduce((total, buff) => {
+      if (buff.effects?.duration === 'scene' && buff.effects?.defense_bonus) {
+        return total + buff.effects.defense_bonus
+      }
+      return total
+    }, 0)
+    const val = 10 + agility + equippedDefenseBonus + ritualDefenseBonus + passiveBonus + abilityBuffDefense + defenseAdditional
     return Math.min(9999, Math.max(-999, val))
-  }, [agility, equippedDefenseBonus, ritualDefenseBonus, defenseAdditional])
+  }, [agility, equippedDefenseBonus, ritualDefenseBonus, abilityEffects?.defenseBonus, activeAbilityBuffs, defenseAdditional])
 
   const dodge = useMemo(() => {
-    const val = 10 + agility + reflexosBonus - equippedDodgePenalty + ritualDodgeBonus + dodgeAdditional
+    const passiveBonus = abilityEffects?.defenseBonus || 0
+    const abilityBuffDefense = (activeAbilityBuffs || []).reduce((total, buff) => {
+      if (buff.effects?.duration === 'scene' && buff.effects?.defense_bonus) {
+        return total + buff.effects.defense_bonus
+      }
+      return total
+    }, 0)
+    const val = 10 + agility + reflexosBonus - equippedDodgePenalty + ritualDodgeBonus + passiveBonus + abilityBuffDefense + dodgeAdditional
     return Math.min(9999, Math.max(-999, val))
-  }, [agility, reflexosBonus, equippedDodgePenalty, ritualDodgeBonus, dodgeAdditional])
+  }, [agility, reflexosBonus, equippedDodgePenalty, ritualDodgeBonus, abilityEffects?.defenseBonus, activeAbilityBuffs, dodgeAdditional])
 
   // Helper para formatar display (ex: 999+)
   const formatDefenseValue = (val: number) => {
@@ -377,6 +408,27 @@ export default function CombatDefensesCard({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ─── Buffs Ativos de Habilidades ────────────────────────────────── */}
+        {(activeAbilityBuffs || []).filter(b => b.effects?.duration === 'scene').length > 0 && (
+          <div className="mt-2">
+            <p className="text-[10px] text-[#71717A] uppercase font-bold mb-1">Habilidades Ativas</p>
+            {activeAbilityBuffs!.filter(b => b.effects?.duration === 'scene').map(buff => (
+              <div key={buff.id} className="flex items-center justify-between py-1 border-b border-[#27272A]">
+                <div>
+                  <p className="text-[11px] text-white font-medium">{buff.abilityName}</p>
+                  <p className="text-[10px] text-[#A1A1AA]">{buff.effects?.effect_label || 'Buff ativo'}</p>
+                </div>
+                <button
+                  onClick={() => onRemoveAbilityBuff?.(buff.id)}
+                  className="text-[10px] text-[#71717A] hover:text-red-400 transition-colors px-2"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </CardBody>

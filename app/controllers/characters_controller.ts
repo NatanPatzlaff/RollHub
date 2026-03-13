@@ -207,13 +207,26 @@ export default class CharactersController {
         .preload('skills', (query) => query.preload('skill'))
         .preload('classAbilities', (query) => query.preload('classAbility'))
         .preload('paranormalPowers', (query) => query.preload('paranormalPower'))
-        .preload('rituals', (query) => query.preload('ritual'))
+        .preload('rituals', (query) =>
+          query.whereNotNull('ritual_id').preload('ritual')
+        )
         .preload('campaigns')
         .first()
 
       if (!character) {
         return inertia.render('errors/not_found', {})
       }
+
+      // Limpeza lazy em background (fire-and-forget) de rituais órfãos
+      CharacterRitual.query()
+        .where('characterId', character.id)
+        .whereNotExists((subquery) => {
+          subquery.from('rituals').whereColumn('rituals.id', 'character_rituals.ritual_id')
+        })
+        .delete()
+        .catch((err) => {
+          console.error('[CLEANUP] Erro ao limpar rituais órfãos:', err)
+        })
 
       // Get trail progressions if character has a trail
       let trailProgressions: TrailProgression[] = []

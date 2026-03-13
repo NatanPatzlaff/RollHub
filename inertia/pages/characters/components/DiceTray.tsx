@@ -1,7 +1,12 @@
 import { m } from 'framer-motion'
 
 interface DiceTrayProps {
-    diceResult: { label: string; total: number; rolls: number[] } | null
+    diceResult: {
+        label: string
+        total: number
+        rolls: number[]
+        bonusBreakdown?: string[]
+    } | null
     weaponRollResult: {
         weapon: string
         attack: { total: number; rolls: number[]; label: string; skill: string }
@@ -73,7 +78,18 @@ export default function DiceTray({
                             animate={{ y: 0, opacity: 1 }}
                             className="flex items-baseline gap-3"
                         >
-                            <span className="text-4xl font-black text-amber-400">{diceResult.total}</span>
+                            <div className="flex flex-col">
+                                <span className="text-4xl font-black text-amber-400">{diceResult.total}</span>
+                                {diceResult.bonusBreakdown && diceResult.bonusBreakdown.length > 0 && (
+                                    <div className="flex flex-col gap-0.5 mt-1">
+                                        {diceResult.bonusBreakdown.map((line, i) => (
+                                            <span key={i} className="text-[10px] text-[#F97316] font-medium leading-tight">
+                                                {line}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <span className="text-xs text-zinc-500">{diceResult.label} → [{diceResult.rolls.join(', ')}]</span>
                         </m.div>
                     ) : null}

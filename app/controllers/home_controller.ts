@@ -24,11 +24,17 @@ export default class HomeController {
                 .preload('origin')
                 .orderBy('created_at', 'desc')
                 
-            campaigns = await Campaign.query()
+            const campaignsData = await Campaign.query()
                 .where('game_master_id', auth.user.id)
                 .orWhereHas('players', (query) => query.where('user_id', auth.user!.id))
                 .withCount('players')
                 .orderBy('created_at', 'desc')
+
+            campaigns = campaignsData.map(campaign => ({
+                ...campaign.serialize(),
+                isOwner: campaign.gameMasterId === auth.user!.id,
+                playerCount: campaign.$extras.players_count
+            })) as any
         }
 
         return inertia.render('home', {

@@ -54,6 +54,9 @@ export default class Campaign extends BaseModel {
   @hasMany(() => CampaignInvite)
   declare invites: HasMany<typeof CampaignInvite>
 
+  @column({ columnName: 'show_player_stats' })
+  declare showPlayerStats: boolean
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 

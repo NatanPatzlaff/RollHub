@@ -4,6 +4,7 @@ import { m, AnimatePresence } from 'framer-motion'
 import { Card, CardHeader, CardBody, Chip, Button, Switch } from '@heroui/react'
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts'
 import { Dices, Save, Dumbbell, Wind, Brain, Heart, Ghost } from 'lucide-react'
+import { AbilityEffectsResult } from '../../../hooks/useAbilityEffects'
 
 // ─── Tipos públicos ────────────────────────────────────────────────────────────
 
@@ -54,6 +55,12 @@ export interface AttributesDiceTrayCardProps {
 
   /** Callback quando uma rolagem acontece (local ou remota) */
   onNewRoll?: (roll: RollEntry) => void
+
+  /** Buffs ativos de habilidades */
+  activeAbilityBuffs?: ActiveAbilityBuff[]
+
+  /** Bônus de habilidades passivas */
+  abilityEffects?: AbilityEffectsResult
 }
 
 /** Interface da rolagem para o histórico */
@@ -68,6 +75,14 @@ export interface RollEntry {
   isFail?: boolean
   isGM?: boolean
   diceValues?: number[]
+}
+
+/** Interface da habilidade ativa (copiada de show.tsx) */
+export interface ActiveAbilityBuff {
+  id: string
+  abilityName: string
+  source: 'trail' | 'origin' | 'class'
+  effects: any
 }
 
 /** Métodos expostos ao componente pai via ref */
@@ -134,7 +149,66 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
     dddiceRoomSlug,
     playerName = 'Jogador',
     onNewRoll,
+    activeAbilityBuffs = [],
+    abilityEffects,
   } = props
+
+  // ─── Refs e Sincronização ──────────────────────────────────────────────────
+  const activeAbilityBuffsRef = useRef(activeAbilityBuffs)
+  useEffect(() => {
+    activeAbilityBuffsRef.current = activeAbilityBuffs
+  }, [activeAbilityBuffs])
+
+  const abilityEffectsRef = useRef(abilityEffects)
+  useEffect(() => {
+    abilityEffectsRef.current = abilityEffects
+  }, [abilityEffects])
+
+  /**
+   * Calcula o bônus vindo de habilidades ativas para um teste específico.
+   * Checa se o atributo ou a perícia alvo estão contemplados nos buffs atuais.
+   */
+  const calculateAbilityBonus = (targetAttr: string, targetSkill?: string) => {
+    const buffs = activeAbilityBuffsRef.current
+    let total = buffs.reduce((sum, buff) => {
+      const { effects } = buff
+      if (!effects?.bonus) return sum
+
+      // Bônus por Atributo (ex: Saber é Poder -> INT)
+      if (effects.skill_bonus_attr) {
+        const targetAttrs = Array.isArray(effects.skill_bonus_attr)
+          ? effects.skill_bonus_attr
+          : [effects.skill_bonus_attr]
+        if (targetAttrs.includes(targetAttr)) return sum + Number(effects.bonus)
+      }
+
+      // Bônus por Perícia específica (ex: Atletismo)
+      if (targetSkill && effects.skill_bonus_target) {
+        const targetSkills = Array.isArray(effects.skill_bonus_target)
+          ? effects.skill_bonus_target
+          : [effects.skill_bonus_target]
+        if (targetSkills.includes(targetSkill)) return sum + Number(effects.bonus)
+      }
+
+      return sum
+    }, 0)
+
+    // Somar bônus passivos do hook useAbilityEffects
+    const passiveEffects = abilityEffectsRef.current
+    if (passiveEffects) {
+      // Bônus por atributo (ex: skillBonusByAttr: { INT: 5 })
+      if (targetAttr && passiveEffects.skillBonusByAttr[targetAttr]) {
+        total += passiveEffects.skillBonusByAttr[targetAttr]
+      }
+      // Bônus direto em perícia (ex: flatSkillBonuses: { Percepção: 5 })
+      if (targetSkill && passiveEffects.flatSkillBonuses[targetSkill]) {
+        total += passiveEffects.flatSkillBonuses[targetSkill]
+      }
+    }
+
+    return total
+  }
+
   const pageProps = usePage().props as any
 
   // ── Estado interno da bandeja ──────────────────────────────────────────────
@@ -147,6 +221,8 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
     rolls: number[]
     extraRolls?: number[]
     bonus?: number
+    buffBonus?: number
+    bonusBreakdown?: string[]
   } | null>(null)
   const [weaponRollResult, setWeaponRollResult] = useState<{
     weapon: string
@@ -178,6 +254,16 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
   const pendingRollParamsRef = useRef<any>(null)
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const rollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleClear = () => {
+    if (clearResultTimerRef.current) clearTimeout(clearResultTimerRef.current)
+    clearResultTimerRef.current = setTimeout(() => {
+      setDiceResult(null)
+      setWeaponRollResult(null)
+      setRitualRollResult(null)
+    }, 20000)
+  }
 
   // ── Refs do dddice ─────────────────────────────────────────────────────────
   const diceCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -193,6 +279,12 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
   useEffect(() => { playerNameRef.current = playerName }, [playerName])
   useEffect(() => { onNewRollRef.current = onNewRoll }, [onNewRoll])
   useEffect(() => { pagePropsUserRef.current = pageProps.user }, [pageProps.user])
+
+  useEffect(() => {
+    return () => {
+      if (clearResultTimerRef.current) clearTimeout(clearResultTimerRef.current)
+    }
+  }, [])
 
   // Cache de pré-carregamento (sobrevive a re-renders, compartilhado entre effects)
   const preloadRef = useRef<{
@@ -321,6 +413,36 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
     }
   }, [dddiceApiKey])
 
+  const buildBonusBreakdown = (rollAttr?: string, rollSkill?: string): string[] => {
+    const lines: string[] = []
+
+    // Buffs ativos consumíveis
+    activeAbilityBuffsRef.current.forEach(buff => {
+      const eff = buff.effects
+      if (!eff) return
+      const applies =
+        (eff.skill_bonus_attr && rollAttr === eff.skill_bonus_attr) ||
+        (eff.skill_bonus_target && rollSkill === eff.skill_bonus_target) ||
+        (eff.bonus && eff.duration === 'next_test' && !eff.skill_bonus_attr && !eff.skill_bonus_target)
+      if (applies && eff.bonus) {
+        lines.push(`+${eff.bonus} (${buff.abilityName})`)
+      }
+    })
+
+    // Bônus passivos
+    const effects = abilityEffectsRef.current
+    if (effects) {
+      if (rollAttr && effects.skillBonusByAttr[rollAttr]) {
+        lines.push(`+${effects.skillBonusByAttr[rollAttr]} (bônus passivo)`)
+      }
+      if (rollSkill && effects.flatSkillBonuses[rollSkill]) {
+        lines.push(`+${effects.flatSkillBonuses[rollSkill]} (bônus passivo)`)
+      }
+    }
+
+    return lines
+  }
+
   // ── Listener do Pusher (Extraído para estabilidade) ──────────────────
   const handleRollCreate = useCallback((event: any) => {
     const roll = event.data
@@ -352,14 +474,21 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         const extraValue = extraDice.reduce((acc: number, v: number) => acc + v, 0)
         const total = baseValue + bonus + extraValue
 
-        setDiceResult({
-          label: rollParams?.label || 'Atributo',
-          total,
-          rolls: mainDice,
-          extraRolls: extraDice,
-          bonus,
-        })
-        setDiceHistory((prev) => [{ label: rollParams?.label || 'Atributo', total }, ...prev].slice(0, 8))
+        const buffBonus = calculateAbilityBonus(rollParams?.attr || '', rollParams?.label)
+
+        setTimeout(() => {
+          setDiceResult({
+            label: rollParams?.label || 'Atributo',
+            total,
+            rolls: mainDice,
+            extraRolls: extraDice,
+            bonus,
+            buffBonus: buffBonus > 0 ? buffBonus : undefined,
+            bonusBreakdown: buffBonus > 0 ? buildBonusBreakdown(rollParams?.attr, rollParams?.label) : undefined,
+          })
+          setDiceHistory((prev) => [{ label: rollParams?.label || 'Atributo', total }, ...prev].slice(0, 8))
+          scheduleClear()
+        }, 0)
         onNewRollRef.current?.({
           id: roll.uuid,
           player: playerNameRef.current,
@@ -384,30 +513,33 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         const isCritical = atkDice.some((val: number) => val >= (rollParams?.critThreshold || 20))
         const finalDmg = isCritical ? baseDmgTotal * (rollParams?.critMultiplier || 2) : baseDmgTotal
 
-        setWeaponRollResult({
-          weapon: weapon.name,
-          attack: {
-            total: atkTotal,
-            rolls: atkDice,
-            label: rollParams?.atkLabel,
-            skill: rollParams?.skill,
-            isCritical,
-            critThreshold: rollParams?.critThreshold,
-          },
-          damage: {
-            total: finalDmg,
-            rolls: dmgDice,
-            label: rollParams?.dmgLabel,
-            isCritical,
-            critMultiplier: isCritical ? rollParams?.critMultiplier : undefined,
-            baseDamage: isCritical ? baseDmgTotal : undefined,
-          },
-        })
-        setDiceHistory((prev) => [
-          { label: `${weapon.name} Ataque`, total: atkTotal },
-          { label: `${weapon.name} Dano`, total: finalDmg },
-          ...prev,
-        ].slice(0, 8))
+        setTimeout(() => {
+          setWeaponRollResult({
+            weapon: weapon.name,
+            attack: {
+              total: atkTotal,
+              rolls: atkDice,
+              label: rollParams?.atkLabel,
+              skill: rollParams?.skill,
+              isCritical,
+              critThreshold: rollParams?.critThreshold,
+            },
+            damage: {
+              total: finalDmg,
+              rolls: dmgDice,
+              label: rollParams?.dmgLabel,
+              isCritical,
+              critMultiplier: isCritical ? rollParams?.critMultiplier : undefined,
+              baseDamage: isCritical ? baseDmgTotal : undefined,
+            },
+          })
+          setDiceHistory((prev) => [
+            { label: `${weapon.name} Ataque`, total: atkTotal },
+            { label: `${weapon.name} Dano`, total: finalDmg },
+            ...prev,
+          ].slice(0, 8))
+          scheduleClear()
+        }, 0)
         onNewRollRef.current?.({
           id: roll.uuid + '-atk',
           player: playerNameRef.current,
@@ -443,20 +575,23 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           ? dmgDice.reduce((acc: number, val: number) => acc + val, 0) + (rollParams?.dmgMod || 0)
           : undefined
 
-        setRitualRollResult({
-          ...rollParams,
-          rolls: atkDice,
-          best: bestAtk,
-          total: totalAtk,
-          success,
-          damageTotal: dmgTotal,
-          damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
-        })
-        setDiceHistory((prev) => {
-          const entries = [{ label: `${ritualName}`, total: totalAtk }]
-          if (dmgTotal !== undefined) entries.push({ label: `${ritualName} Dano`, total: dmgTotal })
-          return [...entries, ...prev].slice(0, 8)
-        })
+        setTimeout(() => {
+          setRitualRollResult({
+            ...rollParams,
+            rolls: atkDice,
+            best: bestAtk,
+            total: totalAtk,
+            success,
+            damageTotal: dmgTotal,
+            damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
+          })
+          setDiceHistory((prev) => {
+            const entries = [{ label: `${ritualName}`, total: totalAtk }]
+            if (dmgTotal !== undefined) entries.push({ label: `${ritualName} Dano`, total: dmgTotal })
+            return [...entries, ...prev].slice(0, 8)
+          })
+          scheduleClear()
+        }, 0)
         onNewRollRef.current?.({
           id: roll.uuid + '-rit-atk',
           player: playerNameRef.current,
@@ -683,7 +818,9 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
 
           isWaitingForRollRef.current = true
           startRollTimeout()
-          pendingBonusRef.current = bonus
+          const abilityBonus = calculateAbilityBonus(label || '')
+          const totalBonus = bonus + abilityBonus
+          pendingBonusRef.current = totalBonus
           pendingRollTypeRef.current = 'attribute'
           pendingRollParamsRef.current = { label: diceLabel, mode }
 
@@ -765,10 +902,11 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
 
           isWaitingForRollRef.current = true
           startRollTimeout()
+          const abilityBonusAtk = calculateAbilityBonus(skill)
           pendingRollTypeRef.current = 'weapon'
           pendingRollParamsRef.current = {
             weapon,
-            atkBonus: trainingBonus + extraAtk,
+            atkBonus: trainingBonus + extraAtk + abilityBonusAtk,
             dmgBonus: extraDmg,
             critThreshold,
             critMultiplier,
@@ -843,8 +981,9 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
 
           isWaitingForRollRef.current = true
           startRollTimeout()
+          const abilityBonusRitual = calculateAbilityBonus('INT')
           pendingRollTypeRef.current = 'ritual'
-          pendingRollParamsRef.current = { ...params, dmgMod }
+          pendingRollParamsRef.current = { ...params, trainingBonus: params.trainingBonus + abilityBonusRitual, dmgMod }
 
         await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
       } catch (e) {

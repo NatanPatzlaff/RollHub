@@ -5,13 +5,37 @@ interface PlayersSidebarProps {
   localInitiatives?: Record<number, number>
   requestingInitiative?: boolean
   onRequestInitiative?: () => void
+  showStats: boolean
+  onToggleStats?: () => void
+  switchValue?: boolean
+}
+
+// Helper functions for status display
+const getStatusColor = (current: number, max: number) => {
+  const percent = (current / max) * 100
+  if (percent <= 25) return 'text-[#EF4444]' // Red
+  if (percent <= 50) return 'text-[#F97316]' // Orange
+  if (percent <= 75) return 'text-[#EAB308]' // Yellow
+  return 'text-[#22C55E]' // Green
+}
+
+const getStatusLabel = (current: number, max: number) => {
+  const percent = (current / max) * 100
+  if (percent === 0) return 'Inconsciente'
+  if (percent <= 25) return 'Crítico'
+  if (percent <= 50) return 'Ferido'
+  if (percent <= 75) return 'Machucado'
+  return 'Saudável'
 }
 
 export default function PlayersSidebar({ 
   characters, 
   localInitiatives = {}, 
   requestingInitiative = false,
-  onRequestInitiative 
+  onRequestInitiative,
+  showStats,
+  onToggleStats,
+  switchValue
 }: PlayersSidebarProps) {
   // Sort by initiative if available, otherwise keep existing order
   const sortedEntities = [...characters].sort((a, b) => {
@@ -22,25 +46,45 @@ export default function PlayersSidebar({
 
   return (
     <div className="bg-[#18181B] border-r border-[#27272A] flex flex-col h-full overflow-hidden w-64 xl:w-72 flex-shrink-0">
-      <div className="p-4 border-b border-[#27272A] flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Users size={18} className="text-[#06B6D4]" />
-          <h2 className="font-bold text-white text-sm">Ordem de Turno</h2>
+      <div className="p-4 border-b border-[#27272A] flex flex-col gap-3">
+        <div className="flex justify-between items-center">
+          <h2 className="text-white font-bold flex items-center gap-2">
+            <Users size={18} className="text-[#7C3AED]" /> Personagens
+          </h2>
+          {onToggleStats && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-[#A1A1AA] uppercase tracking-wider font-bold">Status</span>
+              <button
+                onClick={onToggleStats}
+                className={`w-8 h-4 rounded-full transition-colors relative ${(switchValue ?? showStats) ? 'bg-[#7C3AED]' : 'bg-[#27272A]'}`}
+              >
+                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${(switchValue ?? showStats) ? 'left-[17px]' : 'left-0.5'}`} />
+              </button>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onRequestInitiative}
-            className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${
-              requestingInitiative
-                ? 'bg-[#F97316] text-white ring-2 ring-[#F97316]/30 animate-pulse'
-                : 'bg-[#27272A] text-[#A1A1AA] hover:bg-[#3F3F46] hover:text-white'
-            }`}
-          >
-            {requestingInitiative ? 'Aguardando...' : 'Pedir Iniciativa'}
-          </button>
-          <button className="bg-[#F97316] hover:bg-[#EA580C] text-white text-[11px] px-3 py-1.5 rounded font-bold transition-colors shadow-lg shadow-[#F97316]/20">
-            Próximo Turno
-          </button>
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Users size={18} className="text-[#06B6D4]" />
+            <h2 className="font-bold text-white text-sm">Ordem de Turno</h2>
+          </div>
+          {onRequestInitiative && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onRequestInitiative}
+                className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${
+                  requestingInitiative
+                    ? 'bg-[#F97316] text-white ring-2 ring-[#F97316]/30 animate-pulse'
+                    : 'bg-[#27272A] text-[#A1A1AA] hover:bg-[#3F3F46] hover:text-white'
+                }`}
+              >
+                {requestingInitiative ? 'Aguardando...' : 'Pedir Iniciativa'}
+              </button>
+              <button className="bg-[#F97316] hover:bg-[#EA580C] text-white text-[11px] px-3 py-1.5 rounded font-bold transition-colors shadow-lg shadow-[#F97316]/20">
+                Próximo Turno
+              </button>
+            </div>
+          )}
         </div>
       </div>
       
@@ -53,9 +97,6 @@ export default function PlayersSidebar({
         
         {sortedEntities.map((entity, index) => {
           const stats = entity.stats || {}
-          const hpPercent = stats.maxHp > 0 ? (stats.currentHp / stats.maxHp) * 100 : 0
-          const pePercent = stats.maxPe > 0 ? (stats.currentPe / stats.maxPe) * 100 : 0
-          const sanPercent = stats.maxSanity > 0 ? (stats.currentSanity / stats.maxSanity) * 100 : 0
           const isTurn = index === 0 && sortedEntities.length > 0 // Placeholder logic for current turn
 
           return (
@@ -66,37 +107,48 @@ export default function PlayersSidebar({
                 {localInitiatives[entity.id] ?? entity.initiative ?? 0}
               </div>
 
-              <div className="flex justify-between items-start mb-2 pr-8">
-                <h3 className="font-bold text-sm truncate text-white">{entity.name}</h3>
-              </div>
-              <span className="block text-[10px] font-bold uppercase tracking-wider text-[#A1A1AA] mb-2">
-                {entity.class?.name || 'Personagem'}
-              </span>
-              
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Heart size={10} className="text-[#EF4444] w-3" />
-                  <div className="flex-1 h-1.5 bg-[#1C1C1E] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#EF4444]" style={{ width: `${hpPercent}%` }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-start mb-2 pr-8">
+                  <div className="min-w-0">
+                    <p className="text-white font-bold text-sm truncate">{entity.name}</p>
+                    <p className="text-[#A1A1AA] text-[10px]">{entity.class?.name || 'Sem Classe'}</p>
                   </div>
-                  <span className="text-[10px] text-white font-mono w-8 text-right">{stats.currentHp || 0}</span>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <Zap size={10} className="text-[#EAB308] w-3" />
-                  <div className="flex-1 h-1.5 bg-[#1C1C1E] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#EAB308]" style={{ width: `${pePercent}%` }} />
-                  </div>
-                  <span className="text-[10px] text-white font-mono w-8 text-right">{stats.currentPe || 0}</span>
+                  {showStats && (
+                    <span className={`text-[10px] font-bold uppercase ${getStatusColor(stats.currentHp, stats.maxHp)}`}>
+                      {getStatusLabel(stats.currentHp, stats.maxHp)}
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Brain size={10} className="text-[#06B6D4] w-3" />
-                  <div className="flex-1 h-1.5 bg-[#1C1C1E] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#06B6D4]" style={{ width: `${sanPercent}%` }} />
+                {showStats ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Heart size={10} className="text-[#EF4444] shrink-0" />
+                      <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#EF4444]" style={{ width: `${(stats.currentHp / stats.maxHp) * 100}%` }} />
+                      </div>
+                      <span className="text-[10px] text-white font-medium w-8 text-right">{stats.currentHp || 0}/{stats.maxHp || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Zap size={10} className="text-[#EAB308] shrink-0" />
+                      <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#EAB308]" style={{ width: `${(stats.currentPe / stats.maxPe) * 100}%` }} />
+                      </div>
+                      <span className="text-[10px] text-white font-medium w-8 text-right">{stats.currentPe || 0}/{stats.maxPe || 0}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Brain size={10} className="text-[#06B6D4] shrink-0" />
+                      <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
+                        <div className="h-full bg-[#06B6D4]" style={{ width: `${(stats.currentSanity / stats.maxSanity) * 100}%` }} />
+                      </div>
+                      <span className="text-[10px] text-white font-medium w-8 text-right">{stats.currentSanity || 0}/{stats.maxSanity || 0}</span>
+                    </div>
                   </div>
-                  <span className="text-[10px] text-white font-mono w-8 text-right">{stats.currentSanity || 0}</span>
-                </div>
+                ) : (
+                  <div className="h-[46px] bg-[#09090B]/50 rounded border border-dashed border-[#27272A] flex items-center justify-center">
+                    <span className="text-[#3F3F46] text-[10px] font-medium italic">Status ocultado</span>
+                  </div>
+                )}
               </div>
             </div>
           )

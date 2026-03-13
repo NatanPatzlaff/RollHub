@@ -22,6 +22,7 @@ import {
 import TrailSelectModal from './components/TrailSelectModal'
 import RitualSelectModal from './components/RitualSelectModal'
 import ParanormalPowerModal from './components/ParanormalPowerModal'
+import { useAbilityEffects } from '../../hooks/useAbilityEffects'
 import AffinityModal from './components/AffinityModal'
 import BaseModal from './components/BaseModal'
 import AttributesDiceTrayCard, {
@@ -40,6 +41,7 @@ import {
   getAttributeBonus,
   type RitualBuffEffect,
 } from '../../utils/ritualBuffs'
+import { useRitualCalculations } from '../../hooks/useRitualCalculations'
 
 interface Origin {
   id: number
@@ -599,6 +601,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
   // --- Trail Config (habilidades de trilha configuráveis) ------------------
   const trailConfig = character.trailConfig || {}
 
+  const abilityEffects = useAbilityEffects({
+    classAbilities: character.classAbilities,
+    paranormalPowers: character.paranormalPowers,
+    originAbilities,
+    trailProgressions,
+  })
+
   // Toggles de trilha (estado local sincronizado com backend)
   const [useFlagelo, setUseFlagelo] = useState<boolean>(trailConfig.useFlagelo ?? false)
   const [useLaminaMaldita, setUseLaminaMaldita] = useState<boolean>(
@@ -665,43 +674,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
     )
   }
 
-  // --- Cálculo de PE ajustado para um ritual -------------------------------
-  const calcPeAjustado = (
-    ritual: Ritual | undefined
-  ): { base: number; ajustado: number; reducoes: string[] } => {
-    if (!ritual) return { base: 0, ajustado: 0, reducoes: [] }
-    const circlePeCost: Record<number, number> = { 1: 1, 2: 3, 3: 6, 4: 10 }
-    const base = circlePeCost[ritual.circle] ?? ritual.circle * 2
-    let ajustado = base
-    const reducoes: string[] = []
 
-    if (
-      hasRitualPredileto &&
-      ritualPrediletoConfig &&
-      ritual.name.toLowerCase() === ritualPrediletoConfig.toLowerCase()
-    ) {
-      ajustado -= 1
-      reducoes.push('Ritual Predileto 1')
-    }
-    if (hasTatuagemRitualistica && ritual.range?.toLowerCase().includes('pessoal')) {
-      ajustado -= 1
-      reducoes.push('Tatuagem Ritualística 1')
-    }
-    if (
-      hasMestreEmElemento &&
-      mestreElementoConfig &&
-      ritual.element?.toLowerCase() === mestreElementoConfig.toLowerCase()
-    ) {
-      ajustado -= 1
-      reducoes.push('Mestre em Elemento 1')
-    }
-    if (hasCamuflarOcultismo && usarCamuflar) {
-      ajustado += 2
-      reducoes.push('Camuflar Ocultismo +2')
-    }
 
-    return { base, ajustado: Math.max(1, ajustado), reducoes }
-  }
+
 
   // --- Cálculo de dado do Perito conforme NEX -------------------------------
   const peritoBonus = useMemo(() => {
@@ -1258,6 +1233,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [intellect, setIntellect] = useState(initialAttrs.intellect)
   const [vigor, setVigor] = useState(initialAttrs.vigor)
   const [presence, setPresence] = useState(initialAttrs.presence)
+  const { calcPeAjustado, calcConjurationDt, resistDt, calcDamageBonus } = useRitualCalculations({
+    nex: character.nex,
+    presence,
+    intellect,
+    hasRitualPredileto,
+    ritualPrediletoConfig,
+    hasTatuagemRitualistica,
+    hasMestreEmElemento,
+    mestreElementoConfig,
+    hasCamuflarOcultismo,
+    usarCamuflar,
+    hasRitualPotente,
+  })
   const [isSaving, setIsSaving] = useState(false)
   // Ref para expor rollDice / rollWeapon / openDiceTray ao SkillsCard e CharacterTabsCard
   const diceTrayRef = useRef<AttributesDiceTrayCardHandle>(null)
@@ -1268,15 +1256,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const { maxHp, maxPe, maxSan } = useMemo(() => {
     const level = Math.floor(character.nex / 5)
 
-    // HP calculation: baseHp + level * vigor + (level - 1) * hpPerLevel
+    // HP calculation: baseHp + level * vigor + (level - 1) * hpPerLevel + ability bonuses
     const baseHp = classInfo?.baseHp || 20
     const hpPerLevel = classInfo?.hpPerLevel || 4
-    const calculatedMaxHp = baseHp + level * vigor + (level - 1) * hpPerLevel
+    let calculatedMaxHp = baseHp + level * vigor + (level - 1) * hpPerLevel
+    calculatedMaxHp += (abilityEffects?.hpBonusPerNex || 0) * level
 
-    // PE calculation: basePe + level * presence + (level - 1) * pePerLevel
+    // PE calculation: basePe + level * presence + (level - 1) * pePerLevel + ability bonuses
     const basePe = classInfo?.basePe || 2
     const pePerLevel = classInfo?.pePerLevel || 2
-    const calculatedMaxPe = basePe + level * presence + (level - 1) * pePerLevel
+    let calculatedMaxPe = basePe + level * presence + (level - 1) * pePerLevel
+    calculatedMaxPe += (abilityEffects?.peBonusFlat || 0)
+    calculatedMaxPe += (abilityEffects?.peBonusPerNex || 0) * level
 
     // Sanity calculation: baseSanity + (level - 1) * sanityPerLevel
     const baseSanity = classInfo?.baseSanity || 12
@@ -1297,7 +1288,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       maxPe: calculatedMaxPe,
       maxSan: Math.max(0, calculatedMaxSan),
     }
-  }, [character.nex, vigor, presence, classInfo, character.classAbilities, permSanLoss])
+  }, [character.nex, vigor, presence, classInfo, character.classAbilities, permSanLoss, abilityEffects])
 
   // Ocultismo training degree for ritual roll bonus
   const ocultismoDegree = ((): number => {
@@ -2703,6 +2694,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
               (character.campaigns?.[0]?.dddiceRoomSlug as string | undefined) ||
               (import.meta.env.VITE_DDDICE_ROOM_SLUG as string | undefined)
             }
+            activeAbilityBuffs={activeAbilityBuffs}
+            abilityEffects={abilityEffects}
           />
 
           {/* COMBAT DEFENSES */}
@@ -2719,6 +2712,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onSetTempHp={setTempHp}
             tempPe={tempPe}
             onSetTempPe={setTempPe}
+            abilityEffects={abilityEffects}
+            activeAbilityBuffs={activeAbilityBuffs}
+            onRemoveAbilityBuff={(buffId) => setActiveAbilityBuffs(prev => prev.filter(b => b.id !== buffId))}
           />
 
           {/* VITALS STACK */}

@@ -17,7 +17,22 @@ const mockEntities = [
 
 export default function ShieldDashboard() {
   const { campaign, auth } = usePage().props as any
-  const [activeTab, setActiveTab] = useState('combates')
+  const [activeTab, setActiveTab] = useState('salas')
+  const [showStats, setShowStats] = useState<boolean>(Boolean(campaign.showPlayerStats ?? false))
+  
+  const handleToggleStats = async () => {
+    console.log('[TOGGLE] clicado, showStats atual:', showStats)
+    const newValue = !Boolean(showStats)
+    setShowStats(newValue)
+    console.log('[TOGGLE] novo valor:', newValue)
+    try {
+      const res = await axios.patch(`/campaigns/${campaign.id}/settings`, { showPlayerStats: newValue })
+      console.log('[TOGGLE] resposta:', res.data)
+    } catch (e) {
+      console.error('[TOGGLE] erro:', e)
+      setShowStats(!newValue)
+    }
+  }
   const [campaignRolls, setCampaignRolls] = useState<any[]>([])
   
   // Estados para Pedir Iniciativa
@@ -25,15 +40,24 @@ export default function ShieldDashboard() {
   const [initiativePending, setInitiativePending] = useState<Set<number>>(new Set())
   const [localInitiatives, setLocalInitiatives] = useState<Record<number, number>>({})
 
-  const updateInitiative = (characterId: number, value: number) => {
-    setLocalInitiatives(prev => ({ ...prev, [characterId]: value }))
-  }
+
 
   // Refs para controle de tempo e estado no polling
   const initiativeRequestedAtRef = useRef<Date | null>(null)
   const requestingInitiativeRef = useRef(false)
+  const initiativePendingRef = useRef<Set<number>>(new Set())
+  const campaignCharactersRef = useRef<any[]>([])
+
+  useEffect(() => {
+    initiativePendingRef.current = initiativePending
+  }, [initiativePending])
+
+  useEffect(() => {
+    campaignCharactersRef.current = campaign.characters || []
+  }, [campaign.characters])
 
   const handleRequestInitiative = () => {
+    setLocalInitiatives({})
     initiativeRequestedAtRef.current = new Date()
     const characterIds = new Set<number>(campaign.characters.map((c: any) => c.id))
     requestingInitiativeRef.current = true
@@ -56,31 +80,56 @@ export default function ShieldDashboard() {
         isFail: !!r.isFail || !!r.is_fail,
         isGM: !!r.isGm || !!r.is_gm,
         diceValues: r.diceValues,
-        rolledAt: new Date(r.rolledAt || r.rolled_at)
+        rolledAt: (() => {
+          const raw = r.rolledAt || r.rolled_at || ''
+          const str = raw.includes('T') || raw.includes('Z') ? raw : raw.replace(' ', 'T') + 'Z'
+          return new Date(str)
+        })()
       }))
       setCampaignRolls(formattedRolls)
 
+      const updateInitiative = (id: number, val: number) => {
+        setLocalInitiatives(prev => ({ ...prev, [id]: val }))
+      }
+
       // Se estiver pedindo iniciativa, processar as novas rolagens
       if (requestingInitiativeRef.current) {
+        console.log('[INIT] processando', formattedRolls.length, 'rolls, pendentes:', initiativePendingRef.current.size, [...initiativePendingRef.current])
         formattedRolls.forEach((roll: any) => {
-          // Ignorar rolagens anteriores ao pedido de iniciativa
-          if (initiativeRequestedAtRef.current && roll.rolledAt < initiativeRequestedAtRef.current) return
+          const passaTempo = !initiativeRequestedAtRef.current || roll.rolledAt >= initiativeRequestedAtRef.current
+          const passaAcao = roll.action?.toLowerCase().includes('iniciativa')
+          const character = campaignCharactersRef.current.find((c: any) => c.name === roll.player)
+          const estaPendente = character ? initiativePendingRef.current.has(character.id) : false
 
-          if (roll.action?.toLowerCase().includes('iniciativa')) {
-            const character = campaign.characters.find((c: any) => c.name === roll.player)
-            if (character && initiativePending.has(character.id)) {
-              updateInitiative(character.id, roll.result)
-              setInitiativePending(prev => {
-                const next = new Set(prev)
-                next.delete(character.id)
-                if (next.size === 0) {
-                  setRequestingInitiative(false)
-                  requestingInitiativeRef.current = false
-                }
-                return next
-              })
+          console.log('[INIT] roll:', {
+            player: roll.player,
+            action: roll.action,
+            rolledAt: roll.rolledAt,
+            threshold: initiativeRequestedAtRef.current,
+            passaTempo,
+            passaAcao,
+            characterEncontrado: character?.name ?? 'NENHUM',
+            estaPendente
+          })
+
+          if (!passaTempo) return
+          if (!passaAcao) return
+          if (!character || !estaPendente) return
+
+          console.log('[INIT] ✅ capturando iniciativa:', character.name, roll.result)
+          updateInitiative(character.id, roll.result)
+          setInitiativePending(prev => {
+            const next = new Set(prev)
+            next.delete(character.id)
+            initiativePendingRef.current = next
+            console.log('[INIT] pendentes restantes:', next.size, [...next])
+            if (next.size === 0) {
+              console.log('[INIT] ✅ todos rolaram, encerrando aguardando')
+              setRequestingInitiative(false)
+              requestingInitiativeRef.current = false
             }
-          }
+            return next
+          })
         })
       }
     } catch (e) {
@@ -115,14 +164,25 @@ export default function ShieldDashboard() {
     }
   }
 
+  const loadRollsRef = useRef<() => void>(() => {})
+
   useEffect(() => {
-    loadRolls()
-    const interval = setInterval(loadRolls, 10000)
+    loadRollsRef.current = loadRolls
+  })
+
+  useEffect(() => {
+    loadRollsRef.current()
+    const interval = setInterval(() => loadRollsRef.current(), 10000)
     return () => clearInterval(interval)
   }, [campaign?.id])
 
   useEffect(() => {
-    // campaignRolls sync log removed
+    console.log('[INIT] useEffect rodou, campaignRolls:', campaignRolls.length, 'requestingInitiativeRef:', requestingInitiativeRef.current)
+    if (!requestingInitiativeRef.current) return
+    
+    campaignRolls.forEach((roll: any) => {
+      console.log('[INIT] verificando roll:', roll.action, roll.player, roll.rolledAt, 'threshold:', initiativeRequestedAtRef.current)
+    })
   }, [campaignRolls])
 
   return (
@@ -143,10 +203,13 @@ export default function ShieldDashboard() {
             localInitiatives={localInitiatives}
             requestingInitiative={requestingInitiative}
             onRequestInitiative={handleRequestInitiative}
+            showStats={true}
+            onToggleStats={handleToggleStats}
+            switchValue={showStats}
           />
           
           {/* Área Central: Conteúdo das Abas */}
-          <MainContent activeTab={activeTab} />
+          <MainContent activeTab={activeTab} campaign={campaign} showStats={true} />
           
           {/* Registro do Sistema */}
           <div className="lg:col-span-1 h-full">

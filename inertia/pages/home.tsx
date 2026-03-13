@@ -180,7 +180,7 @@ export default function Home({
             </m.div>
 
             <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 content-start">
-              {paginatedCamps.length === 0 ? (
+              {campaigns.length === 0 ? (
                 <div className="col-span-2 flex flex-1 items-center justify-center">
                   <p className="text-muted-foreground text-center text-lg px-6">
                     Nenhuma campanha encontrada. Crie uma nova campanha!
@@ -192,7 +192,11 @@ export default function Home({
                     key={campaign.id}
                     campaign={campaign}
                     index={i}
-                    onClick={() => router.visit(`/campaigns/${campaign.id}`)}
+                    onClick={() => router.visit(
+                      campaign.isOwner 
+                        ? `/campaigns/${campaign.id}/shield`
+                        : `/campaigns/${campaign.id}`
+                    )}
                   />
                 ))
               )}

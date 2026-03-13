@@ -16,6 +16,12 @@ export default class CampaignNote extends BaseModel {
   @column()
   declare content: string
 
+  @column()
+  declare isPrivate: boolean
+
+  @column()
+  declare userId: number | null
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 

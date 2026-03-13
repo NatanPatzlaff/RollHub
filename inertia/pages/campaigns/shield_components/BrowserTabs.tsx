@@ -1,4 +1,4 @@
-import { Monitor, Swords, Dices, X } from 'lucide-react'
+import { Monitor, Swords, Dices, X, Users, FileText } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface BrowserTabsProps {
@@ -11,6 +11,8 @@ export default function BrowserTabs({ activeTab, setActiveTab }: BrowserTabsProp
     { id: 'salas', label: 'Salas', icon: Monitor },
     { id: 'combates', label: 'Combates', icon: Swords },
     { id: 'dados', label: 'Dados', icon: Dices },
+    { id: 'jogadores', label: 'Grupo', icon: Users },
+    { id: 'anotacoes', label: 'Anotações', icon: FileText },
   ]
 
   return (

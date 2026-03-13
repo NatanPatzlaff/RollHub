@@ -7,6 +7,7 @@ interface Campaign {
   description: string
   playerCount?: number
   status?: 'active' | 'paused' | 'completed'
+  isOwner?: boolean
 }
 
 const statusColors: Record<string, string> = {

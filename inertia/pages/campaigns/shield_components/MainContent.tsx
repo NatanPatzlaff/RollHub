@@ -1,11 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, Swords, Zap, Dices } from 'lucide-react'
+import GroupOverview from '../components/GroupOverview'
+import CampaignNotes from '../components/CampaignNotes'
 
 interface MainContentProps {
   activeTab: string
+  campaign: any
+  showStats: boolean
 }
 
-export default function MainContent({ activeTab }: MainContentProps) {
+export default function MainContent({ activeTab, campaign, showStats }: MainContentProps) {
   return (
     <div className="flex-1 bg-[#09090B] p-6 overflow-y-auto relative">
       <AnimatePresence mode="wait">
@@ -142,6 +146,30 @@ export default function MainContent({ activeTab }: MainContentProps) {
                 ))}
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'jogadores' && (
+          <motion.div 
+            key="jogadores" 
+            initial={{ opacity: 0, y: 10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -10 }} 
+            className="h-full"
+          >
+            <GroupOverview players={campaign.characters || []} showStats={showStats} />
+          </motion.div>
+        )}
+
+        {activeTab === 'anotacoes' && (
+          <motion.div 
+            key="anotacoes" 
+            initial={{ opacity: 0, y: 10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -10 }} 
+            className="h-full flex flex-col"
+          >
+            <CampaignNotes campaignId={campaign.id} />
           </motion.div>
         )}
       </AnimatePresence>

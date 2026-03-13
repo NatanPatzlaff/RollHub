@@ -3,19 +3,31 @@ import CampaignNote from '#models/campaign_note'
 import Campaign from '#models/campaign'
 
 export default class CampaignNotesController {
-  public async index({ params, response }: HttpContext) {
+  public async index({ params, response, auth }: HttpContext) {
     const campaign = await Campaign.findOrFail(params.id)
-    const notes = await campaign.related('notes').query().orderBy('updated_at', 'desc')
-    return response.ok(notes)
+    const isOwner = campaign.userId === auth.user!.id
+
+    const notes = await campaign
+      .related('notes')
+      .query()
+      .where((q) => {
+        if (isOwner) return // mestre vê tudo
+        q.where('is_private', false).orWhere('user_id', auth.user!.id)
+      })
+      .orderBy('created_at', 'desc')
+
+    return response.ok({ notes })
   }
 
-  public async store({ params, request, response }: HttpContext) {
+  public async store({ params, request, response, auth }: HttpContext) {
     const campaign = await Campaign.findOrFail(params.id)
-    const payload = request.only(['title', 'content'])
+    const payload = request.only(['title', 'content', 'isPrivate'])
     
     const note = await campaign.related('notes').create({
       title: payload.title || 'Nova Anotação',
       content: payload.content || '',
+      isPrivate: payload.isPrivate ?? false,
+      userId: auth.user!.id
     })
 
     return response.created(note)
