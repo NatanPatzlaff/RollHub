@@ -16,13 +16,10 @@ const mockEntities = [
 ]
 
 export default function ShieldDashboard() {
-  console.log('[SHIELD] COMPONENTE MONTADO')
   const { campaign, auth } = usePage().props as any
   const [activeTab, setActiveTab] = useState('combates')
   const [campaignRolls, setCampaignRolls] = useState<any[]>([])
   
-  console.log('[SHIELD] campaign.id:', campaign?.id)
-
   // Estados para Pedir Iniciativa
   const [requestingInitiative, setRequestingInitiative] = useState(false)
   const [initiativePending, setInitiativePending] = useState<Set<number>>(new Set())
@@ -48,12 +45,6 @@ export default function ShieldDashboard() {
     if (!campaign?.id) return
     try {
       const response = await axios.get(`/api/campaigns/${campaign.id}/rolls`)
-      const rolls = response.data.rolls || []
-      console.log('[SHIELD] rolls recebidos:', rolls.length, 'requestingInitiativeRef:', requestingInitiativeRef.current)
-      if (requestingInitiativeRef.current) {
-        rolls.forEach((r: any) => console.log('[ROLL]', r.action, r.playerName || r.player_name, r.result))
-      }
-      console.log('[SHIELD] response:', response.data)
       const formattedRolls = (response.data.rolls || []).map((r: any) => ({
         id: r.id,
         player: r.playerName || r.player_name,
@@ -125,14 +116,13 @@ export default function ShieldDashboard() {
   }
 
   useEffect(() => {
-    console.log('[SHIELD] useEffect polling iniciando, campaign.id:', campaign?.id)
     loadRolls()
     const interval = setInterval(loadRolls, 10000)
     return () => clearInterval(interval)
   }, [campaign?.id])
 
   useEffect(() => {
-    console.log('[SHIELD] campaignRolls:', campaignRolls.length, campaignRolls[0])
+    // campaignRolls sync log removed
   }, [campaignRolls])
 
   return (
