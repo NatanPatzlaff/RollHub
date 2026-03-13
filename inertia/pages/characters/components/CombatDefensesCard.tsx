@@ -110,15 +110,22 @@ export default function CombatDefensesCard({
   // ─── Defesa e Esquiva ──────────────────────────────────────────────────────
   // Defesa  = 10 + AGI + bônus proteções equipadas + rituais + adicional
   // Esquiva = 10 + AGI + Reflexos - penalidade proteções + rituais + adicional
-  const defense = useMemo(
-    () => 10 + agility + equippedDefenseBonus + ritualDefenseBonus + defenseAdditional,
-    [agility, equippedDefenseBonus, ritualDefenseBonus, defenseAdditional]
-  )
+  const defense = useMemo(() => {
+    const val = 10 + agility + equippedDefenseBonus + ritualDefenseBonus + defenseAdditional
+    return Math.min(9999, Math.max(-999, val))
+  }, [agility, equippedDefenseBonus, ritualDefenseBonus, defenseAdditional])
 
-  const dodge = useMemo(
-    () => 10 + agility + reflexosBonus - equippedDodgePenalty + ritualDodgeBonus + dodgeAdditional,
-    [agility, reflexosBonus, equippedDodgePenalty, ritualDodgeBonus, dodgeAdditional]
-  )
+  const dodge = useMemo(() => {
+    const val = 10 + agility + reflexosBonus - equippedDodgePenalty + ritualDodgeBonus + dodgeAdditional
+    return Math.min(9999, Math.max(-999, val))
+  }, [agility, reflexosBonus, equippedDodgePenalty, ritualDodgeBonus, dodgeAdditional])
+
+  // Helper para formatar display (ex: 999+)
+  const formatDefenseValue = (val: number) => {
+    if (val > 999) return '999+'
+    if (val < -99) return '-99' // Embora o limite seja -999, o display compacto foca em 3-4 caracteres
+    return val.toString()
+  }
 
   return (
     <Card className="bg-zinc-900 border border-zinc-800 shadow-none rounded-xl">
@@ -154,7 +161,7 @@ export default function CombatDefensesCard({
               </div>
             </div>
             <div className="text-3xl font-bold text-white group-hover:text-blue-400 transition-colors">
-              {defense}
+              {formatDefenseValue(defense)}
             </div>
           </div>
 
@@ -173,7 +180,7 @@ export default function CombatDefensesCard({
               </div>
             </div>
             <div className="text-3xl font-bold text-orange-500 group-hover:text-amber-400 transition-colors">
-              {dodge}
+              {formatDefenseValue(dodge)}
             </div>
           </div>
         </div>
@@ -210,9 +217,12 @@ export default function CombatDefensesCard({
             <input
               type="number"
               value={defenseAdditional}
-              onChange={(e) => setDefenseAdditional(parseInt(e.target.value) || 0)}
-              min={-20}
-              max={20}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0
+                setDefenseAdditional(Math.min(999, Math.max(-99, val)))
+              }}
+              min={-99}
+              max={999}
               className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white font-bold text-center"
             />
           </div>
@@ -221,9 +231,12 @@ export default function CombatDefensesCard({
             <input
               type="number"
               value={dodgeAdditional}
-              onChange={(e) => setDodgeAdditional(parseInt(e.target.value) || 0)}
-              min={-20}
-              max={20}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0
+                setDodgeAdditional(Math.min(999, Math.max(-99, val)))
+              }}
+              min={-99}
+              max={999}
               className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm text-white font-bold text-center"
             />
           </div>

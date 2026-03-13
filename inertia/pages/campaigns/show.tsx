@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from '@inertiajs/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Users, Swords, Dices, Monitor, Search, Heart, Zap, 
   Brain, FileText, Plus
 } from 'lucide-react'
+import axios from 'axios'
 
 import VTTTabs from './components/vtt/VTTTabs'
 import PlayersSidebar from './components/vtt/PlayersSidebar'
@@ -15,12 +16,69 @@ import GroupOverview from './components/GroupOverview'
 interface GameMasterDashboardProps {
   campaign: any
   isGM?: boolean
+  auth: any
 }
 
-export default function GameMasterDashboard({ campaign, isGM }: GameMasterDashboardProps) {
+export default function GameMasterDashboard({ campaign, isGM, auth }: GameMasterDashboardProps) {
   const [activeTab, setActiveTab] = useState('combates')
+  const [campaignRolls, setCampaignRolls] = useState<any[]>([])
+  
   const characters = campaign.characters || []
-  const rolls = campaign.rolls || [] // Assuming rolls might be passed in campaign props
+
+  const loadRolls = async () => {
+    if (!campaign?.id) return
+    try {
+      const response = await axios.get(`/api/campaigns/${campaign.id}/rolls`)
+      const formattedRolls = (response.data.rolls || []).map((r: any) => ({
+        id: r.id,
+        player: r.playerName || r.player_name,
+        action: r.action,
+        roll: r.rollExpression || r.roll_expression,
+        result: r.result,
+        time: new Date(r.rolledAt || r.rolled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isCritical: !!r.isCritical || !!r.is_critical,
+        isFail: !!r.isFail || !!r.is_fail,
+        isGM: !!r.isGm || !!r.is_gm,
+        diceValues: r.diceValues
+      }))
+      setCampaignRolls(formattedRolls)
+    } catch (e) {
+      console.error('Erro ao buscar rolagens:', e)
+    }
+  }
+
+  const handleClearHistory = async () => {
+    if (!campaign?.id) return
+    
+    // Encontrar o personagem do usuário logado (Mestre ou Jogador) na campanha
+    const userCharacter = campaign.characters?.find((c: any) => c.userId === auth.user.id)
+    if (!userCharacter) return
+
+    try {
+      await axios.post(`/api/characters/${userCharacter.id}/rolls/clear`)
+      setCampaignRolls([])
+    } catch (error) {
+      console.error('Erro ao limpar histórico:', error)
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (!campaign?.id) return
+    if (!confirm('Isso irá deletar TODAS as rolagens da campanha para todos os jogadores. Confirmar?')) return
+    
+    try {
+      await axios.delete(`/api/campaigns/${campaign.id}/rolls`)
+      setCampaignRolls([])
+    } catch (e) {
+      console.error('Erro ao limpar todas as rolagens:', e)
+    }
+  }
+
+  useEffect(() => {
+    loadRolls()
+    const interval = setInterval(loadRolls, 10000)
+    return () => clearInterval(interval)
+  }, [campaign?.id])
 
   const { data, setData, put, processing, errors } = useForm({
     name: campaign.name || '',
@@ -158,7 +216,11 @@ export default function GameMasterDashboard({ campaign, isGM }: GameMasterDashbo
         </div>
         
         {/* Painel Direito: Histórico */}
-        <RollHistorySidebar rolls={rolls} />
+        <RollHistorySidebar 
+          rolls={campaignRolls} 
+          onClear={handleClearHistory} 
+          onClearAll={handleClearAll}
+        />
         
       </div>
     </div>

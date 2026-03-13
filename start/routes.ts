@@ -36,6 +36,8 @@ router
     router.get('/characters/:id', [CharactersController, 'show'])
     router.get('/api/characters/:id/campaign-rolls', [CharactersController, 'getCampaignRolls'])
     router.post('/api/characters/:id/rolls', [CharactersController, 'saveRoll'])
+    router.post('/api/characters/:id/rolls/clear', [CharactersController, 'clearCampaignRolls'])
+    router.delete('/api/characters/:id/rolls/:rollId', [CharactersController, 'deleteRoll'])
     router.put('/characters/:id', [CharactersController, 'update'])
     router.put('/characters/:id/attributes', [CharactersController, 'updateAttributes'])
     router.post('/characters/:id/abilities', [CharactersController, 'addAbility'])
@@ -71,6 +73,8 @@ router
 
     // Campaign Notes
     router.get('/api/campaigns/:id/notes', [CampaignNotesController, 'index'])
+    router.get('/api/campaigns/:id/rolls', [CampaignsController, 'getRolls'])
+    router.delete('/api/campaigns/:id/rolls', [CampaignsController, 'clearAllRolls'])
     router.post('/api/campaigns/:id/notes', [CampaignNotesController, 'store'])
     router.put('/api/campaigns/notes/:id', [CampaignNotesController, 'update'])
     router.delete('/api/campaigns/notes/:id', [CampaignNotesController, 'destroy'])

@@ -2,12 +2,23 @@ import { Users, Heart, Zap, Brain } from 'lucide-react'
 
 interface PlayersSidebarProps {
   characters: any[]
+  localInitiatives?: Record<number, number>
+  requestingInitiative?: boolean
+  onRequestInitiative?: () => void
 }
 
-export default function PlayersSidebar({ characters }: PlayersSidebarProps) {
+export default function PlayersSidebar({ 
+  characters, 
+  localInitiatives = {}, 
+  requestingInitiative = false,
+  onRequestInitiative 
+}: PlayersSidebarProps) {
   // Sort by initiative if available, otherwise keep existing order
-  // For now, let's assume they might not have initiative set yet
-  const sortedEntities = [...characters].sort((a, b) => (b.initiative || 0) - (a.initiative || 0))
+  const sortedEntities = [...characters].sort((a, b) => {
+    const aVal = localInitiatives[a.id] ?? a.initiative ?? 0
+    const bVal = localInitiatives[b.id] ?? b.initiative ?? 0
+    return bVal - aVal
+  })
 
   return (
     <div className="bg-[#18181B] border-r border-[#27272A] flex flex-col h-full overflow-hidden w-64 xl:w-72 flex-shrink-0">
@@ -16,9 +27,21 @@ export default function PlayersSidebar({ characters }: PlayersSidebarProps) {
           <Users size={18} className="text-[#06B6D4]" />
           <h2 className="font-bold text-white text-sm">Ordem de Turno</h2>
         </div>
-        <button className="bg-[#F97316] hover:bg-[#EA580C] text-white text-[11px] px-3 py-1.5 rounded font-bold transition-colors shadow-lg shadow-[#F97316]/20">
-          Próximo Turno
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRequestInitiative}
+            className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${
+              requestingInitiative
+                ? 'bg-[#F97316] text-white ring-2 ring-[#F97316]/30 animate-pulse'
+                : 'bg-[#27272A] text-[#A1A1AA] hover:bg-[#3F3F46] hover:text-white'
+            }`}
+          >
+            {requestingInitiative ? 'Aguardando...' : 'Pedir Iniciativa'}
+          </button>
+          <button className="bg-[#F97316] hover:bg-[#EA580C] text-white text-[11px] px-3 py-1.5 rounded font-bold transition-colors shadow-lg shadow-[#F97316]/20">
+            Próximo Turno
+          </button>
+        </div>
       </div>
       
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
@@ -40,7 +63,7 @@ export default function PlayersSidebar({ characters }: PlayersSidebarProps) {
               
               {/* Initiative Badge */}
               <div className={`absolute top-3 right-3 text-xs font-black px-2 py-0.5 rounded ${isTurn ? 'bg-[#F97316] text-[#09090B]' : 'bg-[#27272A] text-white'}`}>
-                {entity.initiative || 0}
+                {localInitiatives[entity.id] ?? entity.initiative ?? 0}
               </div>
 
               <div className="flex justify-between items-start mb-2 pr-8">

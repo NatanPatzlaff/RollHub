@@ -283,6 +283,43 @@ export default function CharacterTabsCard({
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<string>('inventario')
 
+  // Estados para filtro e ordenação do inventário
+
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set(['all']))
+  const [sortOrder, setSortOrder] = useState<'name' | 'name-desc'>('name')
+
+  const toggleSortOrder = () => {
+    setSortOrder((prev) => (prev === 'name' ? 'name-desc' : 'name'))
+  }
+
+  const getFilterLabel = () => {
+    if (selectedTypes.has('all') || selectedTypes.size === 0) return 'Todos os Tipos'
+    if (selectedTypes.size === 1) {
+      const val = Array.from(selectedTypes)[0]
+      if (val === 'Arma') return 'Armas'
+      if (val === 'Armadura') return 'Proteções'
+      if (val === 'Item') return 'Itens'
+    }
+    return `${selectedTypes.size} Filtros`
+  }
+
+  const filteredInventory = inventory
+    .filter((item) => {
+      if (selectedTypes.has('all') || selectedTypes.size === 0) return true
+      
+      const itemMappedType = 
+        item.type === 'Arma' ? 'Arma' : 
+        item.type === 'Armadura' ? 'Armadura' : 
+        'Item' // Consumível, Geral, etc.
+
+      return selectedTypes.has(itemMappedType)
+    })
+    .sort((a, b) => {
+      if (sortOrder === 'name') return a.name.localeCompare(b.name)
+      return b.name.localeCompare(a.name)
+    })
+
+
   // Habilidades de origem ativas/reação para exibir no combate
   const activeOriginAbilities = originAbilities.filter(
     (a) => a.type === 'ativa' || a.type === 'reação'
@@ -554,22 +591,56 @@ export default function CharacterTabsCard({
 
           {/* Filtros */}
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-[#141417] hover:bg-zinc-800 border border-zinc-800 rounded-md text-sm text-zinc-300 transition-colors">
-              Todos os Tipos <ChevronDown className="w-4 h-4" />
-            </button>
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-[#141417] hover:bg-zinc-800 border border-zinc-800 rounded-md text-sm text-zinc-300 transition-colors">
-              <ArrowUp className="w-4 h-4" /> Nome
+            <Dropdown closeOnSelect={false}>
+              <DropdownTrigger>
+                <button className="flex items-center gap-2 px-3 py-1.5 bg-[#141417] hover:bg-zinc-800 border border-zinc-800 rounded-md text-sm text-zinc-300 transition-colors">
+                  {getFilterLabel()} <ChevronDown className="w-4 h-4" />
+                </button>
+              </DropdownTrigger>
+              <DropdownMenu
+                aria-label="Filtrar por tipo"
+                selectionMode="multiple"
+                selectedKeys={selectedTypes}
+                onSelectionChange={(keys) => {
+                  const set = new Set(Array.from(keys as any) as string[])
+                  
+                  // Lógica amigável: se selecionar 'all', limpa os outros. Se selecionar outro, tira o 'all'.
+                  if (set.has('all') && !selectedTypes.has('all')) {
+                    setSelectedTypes(new Set(['all']))
+                  } else if (set.size > 1 && set.has('all')) {
+                    set.delete('all')
+                    setSelectedTypes(set)
+                  } else if (set.size === 0) {
+                    setSelectedTypes(new Set(['all']))
+                  } else {
+                    setSelectedTypes(set)
+                  }
+                }}
+                className="bg-zinc-900 border border-zinc-800"
+              >
+                <DropdownItem key="all" className="text-white">Todos os Tipos</DropdownItem>
+                <DropdownItem key="Arma" className="text-white">Armas</DropdownItem>
+                <DropdownItem key="Armadura" className="text-white">Proteções</DropdownItem>
+                <DropdownItem key="Item" className="text-white">Itens</DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
+
+            <button
+              onClick={toggleSortOrder}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#141417] hover:bg-zinc-800 border border-zinc-800 rounded-md text-sm text-zinc-300 transition-colors"
+            >
+              {sortOrder === 'name' ? <ArrowUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />} Nome
             </button>
           </div>
 
           {/* Lista de itens */}
           <div className="space-y-2 overflow-y-auto custom-scrollbar">
-            {inventory.length === 0 && (
+            {filteredInventory.length === 0 && (
               <div className="mt-8 flex items-center justify-center text-zinc-500 text-sm italic">
-                Inventário vazio. Adicione itens acima.
+                {inventory.length === 0 ? 'Inventário vazio. Adicione itens acima.' : 'Nenhum item corresponde ao filtro.'}
               </div>
             )}
-            {inventory.map((item) => {
+            {filteredInventory.map((item) => {
               const isExpanded = expandedItemId === item.uniqueId
               const getIconForItem = () => {
                 if (item.type === 'Arma') return <Sword size={18} />

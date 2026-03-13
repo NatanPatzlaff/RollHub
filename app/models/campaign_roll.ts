@@ -34,6 +34,9 @@ export default class CampaignRoll extends BaseModel {
 
   @column()
   declare isGm: boolean
+  
+  @column({ columnName: 'dice_values' })
+  declare diceValues: string | null
 
   @column.dateTime()
   declare rolledAt: DateTime

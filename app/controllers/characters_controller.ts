@@ -2311,25 +2311,47 @@ export default class CharactersController {
       return response.forbidden({ error: 'Acesso negado' })
     }
 
+    const clearRecord = await db
+      .from('character_roll_clears')
+      .where('character_id', character.id)
+      .first()
+
     // Buscar a campanha principal do personagem (primeira encontrada)
     const campaignMember = await db
       .from('campaign_members')
       .where('character_id', character.id)
       .first()
 
-    if (!campaignMember) {
-      return response.ok({ rolls: [] })
+    // Buscar as rolagens da campanha
+    let query = db
+      .from('campaign_rolls')
+      .where((q) => {
+        if (campaignMember) {
+          q.where('campaign_id', campaignMember.campaign_id).orWhere('character_id', character.id)
+        } else {
+          q.where('character_id', character.id)
+        }
+      })
+
+    if (clearRecord) {
+      query = query.where('rolled_at', '>', clearRecord.cleared_at)
     }
 
-    // Buscar as rolagens da campanha
-    const rolls = await db
-      .from('campaign_rolls')
-      .where('campaign_id', campaignMember.campaign_id)
-      .orWhere('character_id', character.id) // Inclui rolagens pessoais mesmo que mude de campanha
-      .orderBy('rolled_at', 'desc')
-      .limit(100)
+    const rolls = await query.orderBy('rolled_at', 'desc').limit(100)
+    
+    // Mapear para garantir que dice_values (JSON) seja retornado como diceValues (Array)
+    const formattedRolls = rolls.map((r) => ({
+      ...r,
+      diceValues: (() => {
+        try {
+          return typeof r.dice_values === 'string' ? JSON.parse(r.dice_values) : r.dice_values
+        } catch {
+          return null
+        }
+      })(),
+    }))
 
-    return response.ok({ rolls })
+    return response.ok({ rolls: formattedRolls })
   }
 
   /**
@@ -2350,6 +2372,7 @@ export default class CharactersController {
       'is_critical',
       'is_fail',
       'is_gm',
+      'diceValues',
     ])
 
     // Buscar a campanha se existir
@@ -2368,9 +2391,52 @@ export default class CharactersController {
       isCritical: data.is_critical || false,
       isFail: data.is_fail || false,
       isGm: data.is_gm || false,
+      diceValues: data.diceValues ? (typeof data.diceValues === 'string' ? data.diceValues : JSON.stringify(data.diceValues)) : null,
       rolledAt: DateTime.now(),
     })
 
     return response.created({ roll })
+  }
+
+  /**
+   * Limpa todo o histórico de rolagens do personagem
+   */
+  async clearCampaignRolls({ params, response, auth }: HttpContext) {
+    const character = await Character.findOrFail(params.id)
+
+    if (character.userId !== auth.user!.id) {
+      return response.forbidden({ error: 'Acesso negado' })
+    }
+
+    const now = DateTime.now().toSQL()
+    // Upsert do timestamp de limpeza usando rawQuery conforme sugerido
+    await db.rawQuery(
+      `INSERT INTO character_roll_clears (character_id, cleared_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (character_id) DO UPDATE SET cleared_at = EXCLUDED.cleared_at, updated_at = EXCLUDED.updated_at`,
+      [character.id, now, now, now]
+    )
+
+    return response.ok({ success: true })
+  }
+
+  /**
+   * Exclui uma rolagem específica
+   */
+  async deleteRoll({ params, response, auth }: HttpContext) {
+    const character = await Character.findOrFail(params.id)
+
+    if (character.userId !== auth.user!.id) {
+      return response.forbidden({ error: 'Acesso negado' })
+    }
+
+    const roll = await CampaignRoll.query()
+      .where('id', params.rollId)
+      .where('characterId', character.id)
+      .firstOrFail()
+
+    await roll.delete()
+
+    return response.ok({ success: true })
   }
 }

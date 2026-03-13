@@ -59,7 +59,6 @@ export interface SkillsCardProps {
   classSkillPools: Array<{ name: string; skills: string[]; required: number }>
   characterNex: number
   attrMap: Record<string, number>
-  characterSkills: any[]
   onFilterChange: (filter: string) => void
   onToggleLearning: () => void
   onSaveSkills: () => void
@@ -89,7 +88,6 @@ export default function SkillsCard({
   classSkillPools,
   characterNex,
   attrMap,
-  characterSkills,
   onFilterChange,
   onToggleLearning,
   onSaveSkills,
@@ -275,11 +273,7 @@ export default function SkillsCard({
                       onToggleSkill(skill.name)
                     } else if (!isLearningSkills) {
                       const attrVal = Math.max(1, attrMap[skill.attr] ?? 1)
-                      const degree =
-                        characterSkills.find((cs: any) => cs.skill?.name === skill.name)
-                          ?.trainingDegree ?? 0
-                      const trainingBonus =
-                        degree >= 15 ? 15 : degree >= 10 ? 10 : degree >= 5 ? 5 : 0
+                      const trainingBonus = isExpert ? 15 : isVeteran ? 10 : isTrained ? 5 : 0
                       const label = `${skill.name} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
                       onRollSkill(skill.name, attrVal, trainingBonus, label)
                     }

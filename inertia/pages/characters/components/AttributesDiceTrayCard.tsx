@@ -67,6 +67,7 @@ export interface RollEntry {
   isCritical?: boolean
   isFail?: boolean
   isGM?: boolean
+  diceValues?: number[]
 }
 
 /** Métodos expostos ao componente pai via ref */
@@ -366,6 +367,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           roll: roll.equation + (bonus !== 0 ? (bonus > 0 ? `+${bonus}` : bonus) : ''),
           result: total,
           time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          diceValues: mainDice.length > 0 ? [...mainDice, ...extraDice] : undefined
         })
       } else if (rollType === 'weapon') {
         const weapon = rollParams?.weapon
@@ -414,6 +416,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           result: atkTotal,
           time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           isCritical,
+          diceValues: atkDice
         })
         onNewRollRef.current?.({
           id: roll.uuid + '-dmg',
@@ -423,6 +426,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           result: finalDmg,
           time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           isCritical,
+          diceValues: dmgDice
         })
       } else if (rollType === 'ritual') {
         const ritualName = rollParams?.name
@@ -461,6 +465,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           result: totalAtk,
           time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           isFail: !success,
+          diceValues: atkDice
         })
         if (dmgTotal !== undefined) {
           onNewRollRef.current?.({
@@ -470,6 +475,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
             roll: rollParams?.damageDice || '',
             result: dmgTotal,
             time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            diceValues: dmgDice
           })
         }
         rollParams?.onResult?.({

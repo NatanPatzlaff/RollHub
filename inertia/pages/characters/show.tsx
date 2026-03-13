@@ -467,6 +467,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
   // Roll History Sidebar state
   const [isRollHistoryOpen, setIsRollHistoryOpen] = useState(false)
+  const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false)
   const [campaignRolls, setCampaignRolls] = useState<any[]>([])
 
   // Buscar histórico de rolagens da campanha
@@ -474,10 +475,46 @@ export default function CharacterShow(initialProps: CharacterProps) {
     try {
       // Assumindo que o personagem tem uma relations campaign_id
       const response = await axios.get(`/api/characters/${character.id}/campaign-rolls`)
-      setCampaignRolls(response.data.rolls || [])
+      const formattedRolls = (response.data.rolls || []).map((r: any) => ({
+        ...r,
+        id: r.id,
+        player: r.player_name,
+        action: r.action,
+        roll: r.roll_expression,
+        result: r.result,
+        time: new Date(r.rolled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isCritical: !!r.is_critical,
+        isFail: !!r.is_fail,
+        isGM: !!r.is_gm,
+        diceValues: r.diceValues || undefined
+      }))
+      setCampaignRolls(formattedRolls)
     } catch (error) {
       console.error('Erro ao buscar histórico de rolagens:', error)
       // Evita limpar as rolagens locais já feitas na sessão se a API não existir ainda
+    }
+  }
+
+  const handleClearHistory = () => {
+    setIsConfirmClearOpen(true)
+  }
+
+  const confirmClearHistory = async () => {
+    try {
+      await axios.post(`/api/characters/${character.id}/rolls/clear`)
+      setCampaignRolls([])
+      setIsConfirmClearOpen(false)
+    } catch (error) {
+      console.error('Erro ao limpar histórico:', error)
+    }
+  }
+
+  const handleDeleteRoll = async (rollId: string | number) => {
+    try {
+      await axios.delete(`/api/characters/${character.id}/rolls/${rollId}`)
+      setCampaignRolls((prev) => prev.filter((r) => r.id !== rollId))
+    } catch (error) {
+      console.error('Erro ao excluir rolagem:', error)
     }
   }
 
@@ -2439,7 +2476,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
             classSkillPools={classSkillPools}
             characterNex={character.nex}
             attrMap={{ FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence }}
-            characterSkills={character.skills || []}
             onFilterChange={setSkillFilter}
             onToggleLearning={() => setIsLearningSkills(true)}
             onSaveSkills={saveSkills}
@@ -2658,7 +2694,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 result: roll.result,
                 is_critical: roll.isCritical,
                 is_fail: roll.isFail,
-                is_gm: roll.isGM
+                is_gm: roll.isGM,
+                diceValues: roll.diceValues ?? null
               }).catch(err => console.error('Erro ao persistir rolagem:', err))
             }}
             dddiceApiKey={import.meta.env.VITE_DDDICE_API_KEY as string | undefined}
@@ -3751,12 +3788,39 @@ export default function CharacterShow(initialProps: CharacterProps) {
       )}
       </div>
 
+      {/* Modal de Confirmação de Limpeza de Histórico */}
+      <BaseModal
+        isOpen={isConfirmClearOpen}
+        onClose={() => setIsConfirmClearOpen(false)}
+        title="Limpar Histórico Pessoal"
+        description="Deseja limpar o seu histórico de rolagens? Isso ocultará as rolagens atuais apenas para você. Outros jogadores continuarão vendo as rolagens da campanha."
+        footer={
+          <div className="flex gap-2 w-full justify-end">
+            <Button
+              variant="flat"
+              onPress={() => setIsConfirmClearOpen(false)}
+              className="text-zinc-400"
+            >
+              Cancelar
+            </Button>
+            <Button
+              color="danger"
+              onPress={confirmClearHistory}
+              className="font-bold"
+            >
+              Limpar Histórico
+            </Button>
+          </div>
+        }
+      />
+
       {/* Roll History Sidebar */}
       <RollHistorySidebar
         isOpen={isRollHistoryOpen}
         onClose={() => setIsRollHistoryOpen(false)}
         rolls={campaignRolls}
-        onClear={() => setCampaignRolls([])}
+        onClear={handleClearHistory}
+        onDeleteRoll={handleDeleteRoll}
       />
     </div>
   )

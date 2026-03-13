@@ -12,6 +12,7 @@ interface RollEntry {
   isCritical?: boolean
   isFail?: boolean
   isGM?: boolean
+  diceValues?: number[]
 }
 
 interface RollHistorySidebarProps {
@@ -19,9 +20,10 @@ interface RollHistorySidebarProps {
   onClose: () => void
   rolls: RollEntry[]
   onClear: () => void
+  onDeleteRoll?: (rollId: string | number) => void
 }
 
-export default function RollHistorySidebar({ isOpen, onClose, rolls, onClear }: RollHistorySidebarProps) {
+export default function RollHistorySidebar({ isOpen, onClose, rolls, onClear, onDeleteRoll }: RollHistorySidebarProps) {
   return (
     <AnimatePresence>
       {isOpen && (
@@ -95,19 +97,37 @@ export default function RollHistorySidebar({ isOpen, onClose, rolls, onClear }: 
                     key={roll.id || idx} 
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`bg-zinc-900/50 border ${borderColor} rounded-xl p-3 text-sm relative group overflow-hidden`}
+                    className={`bg-zinc-900/50 border ${borderColor} rounded-xl p-3 text-sm relative group overflow-hidden shrink-0`}
                   >
                     <div className="flex justify-between items-center mb-1">
                       <span className={`font-bold text-sm tracking-wider ${roll.isGM ? 'text-purple-400' : 'text-zinc-300'}`}>
                         {roll.player}
                       </span>
-                      <span className="text-[10px] text-zinc-500 font-medium">{roll.time}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-zinc-500 font-medium">{roll.time}</span>
+                        {onDeleteRoll && (
+                          <button
+                            onClick={() => onDeleteRoll(roll.id)}
+                            className="text-zinc-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-0.5"
+                            title="Excluir rolagem"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     
                     <div className="text-zinc-400 mb-2 font-medium text-xs uppercase tracking-tighter">{roll.action}</div>
                     
                     <div className="flex justify-between items-center bg-zinc-950/80 p-2.5 rounded-lg border border-zinc-800/50 shadow-inner">
-                      <span className="text-xs text-zinc-500 font-mono tracking-tighter">{roll.roll}</span>
+                      <div className="flex flex-col">
+                        <span className="text-xs text-zinc-500 font-mono tracking-tighter">{roll.roll}</span>
+                        {roll.diceValues && roll.diceValues.length > 1 && (
+                          <span className="text-[10px] text-zinc-600 font-mono italic">
+                            ({roll.diceValues.join(', ')})
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         {icon}
                         <span className={`text-2xl tracking-tighter ${textColor}`}>{roll.result}</span>

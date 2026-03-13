@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Head, usePage } from '@inertiajs/react'
+import axios from 'axios'
 
 import BrowserTabs from './shield_components/BrowserTabs'
-import PlayersPanel from './shield_components/PlayersPanel'
+import PlayersSidebar from './components/vtt/PlayersSidebar'
 import MainContent from './shield_components/MainContent'
 import RollHistoryPanel from './shield_components/RollHistoryPanel'
 
@@ -14,16 +15,125 @@ const mockEntities = [
   { id: 3, name: 'Joui Jouki', class: 'Ocultista', hp: 15, maxHp: 20, pe: 35, maxPe: 35, sanity: 8, maxSanity: 50, status: 'Enlouquecendo', initiative: 8, isMonster: false },
 ]
 
-const mockRolls = [
-  { id: 1, player: 'Arthur Cervero', action: 'Ataque: Acha', roll: '1d20+10', result: 28, isCritical: true, time: '10:42' },
-  { id: 2, player: 'Joui Jouki', action: 'Ocultismo', roll: '1d20+5', result: 14, isCritical: false, time: '10:38' },
-  { id: 3, player: 'Kaiser', action: 'Furtividade', roll: '1d20+8', result: 9, isFail: true, time: '10:35' },
-  { id: 4, player: 'Mestre', action: 'Ataque: Criatura', roll: '1d20+15', result: 22, isCritical: false, time: '10:30', isGM: true },
-]
-
 export default function ShieldDashboard() {
-  const { campaign } = usePage().props as any
+  console.log('[SHIELD] COMPONENTE MONTADO')
+  const { campaign, auth } = usePage().props as any
   const [activeTab, setActiveTab] = useState('combates')
+  const [campaignRolls, setCampaignRolls] = useState<any[]>([])
+  
+  console.log('[SHIELD] campaign.id:', campaign?.id)
+
+  // Estados para Pedir Iniciativa
+  const [requestingInitiative, setRequestingInitiative] = useState(false)
+  const [initiativePending, setInitiativePending] = useState<Set<number>>(new Set())
+  const [localInitiatives, setLocalInitiatives] = useState<Record<number, number>>({})
+
+  const updateInitiative = (characterId: number, value: number) => {
+    setLocalInitiatives(prev => ({ ...prev, [characterId]: value }))
+  }
+
+  // Refs para controle de tempo e estado no polling
+  const initiativeRequestedAtRef = useRef<Date | null>(null)
+  const requestingInitiativeRef = useRef(false)
+
+  const handleRequestInitiative = () => {
+    initiativeRequestedAtRef.current = new Date()
+    const characterIds = new Set<number>(campaign.characters.map((c: any) => c.id))
+    requestingInitiativeRef.current = true
+    setInitiativePending(characterIds)
+    setRequestingInitiative(true)
+  }
+
+  const loadRolls = async () => {
+    if (!campaign?.id) return
+    try {
+      const response = await axios.get(`/api/campaigns/${campaign.id}/rolls`)
+      const rolls = response.data.rolls || []
+      console.log('[SHIELD] rolls recebidos:', rolls.length, 'requestingInitiativeRef:', requestingInitiativeRef.current)
+      if (requestingInitiativeRef.current) {
+        rolls.forEach((r: any) => console.log('[ROLL]', r.action, r.playerName || r.player_name, r.result))
+      }
+      console.log('[SHIELD] response:', response.data)
+      const formattedRolls = (response.data.rolls || []).map((r: any) => ({
+        id: r.id,
+        player: r.playerName || r.player_name,
+        action: r.action,
+        roll: r.rollExpression || r.roll_expression,
+        result: r.result,
+        time: new Date(r.rolledAt || r.rolled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        isCritical: !!r.isCritical || !!r.is_critical,
+        isFail: !!r.isFail || !!r.is_fail,
+        isGM: !!r.isGm || !!r.is_gm,
+        diceValues: r.diceValues,
+        rolledAt: new Date(r.rolledAt || r.rolled_at)
+      }))
+      setCampaignRolls(formattedRolls)
+
+      // Se estiver pedindo iniciativa, processar as novas rolagens
+      if (requestingInitiativeRef.current) {
+        formattedRolls.forEach((roll: any) => {
+          // Ignorar rolagens anteriores ao pedido de iniciativa
+          if (initiativeRequestedAtRef.current && roll.rolledAt < initiativeRequestedAtRef.current) return
+
+          if (roll.action?.toLowerCase().includes('iniciativa')) {
+            const character = campaign.characters.find((c: any) => c.name === roll.player)
+            if (character && initiativePending.has(character.id)) {
+              updateInitiative(character.id, roll.result)
+              setInitiativePending(prev => {
+                const next = new Set(prev)
+                next.delete(character.id)
+                if (next.size === 0) {
+                  setRequestingInitiative(false)
+                  requestingInitiativeRef.current = false
+                }
+                return next
+              })
+            }
+          }
+        })
+      }
+    } catch (e) {
+      console.error('Erro ao buscar rolagens:', e)
+    }
+  }
+
+  const handleClearHistory = async () => {
+    if (!campaign?.id) return
+    
+    // Encontrar o personagem do mestre na campanha
+    const gmCharacter = campaign.characters?.find((c: any) => c.userId === auth.user.id)
+    if (!gmCharacter) return
+
+    try {
+      await axios.post(`/api/characters/${gmCharacter.id}/rolls/clear`)
+      setCampaignRolls([])
+    } catch (error) {
+      console.error('Erro ao limpar histórico:', error)
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (!campaign?.id) return
+    if (!confirm('Isso irá deletar TODAS as rolagens da campanha para todos os jogadores. Confirmar?')) return
+    
+    try {
+      await axios.delete(`/api/campaigns/${campaign.id}/rolls`)
+      setCampaignRolls([])
+    } catch (e) {
+      console.error('Erro ao limpar todas as rolagens:', e)
+    }
+  }
+
+  useEffect(() => {
+    console.log('[SHIELD] useEffect polling iniciando, campaign.id:', campaign?.id)
+    loadRolls()
+    const interval = setInterval(loadRolls, 10000)
+    return () => clearInterval(interval)
+  }, [campaign?.id])
+
+  useEffect(() => {
+    console.log('[SHIELD] campaignRolls:', campaignRolls.length, campaignRolls[0])
+  }, [campaignRolls])
 
   return (
     <>
@@ -37,15 +147,25 @@ export default function ShieldDashboard() {
         {/* Corpo: Layout Bento/VTT */}
         <div className="flex flex-1 overflow-hidden">
           
-          {/* Painel Esquerdo: Jogadores */}
-          <PlayersPanel entities={mockEntities} />
+          {/* Painel Esquerdo: Ordem de Turno / Personagens */}
+          <PlayersSidebar 
+            characters={campaign.characters || []} 
+            localInitiatives={localInitiatives}
+            requestingInitiative={requestingInitiative}
+            onRequestInitiative={handleRequestInitiative}
+          />
           
           {/* Área Central: Conteúdo das Abas */}
           <MainContent activeTab={activeTab} />
           
-          {/* Painel Direito: Histórico de Rolagens */}
-          <RollHistoryPanel rolls={mockRolls} />
-          
+          {/* Registro do Sistema */}
+          <div className="lg:col-span-1 h-full">
+            <RollHistoryPanel 
+              rolls={campaignRolls} 
+              onClear={handleClearHistory}
+              onClearAll={handleClearAll}
+            />
+          </div>
         </div>
       </div>
     </>
