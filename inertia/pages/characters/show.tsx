@@ -1,7 +1,7 @@
 import { Card, CardBody, Button, Chip, Divider, useDisclosure } from '@heroui/react'
 import { Head, Link, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { skillDescriptions } from '../../utils/skillDescriptions'
 import {
@@ -396,8 +396,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
     agiBonus: number
     intBonus: number
     preBonus: number
+    healByDamageFactor?: number
+    // Efeitos de arma
+    weaponAttackBonus?: number
+    weaponDamageBonus?: number
+    weaponThreatRangeBonus?: number
+    weaponCritMultiplierBonus?: number
+    weaponExtraDamageDice?: string
+    weaponDamageElement?: string
+    weaponType?: 'melee' | 'all'
+    weaponDuration?: 'scene' | 'sustained' | 'next_attack'
+    targetWeaponId?: string
   }
   const [activeRitualBuffs, setActiveRitualBuffs] = useState<ActiveRitualBuff[]>([])
+  const activeRitualBuffsRef = useRef<ActiveRitualBuff[]>(activeRitualBuffs)
+  useEffect(() => {
+    activeRitualBuffsRef.current = activeRitualBuffs
+  }, [activeRitualBuffs])
 
   // ── Estado de buffs ativos de habilidades (trilha / origem) ────────────────
   interface ActiveAbilityBuff {
@@ -1250,6 +1265,38 @@ export default function CharacterShow(initialProps: CharacterProps) {
   // Ref para expor rollDice / rollWeapon / openDiceTray ao SkillsCard e CharacterTabsCard
   const diceTrayRef = useRef<AttributesDiceTrayCardHandle>(null)
 
+  // Refs para sincronização de logs/cura
+  const playerNameRef = useRef(character.name)
+  useEffect(() => {
+    playerNameRef.current = character.name
+  }, [character.name])
+
+  const handleNewRoll = useCallback(
+    (roll: any) => {
+      // Adicionar localmente para feedback imediato
+      setCampaignRolls((prev: any) => [roll, ...prev])
+
+      // Persistir no banco de dados
+      axios
+        .post(`/api/characters/${character.id}/rolls`, {
+          action: roll.action,
+          roll_expression: roll.roll,
+          result: roll.result,
+          is_critical: roll.isCritical,
+          is_fail: roll.isFail,
+          is_gm: roll.isGM,
+          diceValues: roll.diceValues ?? null,
+        })
+        .catch((err) => console.error('Erro ao persistir rolagem:', err))
+    },
+    [character.id]
+  )
+
+  const onNewRollRef = useRef(handleNewRoll)
+  useEffect(() => {
+    onNewRollRef.current = handleNewRoll
+  }, [handleNewRoll])
+
   // Calculate max HP, PE, and Sanity dynamically based on class, NEX, and attributes
   // Formula: base + level * attribute + (level - 1) * perLevel
   // Level = NEX / 5
@@ -1410,7 +1457,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const ritualDodgeBonus = activeRitualBuffs.reduce((s, b) => s + b.dodgeBonus, 0)
 
   /** Aplica um buff de ritual em si mesmo */
-  const applyRitualBuffToSelf = (buff: RitualBuffEffect, chosenAttr?: string) => {
+  const applyRitualBuffToSelf = (buff: RitualBuffEffect, chosenAttr?: string, chosenWeapon?: string) => {
     const newBuff = {
       id: `${buff.label}-${Date.now()}`,
       label: buff.label,
@@ -1421,14 +1468,40 @@ export default function CharacterShow(initialProps: CharacterProps) {
       agiBonus: 0,
       intBonus: 0,
       preBonus: 0,
+      healByDamageFactor: buff.healByDamageFactor,
+      weaponAttackBonus: buff.weaponAttackBonus,
+      weaponDamageBonus: buff.weaponDamageBonus,
+      weaponThreatRangeBonus: buff.weaponThreatRangeBonus,
+      weaponCritMultiplierBonus: buff.weaponCritMultiplierBonus,
+      weaponExtraDamageDice: buff.weaponExtraDamageDice,
+      weaponDamageElement: buff.weaponDamageElement,
+      weaponType: buff.weaponType,
+      weaponDuration: buff.weaponDuration,
+      targetWeaponId: chosenWeapon,
     }
 
     // Cura de PV
     if (buff.healDice) {
-      const { total } = rollDiceExpression(buff.healDice)
+      const { total, rolls } = rollDiceExpression(buff.healDice)
       const bonusPotente = hasRitualPotente ? intellect : 0
       const curaTotal = total + bonusPotente
-      setHp((prev) => Math.min(maxHp, prev + curaTotal))
+      setHp((prev) => {
+        const hpAntes = prev
+        const hpDepois = Math.min(maxHp, prev + curaTotal)
+        const curadoReal = hpDepois - hpAntes
+        // Registra no histórico de rolagens
+        onNewRollRef.current?.({
+          id: `heal-${Date.now()}`,
+          player: playerNameRef.current,
+          action: `✦ ${buff.label} (Cura)`,
+          roll: buff.healDice,
+          result: curadoReal,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          diceValues: rolls,
+          isHeal: true,
+        })
+        return hpDepois
+      })
     }
 
     // PV temporários
@@ -1482,8 +1555,54 @@ export default function CharacterShow(initialProps: CharacterProps) {
       }
     }
 
-    setActiveRitualBuffs((prev) => [...prev, newBuff])
+    setActiveRitualBuffs((prev) => {
+      // Trava de duplicata: remove buff anterior do mesmo ritual antes de adicionar
+      const semDuplicata = prev.filter(b => b.label !== newBuff.label)
+      
+      // Reverte atributos do buff anterior se existia
+      const buffAnterior = prev.find(b => b.label === newBuff.label)
+      if (buffAnterior) {
+        if (buffAnterior.strBonus) setStrength(p => p - buffAnterior.strBonus)
+        if (buffAnterior.agiBonus) setAgility(p => p - buffAnterior.agiBonus)
+        if (buffAnterior.intBonus) setIntellect(p => p - buffAnterior.intBonus)
+        if (buffAnterior.preBonus) setPresence(p => p - buffAnterior.preBonus)
+        if (buffAnterior.tempHp) setTempHp(p => Math.max(0, p - buffAnterior.tempHp))
+      }
+      
+      return [...semDuplicata, newBuff]
+    })
   }
+
+  /** Callback para cura automática baseada em dano (Hemofagia etc) */
+  const handleHealByDamage = useCallback((amount: number, label: string) => {
+    setHp((prev) => {
+      const hpAntes = prev
+      const hpDepois = Math.min(maxHp, prev + amount)
+      const curadoReal = hpDepois - hpAntes
+      
+      if (curadoReal > 0) {
+        onNewRollRef.current?.({
+          id: `heal-dmg-${Date.now()}`,
+          player: playerNameRef.current,
+          action: `✦ ${label} (Cura por Dano)`,
+          roll: '-',
+          result: curadoReal,
+          time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          isHeal: true,
+        })
+      }
+      return hpDepois
+    })
+  }, [maxHp])
+
+  /** Callback para resultado de dano de arma (Hemofagia Discente etc) */
+  const handleWeaponDamageResult = useCallback((dmg: number) => {
+    // Verifica se há buff de healByDamageFactor ativo que seja next_attack (Hemofagia)
+    const healBuff = activeRitualBuffs.find(b => b.healByDamageFactor && b.weaponDuration === 'next_attack')
+    if (healBuff) {
+      handleHealByDamage(Math.floor(dmg * healBuff.healByDamageFactor!), healBuff.label)
+    }
+  }, [activeRitualBuffs, handleHealByDamage])
 
   /** Remove um buff ativo pelo id */
   const removeRitualBuff = (buffId: string) => {
@@ -1524,16 +1643,27 @@ export default function CharacterShow(initialProps: CharacterProps) {
     const buff = getRitualBuff(ritualName, version)
     if (!buff) return
 
+    const hasWeaponChoice = !!(
+      buff.weaponAttackBonus ||
+      buff.weaponDamageBonus ||
+      buff.weaponExtraDamageDice ||
+      buff.weaponThreatRangeBonus ||
+      buff.weaponCritMultiplierBonus
+    )
+
     const hasEffect =
-      buff.defenseBonus ||
-      buff.dodgeBonus ||
-      buff.tempHp ||
-      buff.tempHpFlat ||
-      buff.healDice ||
+      buff.defenseBonus || buff.dodgeBonus || buff.tempHp ||
+      buff.tempHpFlat || buff.healDice || buff.healByDamageFactor ||
+      buff.weaponExtraDamageDice || buff.weaponAttackBonus ||
+      buff.weaponDamageBonus || buff.weaponThreatRangeBonus ||
+      buff.weaponCritMultiplierBonus ||
       (buff.attributeChoice?.length ?? 0) > 0
+
     if (!hasEffect) return
 
-    if (buff.selfOnly && !buff.attributeChoice?.length) {
+    // Abre o modal se houver escolha de atributo OU escolha de arma (se tiver armas no inventário)
+    // Mesmo que seja 'selfOnly', precisamos do modal para as escolhas
+    if (buff.selfOnly && !buff.attributeChoice?.length && (!hasWeaponChoice || inventoryWeapons.length === 0)) {
       applyRitualBuffToSelf(buff)
     } else {
       setPendingRitualBuff({ ritualName, version, buff })
@@ -2096,6 +2226,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       const isFavorite = !!favoriteWeaponName && w.name === favoriteWeaponName
       const catReduction = isFavorite ? favoriteWeaponCategoryReduction : 0
       const finalCategory = Math.max(0, baseCategory + modsCategorySum - catReduction)
+      console.log('[INV-MAP] arma:', w.name, 'favoriteWeaponName:', favoriteWeaponName, 'isFavorite:', isFavorite, 'baseCategory:', baseCategory, 'modsCategorySum:', modsCategorySum, 'catReduction:', catReduction, 'finalCategory:', finalCategory)
 
       return {
         id: w.id,
@@ -2112,7 +2243,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         baseCategory,
         categoryReduction: catReduction,
         isFavoriteWeapon: isFavorite,
-        calculatedCategory: finalCategory > 0 ? finalCategory : null,
+        calculatedCategory: finalCategory,
         critical: w.critical,
         criticalMultiplier: w.criticalMultiplier,
         range: w.range,
@@ -2162,7 +2293,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
     const consumption: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 }
 
     inventory.forEach((item) => {
-      const cat = item.calculatedCategory || item.category
+      const cat = item.calculatedCategory !== undefined && item.calculatedCategory !== null 
+        ? item.calculatedCategory 
+        : item.category
+      console.log('[CAT] item:', item.name, 'calculatedCategory:', item.calculatedCategory, 'category:', item.category, 'usando cat:', cat)
       if (cat && cat > 0) {
         // Na Regra de Ordem Paranormal, cada item de categoria I ocupa 1 slot de Categoria I.
         consumption[cat] = (consumption[cat] || 0) + (item.qty || 1)
@@ -2505,10 +2639,24 @@ export default function CharacterShow(initialProps: CharacterProps) {
             strength={strength}
             peritoPeSpending={peritoPeSpending}
             maxPeritoPe={maxPeritoPe}
-            onRollWeapon={(w) => {
+            onRollWeapon={(w: { 
+              id?: number; 
+              name: string; 
+              range: string; 
+              damage: string; 
+              critical: string; 
+              criticalMultiplier: string;
+              modifications?: any[]
+            }) => {
               const isMelee = w.range === 'Corpo a corpo'
               const wType = isMelee ? 'melee' : 'ranged'
-              // Filtra buffs de combate: ataque, dano e margem de ameaça
+
+              // --- BÔNUS DE MODIFICAÇÕES PERMANENTES ---
+              const modAttackBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.attackBonus ?? 0), 0)
+              const modDamageBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.damageBonus ?? 0), 0)
+              const modCritBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.criticalBonus ?? 0), 0)
+
+              // --- BÔNUS DE HABILIDADES ATIVAS (já existente) ---
               const combatBuffs = activeAbilityBuffs.filter((b) => {
                 if (b.effects.duration !== 'next_attack' && b.effects.duration !== 'scene')
                   return false
@@ -2532,8 +2680,24 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 (s, b) => s + (b.effects.threat_range_bonus ?? 0),
                 0
               )
-              // Consome buffs de duração 'next_attack' após a rolagem
-              if (combatBuffs.length > 0) {
+
+              // --- BÔNUS DE RITUAIS (usando ref para evitar stale closure) ---
+              const ritualBuffs = activeRitualBuffsRef.current.filter((b) => {
+                if (!b.weaponDuration) return false
+                const wType = w.range === 'Corpo a corpo' ? 'melee' : 'ranged'
+                if (b.weaponType && b.weaponType !== 'all' && b.weaponType !== wType) return false
+                const weaponId = (w as any).id?.toString() || w.name
+                if (b.targetWeaponId && b.targetWeaponId !== weaponId) return false
+                return true
+              })
+              const ritualAttackBonus = ritualBuffs.reduce((s, b) => s + (b.weaponAttackBonus ?? 0), 0)
+              const ritualDamageBonus = ritualBuffs.reduce((s, b) => s + (b.weaponDamageBonus ?? 0), 0)
+              const ritualCritBonus = ritualBuffs.reduce((s, b) => s + (b.weaponThreatRangeBonus ?? 0), 0)
+              const ritualExtraDice = ritualBuffs.map(b => b.weaponExtraDamageDice).filter(Boolean) as string[]
+
+
+              // Consome buffs de duração 'next_attack' após a rolagem (Habilidades e Rituais)
+              if (combatBuffs.length > 0 || ritualBuffs.some(b => b.weaponDuration === 'next_attack')) {
                 setActiveAbilityBuffs((prev) =>
                   prev.filter(
                     (b) =>
@@ -2541,8 +2705,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
                       b.effects.duration !== 'next_attack'
                   )
                 )
+                setActiveRitualBuffs((prev) => 
+                  prev.filter(
+                    (b) => 
+                      !ritualBuffs.find(rb => rb.id === b.id) ||
+                      b.weaponDuration !== 'next_attack'
+                  )
+                )
               }
+
+              // --- TOTAIS ---
               diceTrayRef.current?.openDiceTray()
+
               diceTrayRef.current?.rollWeapon(
                 {
                   name: w.name,
@@ -2550,9 +2724,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   damage: w.damage,
                   critical: w.critical || '20',
                   criticalMultiplier: w.criticalMultiplier || 'x2',
-                  extraAttackBonus,
-                  extraDamageBonus,
-                  extraCritBonus,
+                  extraAttackBonus: extraAttackBonus + modAttackBonus + ritualAttackBonus,
+                  extraDamageBonus: extraDamageBonus + modDamageBonus + ritualDamageBonus,
+                  extraCritBonus: extraCritBonus + modCritBonus + ritualCritBonus,
+                  extraDamageDice: ritualExtraDice,
                 },
                 strength,
                 agility,
@@ -2624,8 +2799,25 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onResetSceneUses={resetSceneUses}
             onRollSkill={handleRollSkill}
             onRollRitual={(params) => {
-              diceTrayRef.current?.openDiceTray()
-              diceTrayRef.current?.rollRitual(params)
+              const buff = getRitualBuff(params.name, params.version ?? 'base')
+              
+              // Se for buff de próximo ataque ou de cena, rola só o teste de Ocultismo (sem dados de dano)
+              // O buff só é aplicado se o teste for bem-sucedido (via onRitualBuffSuccess)
+              if (buff?.weaponDuration === 'next_attack' || buff?.weaponDuration === 'scene') {
+                diceTrayRef.current?.openDiceTray()
+                diceTrayRef.current?.rollRitual({ 
+                  ...params, 
+                  damageDice: undefined, // Remove os dados de dano da rolagem
+                  isHeal: false,
+                  healByDamageFactor: 0,
+                })
+                return
+              }
+              
+              const isHeal = !!(buff?.healDice || buff?.healHalfDamage)
+              const healByDamageFactor = buff?.healByDamageFactor ?? 0
+
+              diceTrayRef.current?.rollRitual({ ...params, isHeal, healByDamageFactor })
             }}
             onRitualBuffSuccess={handleRitualBuffSuccess}
             characterSkills={character.skills || []}
@@ -2674,21 +2866,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 onFinish: () => setIsSaving(false),
               })
             }}
-            onNewRoll={(roll) => {
-              // Adicionar localmente para feedback imediato
-              setCampaignRolls((prev) => [roll, ...prev])
-              
-              // Persistir no banco de dados
-              axios.post(`/api/characters/${character.id}/rolls`, {
-                action: roll.action,
-                roll_expression: roll.roll,
-                result: roll.result,
-                is_critical: roll.isCritical,
-                is_fail: roll.isFail,
-                is_gm: roll.isGM,
-                diceValues: roll.diceValues ?? null
-              }).catch(err => console.error('Erro ao persistir rolagem:', err))
-            }}
+            onNewRoll={handleNewRoll}
             dddiceApiKey={import.meta.env.VITE_DDDICE_API_KEY as string | undefined}
             dddiceRoomSlug={
               (character.campaigns?.[0]?.dddiceRoomSlug as string | undefined) ||
@@ -2696,6 +2874,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
             }
             activeAbilityBuffs={activeAbilityBuffs}
             abilityEffects={abilityEffects}
+            activeRitualBuffs={activeRitualBuffs}
+            onHealByDamage={handleHealByDamage}
+            onWeaponDamageResult={handleWeaponDamageResult}
           />
 
           {/* COMBAT DEFENSES */}
@@ -3771,8 +3952,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
           ritualName={pendingRitualBuff.ritualName}
           version={pendingRitualBuff.version}
           buff={pendingRitualBuff.buff}
-          onApplyToSelf={(buff, chosenAttr) => {
-            applyRitualBuffToSelf(buff, chosenAttr)
+          weapons={inventoryWeapons?.map(w => ({ id: w.id.toString(), name: w.name, range: w.range }))}
+          onApplyToSelf={(buff, chosenAttr, chosenWeapon) => {
+            applyRitualBuffToSelf(buff, chosenAttr, chosenWeapon)
             setIsRitualBuffModalOpen(false)
             setPendingRitualBuff(null)
           }}

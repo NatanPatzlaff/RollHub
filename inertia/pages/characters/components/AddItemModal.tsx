@@ -677,7 +677,9 @@ function buildSearchEntries(
     })
   })
 
-  ammunitions.forEach((item) => {
+  ammunitions
+    .filter((item: any) => item.type !== 'Melhoria' && item.type !== 'Maldição')
+    .forEach((item) => {
     entries.push({
       key: `ammunition-${item.id}`,
       name: item.name,
@@ -956,7 +958,9 @@ export default function AddItemModal({
                 )}
                 {activeTab === 'ammunitions' && (
                   <AmmunitionsTab
-                    items={catalogAmmunitions}
+                    items={catalogAmmunitions.filter((item: any) => 
+                      item.type !== 'Melhoria' && item.type !== 'Maldição'
+                    )}
                     expandedKey={expandedKey}
                     onToggle={toggleExpanded}
                     onAdd={(id) => onAdd('ammunition', id)}

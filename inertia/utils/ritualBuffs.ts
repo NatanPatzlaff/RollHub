@@ -48,6 +48,8 @@ export interface RitualBuffEffect {
   weaponDuration?: 'scene' | 'sustained' | 'next_attack'
   /** Se true, cura PV igual a metade do dano total causado */
   healHalfDamage?: boolean
+  /** Fator de cura por dano: 0.5 = metade, 1.0 = total */
+  healByDamageFactor?: number
 }
 
 export interface RitualBuffEntry {
@@ -235,127 +237,153 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
 
   'ódio incontrolável': {
     base: {
-      selfOnly: false,
       label: 'Ódio Incontrolável',
       weaponAttackBonus: 2,
       weaponDamageBonus: 2,
-      weaponType: 'melee',
       weaponDuration: 'scene',
+      weaponType: 'melee',
+      selfOnly: true,
     },
     verdadeiro: {
-      selfOnly: false,
       label: 'Ódio Incontrolável (V)',
       weaponAttackBonus: 5,
       weaponDamageBonus: 5,
-      weaponType: 'melee',
       weaponDuration: 'scene',
+      weaponType: 'melee',
+      selfOnly: true,
     },
   },
 
   'amaldiçoar arma': {
     base: {
-      selfOnly: false,
       label: 'Amaldiçoar Arma',
       weaponExtraDamageDice: '1d6',
-      weaponType: 'all',
       weaponDuration: 'scene',
+      weaponType: 'all',
+      selfOnly: true,
     },
     discente: {
-      selfOnly: false,
       label: 'Amaldiçoar Arma (D)',
       weaponExtraDamageDice: '2d6',
-      weaponType: 'all',
       weaponDuration: 'scene',
+      weaponType: 'all',
+      selfOnly: true,
     },
     verdadeiro: {
-      selfOnly: false,
       label: 'Amaldiçoar Arma (V)',
       weaponExtraDamageDice: '4d6',
-      weaponType: 'all',
       weaponDuration: 'scene',
+      weaponType: 'all',
+      selfOnly: true,
     },
   },
 
   'arma atroz': {
     base: {
-      selfOnly: false,
       label: 'Arma Atroz',
       weaponAttackBonus: 2,
       weaponThreatRangeBonus: 1,
-      weaponType: 'melee',
-      weaponDuration: 'sustained',
+      weaponDuration: 'scene',
+      weaponType: 'all',
+      selfOnly: true,
     },
     discente: {
-      selfOnly: false,
       label: 'Arma Atroz (D)',
       weaponAttackBonus: 5,
-      weaponThreatRangeBonus: 1,
-      weaponType: 'melee',
-      weaponDuration: 'sustained',
+      weaponDuration: 'scene',
+      weaponType: 'all',
+      selfOnly: true,
     },
     verdadeiro: {
-      selfOnly: false,
       label: 'Arma Atroz (V)',
       weaponAttackBonus: 5,
       weaponThreatRangeBonus: 2,
       weaponCritMultiplierBonus: 2,
-      weaponType: 'melee',
-      weaponDuration: 'sustained',
+      weaponDuration: 'scene',
+      weaponType: 'all',
+      selfOnly: true,
     },
   },
 
   'forma monstruosa': {
     base: {
       tempHpFlat: 30,
-      selfOnly: true,
       label: 'Forma Monstruosa',
       weaponAttackBonus: 5,
       weaponDamageBonus: 5,
-      weaponType: 'melee',
       weaponDuration: 'scene',
+      weaponType: 'melee',
+      selfOnly: true,
     },
     verdadeiro: {
       tempHpFlat: 50,
-      selfOnly: true,
       label: 'Forma Monstruosa (V)',
       weaponAttackBonus: 10,
       weaponDamageBonus: 10,
-      weaponType: 'melee',
       weaponDuration: 'scene',
+      weaponType: 'melee',
+      selfOnly: true,
+    },
+  },
+
+  'chamas do caos': {
+    base: {
+      label: 'Chamas do Caos',
+      weaponExtraDamageDice: '1d6',
+      weaponDamageElement: 'Fogo',
+      weaponDuration: 'scene',
+      weaponType: 'melee',
+      selfOnly: true,
     },
   },
 
   'decadência': {
     discente: {
-      selfOnly: true,
       label: 'Decadência (D)',
-      weaponExtraDamageDice: '3d8+3',
+      weaponExtraDamageDice: '3d8',
+      weaponDamageBonus: 3,
       weaponDamageElement: 'Morte',
-      weaponType: 'melee',
       weaponDuration: 'next_attack',
+      weaponType: 'melee',
+      selfOnly: true,
     },
   },
 
   'descarnar': {
     verdadeiro: {
-      selfOnly: true,
       label: 'Descarnar (V)',
       weaponExtraDamageDice: '4d8',
       weaponDamageElement: 'Sangue',
-      weaponType: 'melee',
       weaponDuration: 'scene',
+      weaponType: 'melee',
+      selfOnly: true,
     },
   },
 
   'hemofagia': {
-    discente: {
+    base: {
+      label: 'Hemofagia',
+      healByDamageFactor: 0.5,
       selfOnly: true,
+      // Base é ritual de dano direto — não é buff de arma
+    },
+    discente: {
       label: 'Hemofagia (D)',
+      healByDamageFactor: 0.5,
+      selfOnly: true,
+      // Discente: buff de próximo ataque com dano extra de ritual
       weaponExtraDamageDice: '6d6',
       weaponDamageElement: 'Sangue',
-      weaponType: 'melee',
       weaponDuration: 'next_attack',
-      healHalfDamage: true,
+      weaponType: 'all',
+    },
+    verdadeiro: {
+      label: 'Hemofagia (V)',
+      healByDamageFactor: 0.5,
+      selfOnly: true,
+      // Verdadeiro: buff de cena sustentado
+      weaponDuration: 'scene',
+      weaponType: 'all',
     },
   },
 }

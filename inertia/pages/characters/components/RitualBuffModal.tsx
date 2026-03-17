@@ -40,9 +40,11 @@ export interface RitualBuffModalProps {
   /** Efeito do buff */
   buff: RitualBuffEffect
   /** Callback quando o jogador confirma a aplicação em si mesmo */
-  onApplyToSelf: (buff: RitualBuffEffect, chosenAttr?: string) => void
+  onApplyToSelf: (buff: RitualBuffEffect, chosenAttr?: string, chosenWeapon?: string) => void
   /** Callback quando o jogador escolhe aplicar em aliado (efeito não aplicado automaticamente) */
   onApplyToAlly: () => void
+  /** Lista de armas do personagem para escolha de alvo */
+  weapons?: { id: string; name: string; range: string }[]
 }
 
 /**
@@ -58,9 +60,20 @@ export default function RitualBuffModal({
   buff,
   onApplyToSelf,
   onApplyToAlly,
+  weapons = [],
 }: RitualBuffModalProps) {
   const [chosenAttr, setChosenAttr] = useState<string | null>(null)
+  const [chosenWeapon, setChosenWeapon] = useState<string | null>(null)
+
   const hasAttrChoice = buff.attributeChoice && buff.attributeChoice.length > 0
+  const hasWeaponChoice = !!(
+    buff.weaponAttackBonus ||
+    buff.weaponDamageBonus ||
+    buff.weaponExtraDamageDice ||
+    buff.weaponThreatRangeBonus ||
+    buff.weaponCritMultiplierBonus
+  )
+
   const attrBonus = getAttributeBonus(version)
 
   const versionLabel =
@@ -80,14 +93,17 @@ export default function RitualBuffModal({
 
   const handleApplyToSelf = () => {
     if (hasAttrChoice && !chosenAttr) return // precisa escolher atributo
-    onApplyToSelf(buff, chosenAttr ?? undefined)
+    if (hasWeaponChoice && weapons.length > 0 && !chosenWeapon) return // precisa escolher arma
+    onApplyToSelf(buff, chosenAttr ?? undefined, chosenWeapon ?? undefined)
     setChosenAttr(null)
+    setChosenWeapon(null)
     onClose()
   }
 
   const handleApplyToAlly = () => {
     onApplyToAlly()
     setChosenAttr(null)
+    setChosenWeapon(null)
     onClose()
   }
 
@@ -141,11 +157,42 @@ export default function RitualBuffModal({
           </div>
         )}
 
+        {/* Escolha de arma, se aplicável e houver armas */}
+        {hasWeaponChoice && weapons.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-300 font-bold">
+              Escolha a arma que receberá o buff:
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {weapons.map((w) => {
+                const isSelected = chosenWeapon === w.id
+                return (
+                  <button
+                    key={w.id}
+                    onClick={() => setChosenWeapon(w.id)}
+                    className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all font-bold text-sm ${
+                      isSelected
+                        ? `text-purple-400 border-purple-500 bg-purple-500/10 ring-2 ring-offset-1 ring-offset-zinc-900`
+                        : `text-zinc-400 border-zinc-700 bg-zinc-800/50 hover:bg-zinc-800`
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sword size={16} className={isSelected ? 'text-purple-400' : 'text-zinc-500'} />
+                      <span>{w.name}</span>
+                    </div>
+                    <span className="text-[10px] uppercase opacity-50">{w.range}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Botões de escolha de alvo */}
         {buff.selfOnly ? (
           <button
             onClick={handleApplyToSelf}
-            disabled={hasAttrChoice && !chosenAttr}
+            disabled={(hasAttrChoice && !chosenAttr) || (hasWeaponChoice && weapons.length > 0 && !chosenWeapon)}
             className="h-16 text-lg font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <User size={20} />
@@ -155,7 +202,7 @@ export default function RitualBuffModal({
           <div className="grid grid-cols-1 gap-3">
             <button
               onClick={handleApplyToSelf}
-              disabled={hasAttrChoice && !chosenAttr}
+              disabled={(hasAttrChoice && !chosenAttr) || (hasWeaponChoice && weapons.length > 0 && !chosenWeapon)}
               className="h-16 text-lg font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <User size={20} />

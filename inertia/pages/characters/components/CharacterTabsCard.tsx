@@ -70,7 +70,15 @@ export interface CharacterTabsCardProps {
   strength: number
   peritoPeSpending: Record<string, number>
   maxPeritoPe: number
-  onRollWeapon: (w: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string }) => void
+  onRollWeapon: (w: {
+    id?: number
+    name: string
+    range: string
+    damage: string
+    critical: string
+    criticalMultiplier: string
+    modifications?: any[]
+  }) => void
   classAbilities: any[]
   paranormalPowers: any[]
   currentTrailAbilities: any[]
@@ -1263,11 +1271,13 @@ export default function CharacterTabsCard({
                             title={`Rolar ${w.name}`}
                             onClick={() =>
                               onRollWeapon({
+                                id: w.id,
                                 name: w.name,
                                 range: w.range || 'Corpo a corpo',
                                 damage: w.damage || '1d6',
                                 critical: w.critical || '20',
                                 criticalMultiplier: w.criticalMultiplier || 'x2',
+                                modifications: w.modifications || [],
                               })
                             }
                           >

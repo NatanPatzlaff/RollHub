@@ -61,6 +61,15 @@ export interface AttributesDiceTrayCardProps {
 
   /** Bônus de habilidades passivas */
   abilityEffects?: AbilityEffectsResult
+
+  /** Buffs ativos de rituais */
+  activeRitualBuffs?: ActiveRitualBuff[]
+
+  /** Callback para cura por dano */
+  onHealByDamage?: (amount: number, label: string) => void
+
+  /** Callback para o resultado final do dano de uma arma */
+  onWeaponDamageResult?: (dmg: number) => void
 }
 
 /** Interface da rolagem para o histórico */
@@ -83,6 +92,30 @@ export interface ActiveAbilityBuff {
   abilityName: string
   source: 'trail' | 'origin' | 'class'
   effects: any
+}
+
+/** Interface do buff de ritual ativo */
+export interface ActiveRitualBuff {
+  id: string
+  label: string
+  defenseBonus: number
+  dodgeBonus: number
+  tempHp: number
+  strBonus: number
+  agiBonus: number
+  intBonus: number
+  preBonus: number
+  healByDamageFactor?: number
+
+  // Efeitos de arma (integrados do ritualBuffs)
+  weaponAttackBonus?: number
+  weaponDamageBonus?: number
+  weaponThreatRangeBonus?: number
+  weaponCritMultiplierBonus?: number
+  weaponExtraDamageDice?: string
+  weaponDamageElement?: string
+  weaponType?: 'melee' | 'all'
+  weaponDuration?: 'scene' | 'sustained' | 'next_attack'
 }
 
 /** Métodos expostos ao componente pai via ref */
@@ -119,6 +152,8 @@ export interface AttributesDiceTrayCardHandle {
       damageResult: number | undefined
       damageRolls: number[] | undefined
     }) => void
+    isHeal?: boolean
+    healByDamageFactor?: number
   }) => void
   /** Abre o modo bandeja de dados */
   openDiceTray: () => void
@@ -151,6 +186,9 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
     onNewRoll,
     activeAbilityBuffs = [],
     abilityEffects,
+    activeRitualBuffs = [],
+    onHealByDamage,
+    onWeaponDamageResult,
   } = props
 
   // ─── Refs e Sincronização ──────────────────────────────────────────────────
@@ -163,6 +201,15 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
   useEffect(() => {
     abilityEffectsRef.current = abilityEffects
   }, [abilityEffects])
+
+  const activeRitualBuffsRef = useRef(activeRitualBuffs || [])
+  const onHealByDamageRef = useRef(onHealByDamage)
+  const onWeaponDamageResultRef = useRef(onWeaponDamageResult)
+  useEffect(() => {
+    activeRitualBuffsRef.current = activeRitualBuffs || []
+    onHealByDamageRef.current = onHealByDamage
+    onWeaponDamageResultRef.current = onWeaponDamageResult
+  }, [activeRitualBuffs, onHealByDamage, onWeaponDamageResult])
 
   /**
    * Calcula o bônus vindo de habilidades ativas para um teste específico.
@@ -243,6 +290,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
     damageDice: string | undefined
     damageTotal: number | undefined
     damageRolls: number[] | undefined
+    isHeal?: boolean
   } | null>(null)
   const [diceHistory, setDiceHistory] = useState<Array<{ label: string; total: number }>>([])
 
@@ -500,18 +548,31 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         })
       } else if (rollType === 'weapon') {
         const weapon = rollParams?.weapon
+
         const atkDice = roll.values
           .filter((v: any) => v.type === 'd20' && !v.is_dropped)
           .map((v: any) => v.value)
-        const dmgDice = roll.values
+        const allDmgDice = roll.values
           .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
           .map((v: any) => v.value)
+        
+        const dmgCount = rollParams?.dmgCount || 1
+        const isCritical = atkDice.some((val: number) => val >= (rollParams?.critThreshold || 20))
+        
+        // Crítico: usa todos os dados. Normal: usa apenas os primeiros dmgCount
+        const dmgDice = isCritical 
+          ? allDmgDice 
+          : allDmgDice.slice(0, dmgCount)
+        
         const atkBonus = rollParams?.atkBonus || 0
         const dmgBonus = rollParams?.dmgBonus || 0
         const atkTotal = Math.max(...atkDice) + atkBonus
-        const baseDmgTotal = dmgDice.reduce((acc: number, val: number) => acc + val, 0) + dmgBonus
-        const isCritical = atkDice.some((val: number) => val >= (rollParams?.critThreshold || 20))
-        const finalDmg = isCritical ? baseDmgTotal * (rollParams?.critMultiplier || 2) : baseDmgTotal
+        const baseDiceTotal = dmgDice.reduce((acc: number, val: number) => acc + val, 0)
+        const finalDmg = baseDiceTotal + dmgBonus
+
+        setTimeout(() => {
+          onWeaponDamageResultRef.current?.(finalDmg)
+        }, 0)
 
         setTimeout(() => {
           setWeaponRollResult({
@@ -530,7 +591,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
               label: rollParams?.dmgLabel,
               isCritical,
               critMultiplier: isCritical ? rollParams?.critMultiplier : undefined,
-              baseDamage: isCritical ? baseDmgTotal : undefined,
+              baseDamage: isCritical ? baseDiceTotal + dmgBonus : undefined,
             },
           })
           setDiceHistory((prev) => [
@@ -540,6 +601,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           ].slice(0, 8))
           scheduleClear()
         }, 0)
+
         onNewRollRef.current?.({
           id: roll.uuid + '-atk',
           player: playerNameRef.current,
@@ -584,6 +646,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
             success,
             damageTotal: dmgTotal,
             damageRolls: dmgDice.length > 0 ? dmgDice : undefined,
+            isHeal: rollParams?.isHeal
           })
           setDiceHistory((prev) => {
             const entries = [{ label: `${ritualName}`, total: totalAtk }]
@@ -613,6 +676,17 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
             diceValues: dmgDice
           })
         }
+
+        // Cura genérica por dano de ritual (ex: Hemofagia)
+        if (dmgTotal > 0 && rollParams?.healByDamageFactor) {
+          const healAmount = Math.floor(dmgTotal * rollParams.healByDamageFactor)
+          if (healAmount > 0) {
+            setTimeout(() => {
+              onHealByDamageRef.current?.(healAmount, rollParams?.label || 'Ritual')
+            }, 0)
+          }
+        }
+
         rollParams?.onResult?.({
           rolls: atkDice,
           best: bestAtk,
@@ -878,10 +952,11 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
 
           const diceToRoll: any[] = [
             ...Array.from({ length: attrVal }, () => ({
-              type: 'd20', theme: themeSlug, metadata: { group: 'attack' },
+              type: 'd20', theme: themeSlug,
             })),
-            ...Array.from({ length: dmgCount }, () => ({
-              type: `d${dmgSides}`, theme: themeSlug, metadata: { group: 'damage' },
+            // Sempre rola dmgCount * critMultiplier dados de dano
+            ...Array.from({ length: dmgCount * critMultiplier }, () => ({
+              type: `d${dmgSides}`, theme: themeSlug,
             })),
           ]
 
@@ -910,6 +985,8 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
             dmgBonus: extraDmg,
             critThreshold,
             critMultiplier,
+            dmgSides,
+            dmgCount,
             atkLabel,
             dmgLabel,
             skill,
@@ -941,6 +1018,8 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         damageResult: number | undefined
         damageRolls: number[] | undefined
       }) => void
+      isHeal?: boolean
+      healByDamageFactor?: number
     }) => {
       if (!dddiceRoomSlug) return
 
@@ -983,7 +1062,13 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           startRollTimeout()
           const abilityBonusRitual = calculateAbilityBonus('INT')
           pendingRollTypeRef.current = 'ritual'
-          pendingRollParamsRef.current = { ...params, trainingBonus: params.trainingBonus + abilityBonusRitual, dmgMod }
+          pendingRollParamsRef.current = { 
+            ...params, 
+            trainingBonus: params.trainingBonus + abilityBonusRitual, 
+            dmgMod,
+            isHeal: params.isHeal,
+            healByDamageFactor: params.healByDamageFactor
+          }
 
         await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
       } catch (e) {
@@ -1288,11 +1373,23 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
                         </div>
                       </div>
                       {ritualRollResult.success && ritualRollResult.damageTotal !== undefined ? (
-                        <div className="flex-1 bg-zinc-950 border border-red-900/30 rounded-lg px-3 py-2">
-                          <div className="text-[9px] uppercase font-bold text-red-900/80 tracking-wider mb-0.5">
-                            Dano · {ritualRollResult.damageDice}
+                        <div className={`flex-1 bg-zinc-950 border rounded-lg px-3 py-2 ${
+                          ritualRollResult.isHeal 
+                            ? 'border-emerald-900/30' 
+                            : 'border-red-900/30'
+                        }`}>
+                          <div className={`text-[9px] uppercase font-bold tracking-wider mb-0.5 ${
+                            ritualRollResult.isHeal 
+                              ? 'text-emerald-400/80' 
+                              : 'text-red-900/80'
+                          }`}>
+                            {ritualRollResult.isHeal ? 'Cura' : 'Dano'} · {ritualRollResult.damageDice}
                           </div>
-                          <div className="text-3xl font-black text-red-400 leading-none">
+                          <div className={`text-3xl font-black leading-none ${
+                            ritualRollResult.isHeal 
+                              ? 'text-emerald-400' 
+                              : 'text-red-400'
+                          }`}>
                             {ritualRollResult.damageTotal}
                           </div>
                           {ritualRollResult.damageRolls && (
