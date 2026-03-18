@@ -7,9 +7,10 @@ interface MainContentProps {
   activeTab: string
   campaign: any
   showStats: boolean
+  isOwner?: boolean
 }
 
-export default function MainContent({ activeTab, campaign, showStats }: MainContentProps) {
+export default function MainContent({ activeTab, campaign, showStats, isOwner = false }: MainContentProps) {
   return (
     <div className="flex-1 bg-[#09090B] p-6 overflow-y-auto relative">
       <AnimatePresence mode="wait">
@@ -157,7 +158,7 @@ export default function MainContent({ activeTab, campaign, showStats }: MainCont
             exit={{ opacity: 0, y: -10 }} 
             className="h-full"
           >
-            <GroupOverview players={campaign.characters || []} showStats={showStats} />
+            <GroupOverview players={campaign.characters || []} showStats={showStats} isOwner={isOwner} />
           </motion.div>
         )}
 

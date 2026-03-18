@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Head, router } from '@inertiajs/react'
-import { Map, Users, Heart, Shield, CheckCircle2 } from 'lucide-react'
+import { Map, Users, Shield, CheckCircle2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button, Card, CardBody, Select, SelectItem, Avatar } from "@heroui/react"
 

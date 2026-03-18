@@ -209,7 +209,7 @@ export default function ShieldDashboard() {
           />
           
           {/* Área Central: Conteúdo das Abas */}
-          <MainContent activeTab={activeTab} campaign={campaign} showStats={true} />
+          <MainContent activeTab={activeTab} campaign={campaign} showStats={true} isOwner={true} />
           
           {/* Registro do Sistema */}
           <div className="lg:col-span-1 h-full">

@@ -1,4 +1,4 @@
-import { Monitor, Swords, Dices, X, Users, FileText } from 'lucide-react'
+import { Monitor, Swords, Dices, X, Users, FileText, LucideIcon } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface BrowserTabsProps {
@@ -18,7 +18,7 @@ export default function BrowserTabs({ activeTab, setActiveTab }: BrowserTabsProp
   return (
     <div className="flex bg-[#09090B] px-2 pt-2 border-b border-[#27272A] gap-1 select-none">
       {tabs.map((tab) => {
-        const Icon = tab.icon
+        const Icon: LucideIcon = tab.icon
         const isActive = activeTab === tab.id
         
         return (

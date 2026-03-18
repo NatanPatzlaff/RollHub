@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion'
-import { X } from 'lucide-react'
+import { X, LucideIcon } from 'lucide-react'
 
 interface Tab {
   id: string
   label: string
-  icon: any
+  icon: LucideIcon
 }
 
 interface VTTTabsProps {
@@ -17,7 +17,7 @@ export default function VTTTabs({ tabs, activeTab, setActiveTab }: VTTTabsProps)
   return (
     <div className="flex bg-[#09090B] px-2 pt-2 border-b border-[#27272A] gap-1 select-none overflow-x-auto no-scrollbar">
       {tabs.map((tab) => {
-        const Icon = tab.icon
+        const Icon: LucideIcon = tab.icon
         const isActive = activeTab === tab.id
         
         return (

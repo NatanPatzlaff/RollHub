@@ -1,4 +1,4 @@
-import { Users, FileText, Swords, Monitor, Plus } from 'lucide-react'
+import { Users, FileText, Swords, Monitor, Plus, LucideIcon } from 'lucide-react'
 
 interface TabsProps {
   activeTab: string
@@ -16,7 +16,7 @@ export default function Tabs({ activeTab, setActiveTab }: TabsProps) {
   return (
     <div className="flex items-center gap-1 mb-[-1px] relative z-10">
       {tabs.map((tab) => {
-        const Icon = tab.icon
+        const Icon: LucideIcon = tab.icon
         const isActive = activeTab === tab.id
         return (
           <button
