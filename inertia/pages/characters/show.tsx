@@ -18,6 +18,7 @@ import {
   Check,
   Edit3,
   Search,
+  Target,
 } from 'lucide-react'
 import TrailSelectModal from './components/TrailSelectModal'
 import RitualSelectModal from './components/RitualSelectModal'
@@ -176,15 +177,36 @@ interface CatalogAmmunition {
   id: number
   name: string
   category: number
-  type: string
   description: string | null
-  element?: string | null
-  damageBonus?: string | null
   spaces: number
-  damageTypeOverride?: string | null
-  criticalBonus?: number | null
-  criticalMultiplierBonus?: string | null
-  weaponTypeRestriction?: string | null
+  duration: string | null
+  weaponTypeRestriction: any | null
+}
+
+interface InventoryAmmunitionModification {
+  id: number
+  modificationId: number
+  name: string
+  type: string
+  element: string | null
+  category: number
+  attackBonus: number
+  damageBonus: string | null
+  criticalBonus: number
+  specialProperties: any
+}
+
+interface InventoryAmmunition {
+  id: number
+  ammunitionId: number
+  name: string
+  quantity: number
+  spaces: number
+  category: number
+  description: string | null
+  notes: string | null
+  type: 'Ammunition'
+  modifications: InventoryAmmunitionModification[]
 }
 
 interface CharacterProps {
@@ -300,7 +322,9 @@ interface CharacterProps {
   inventoryWeapons?: any[]
   inventoryProtections?: any[]
   inventoryGeneralItems?: any[]
+  inventoryAmmunitions?: InventoryAmmunition[]
   catalogAmmunitions?: CatalogAmmunition[]
+  catalogWeaponModifications?: any[]
   originAbilities?: OriginAbilityData[]
 }
 
@@ -322,7 +346,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
     inventoryWeapons = [],
     inventoryProtections = [],
     inventoryGeneralItems = [],
+    inventoryAmmunitions = [],
     catalogAmmunitions = [],
+    catalogWeaponModifications = [],
     trailProgressions = [],
     catalogRituals = [],
     originAbilities = [],
@@ -754,8 +780,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
     onOpenChange: onModifyWeaponModalOpenChange,
   } = useDisclosure()
   const [modifyingWeapon, setModifyingWeapon] = useState<any>(null)
+  const [modifyingAmmunition, setModifyingAmmunition] = useState<any>(null)
   const [isUpdatingModifications, setIsUpdatingModifications] = useState(false)
   const [modTypeFilter, setModTypeFilter] = useState<'Melhoria' | 'Maldição'>('Melhoria')
+
+  // Ammunition Modification Modal state
+  const {
+    isOpen: isModifyAmmunitionModalOpen,
+    onOpen: onModifyAmmunitionModalOpen,
+    onOpenChange: onModifyAmmunitionModalOpenChange,
+  } = useDisclosure()
 
   // RANK AND CATEGORY LIMITS
   const [rank, setRank] = useState(character.rank || 'Recruta')
@@ -818,6 +852,44 @@ export default function CharacterShow(initialProps: CharacterProps) {
     const currentModSum =
       weapon.modifications?.reduce((sum: number, m: any) => sum + (m.category || 0), 0) || 0
     const newFinalCategory = Math.max(0, rawBase + currentModSum + modCategory - catReduction)
+
+    if (newFinalCategory > 4) {
+      return { allowed: false, reason: `Categoria ${newFinalCategory} não existe.` }
+    }
+
+    if (newFinalCategory <= 0) {
+      return { allowed: true }
+    }
+
+    const limit = limits[newFinalCategory] ?? 0
+    const currentUsedOfNewCategory = categoryConsumption[newFinalCategory] || 0
+
+    if (currentUsedOfNewCategory >= limit) {
+      const romanCats = ['I', 'II', 'III', 'IV']
+      return {
+        allowed: false,
+        reason: `Limite de ${limit} item(ns) CAT ${romanCats[newFinalCategory - 1]} para patente ${rank} atingido.`,
+      }
+    }
+
+    return { allowed: true }
+  }
+
+  const canApplyAmmunitionModification = (
+    ammo: any,
+    modCategory: number
+  ): { allowed: boolean; reason?: string } => {
+    if (!ammo) return { allowed: false, reason: 'Nenhuma munição selecionada.' }
+    const limits = RANK_LIMITS[rank] || {}
+
+    const rawBase =
+      typeof ammo.category === 'string'
+        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(ammo.category) + 1
+        : ammo.category || 0
+
+    const currentModSum =
+      ammo.modifications?.reduce((sum: number, m: any) => sum + (m.category || 0), 0) || 0
+    const newFinalCategory = Math.max(0, rawBase + currentModSum + modCategory)
 
     if (newFinalCategory > 4) {
       return { allowed: false, reason: `Categoria ${newFinalCategory} não existe.` }
@@ -1221,6 +1293,38 @@ export default function CharacterShow(initialProps: CharacterProps) {
           onSuccess: () => {
             setIsUpdatingModifications(false)
           },
+          onError: () => setIsUpdatingModifications(false),
+          preserveScroll: true,
+          preserveState: true,
+        }
+      )
+    }
+  }
+
+  // Toggle Ammunition Modification
+  const toggleAmmunitionModification = async (
+    characterAmmunitionId: number,
+    modificationId: number,
+    action: 'add' | 'remove'
+  ) => {
+    setIsUpdatingModifications(true)
+
+    if (action === 'add') {
+      router.post(
+        `/characters/${character.id}/ammunitions/${characterAmmunitionId}/modifications`,
+        { modificationId },
+        {
+          onSuccess: () => setIsUpdatingModifications(false),
+          onError: () => setIsUpdatingModifications(false),
+          preserveScroll: true,
+          preserveState: true,
+        }
+      )
+    } else {
+      router.delete(
+        `/characters/${character.id}/ammunitions/${characterAmmunitionId}/modifications/${modificationId}`,
+        {
+          onSuccess: () => setIsUpdatingModifications(false),
           onError: () => setIsUpdatingModifications(false),
           preserveScroll: true,
           preserveState: true,
@@ -2283,10 +2387,41 @@ export default function CharacterShow(initialProps: CharacterProps) {
       uniqueId: `general-${g.id}-${index}`,
     }))
 
-    const allItems = [...weapons, ...protections, ...generalItems]
+    const ammunitions = inventoryAmmunitions.map((a, index) => {
+      const baseCategory =
+        typeof a.category === 'string'
+          ? ['I', 'II', 'III', 'IV', 'V'].indexOf(a.category) + 1
+          : a.category || 0
+
+      const modsCategorySum =
+        a.modifications?.reduce((sum: number, mod: any) => sum + (mod.category || 0), 0) || 0
+
+      const finalCategory = Math.max(0, baseCategory + modsCategorySum)
+
+      return {
+        id: a.id,
+        ammunitionId: a.ammunitionId,
+        name: a.name,
+        desc: a.description || '',
+        qty: a.quantity ?? 1,
+        weight: `${a.spaces} Espaços`,
+        spaces: a.spaces || 0,
+        type: 'Munição',
+        category: a.category,
+        baseCategory,
+        calculatedCategory: finalCategory,
+        equipped: false as const,
+        itemKind: 'ammunition' as const,
+        uniqueId: `ammunition-${a.id}-${index}`,
+        modifications: a.modifications,
+        notes: a.notes,
+      }
+    })
+
+    const allItems = [...weapons, ...protections, ...generalItems, ...ammunitions]
 
     return allItems
-  }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems])
+  }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems, inventoryAmmunitions, favoriteWeaponName, favoriteWeaponCategoryReduction])
 
   // Calcular consumo por categoria (moved here after inventory declaration)
   const categoryConsumption = useMemo(() => {
@@ -2625,6 +2760,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
               setModifyingWeapon(item)
               onModifyWeaponModalOpen()
             }}
+            onModifyAmmunition={(item) => {
+              setModifyingAmmunition(item)
+              onModifyAmmunitionModalOpen()
+            }}
             onRemoveItem={removeItem}
             onEquipItem={toggleEquipItem}
             onExpandItem={setExpandedItemId}
@@ -2646,6 +2785,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
               damage: string; 
               critical: string; 
               criticalMultiplier: string;
+              isThrowable?: boolean;
+              isThrow?: boolean;
               modifications?: any[]
             }) => {
               const isMelee = w.range === 'Corpo a corpo'
@@ -2695,6 +2836,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
               const ritualCritBonus = ritualBuffs.reduce((s, b) => s + (b.weaponThreatRangeBonus ?? 0), 0)
               const ritualExtraDice = ritualBuffs.map(b => b.weaponExtraDamageDice).filter(Boolean) as string[]
 
+              // --- LÓGICA DE ARREMESSO (EMPUXO) ---
+              const hasEmpuxo = (w.modifications || []).some((m: any) => m.name === 'Empuxo')
+              const throwExtraDice: string[] = []
+              if (w.isThrow && hasEmpuxo) {
+                // "2d6" -> "1d6"
+                const diceMatch = w.damage.match(/d(\d+)/i)
+                if (diceMatch) {
+                  throwExtraDice.push(`1d${diceMatch[1]}`)
+                }
+              }
+
 
               // Consome buffs de duração 'next_attack' após a rolagem (Habilidades e Rituais)
               if (combatBuffs.length > 0 || ritualBuffs.some(b => b.weaponDuration === 'next_attack')) {
@@ -2727,7 +2879,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   extraAttackBonus: extraAttackBonus + modAttackBonus + ritualAttackBonus,
                   extraDamageBonus: extraDamageBonus + modDamageBonus + ritualDamageBonus,
                   extraCritBonus: extraCritBonus + modCritBonus + ritualCritBonus,
-                  extraDamageDice: ritualExtraDice,
+                  extraDamageDice: [...ritualExtraDice, ...throwExtraDice],
                 },
                 strength,
                 agility,
@@ -3678,6 +3830,144 @@ export default function CharacterShow(initialProps: CharacterProps) {
         isLoading={isAddingAbility}
         onConfirm={(id) => addRitual(id)}
       />
+
+      {/* Modal de Modificação de Munição */}
+      <BaseModal
+        isOpen={isModifyAmmunitionModalOpen}
+        onClose={onModifyAmmunitionModalOpenChange}
+        maxWidth="max-w-xl"
+        height="h-[90vh]"
+        title={
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-amber-500/10 rounded-lg text-amber-400">
+              <Target size={20} />
+            </div>
+            <div>
+              <div className="text-xl font-bold text-white">Modificar {modifyingAmmunition?.name}</div>
+              <div className="text-xs text-zinc-500">Melhorias e Maldiçöes</div>
+            </div>
+          </div>
+        }
+        footer={
+          <button
+            onClick={onModifyAmmunitionModalOpenChange}
+            className="ml-auto px-5 py-2 rounded-md font-medium text-red-400 hover:bg-red-500/10 transition-colors text-sm"
+          >
+            Fechar
+          </button>
+        }
+      >
+        <div className="space-y-5">
+          {/* Modificações Atuais */}
+          <div>
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
+              Modificações Atuais
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {modifyingAmmunition?.modifications && modifyingAmmunition.modifications.length > 0 ? (
+                modifyingAmmunition.modifications.map((mod: any) => {
+                  const isCurse = mod.type === 'Maldição'
+                  const elemClasses: Record<string, string> = {
+                    Sangue: 'bg-red-500/10 text-red-300 border-red-500/30',
+                    Morte: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
+                    Energia: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+                    Conhecimento: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+                  }
+                  const cls = isCurse
+                    ? elemClasses[mod.element] || 'bg-red-500/10 text-red-300 border-red-500/30'
+                    : 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+                  return (
+                    <button
+                      key={mod.id}
+                      onClick={() =>
+                        toggleAmmunitionModification(modifyingAmmunition.id, mod.modificationId, 'remove')
+                      }
+                      title="Clique para remover"
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all hover:opacity-70 ${cls}`}
+                    >
+                      {mod.name}
+                      <span className="text-[10px] opacity-60">&times;</span>
+                    </button>
+                  )
+                })
+              ) : (
+                <span className="text-sm text-zinc-600 italic">Nenhuma modificação aplicada.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="h-px bg-zinc-800" />
+
+          {/* Catálogo de Melhorias */}
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Catálogo de Melhorias</p>
+          </div>
+
+          {/* Grade de modificações */}
+          <div className="space-y-2">
+            {(catalogWeaponModifications || [])
+              .filter((m: any) => m.type === 'Melhoria de Munição')
+              .map((mod) => {
+                const isActive = modifyingAmmunition?.modifications?.some(
+                  (m: any) => m.modificationId === mod.id
+                )
+                const validation = !isActive
+                  ? canApplyAmmunitionModification(modifyingAmmunition, mod.category)
+                  : { allowed: true }
+                const isBlocked = !isActive && !validation.allowed
+                return (
+                  <button
+                    key={mod.id}
+                    disabled={isBlocked}
+                    onClick={
+                      isBlocked
+                        ? undefined
+                        : () =>
+                            toggleAmmunitionModification(
+                              modifyingAmmunition!.id,
+                              mod.id,
+                              isActive ? 'remove' : 'add'
+                            )
+                    }
+                    title={isBlocked ? validation.reason : undefined}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
+                      isBlocked
+                        ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                        : isActive
+                          ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/40'
+                          : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span
+                        className={`font-semibold text-sm ${isActive ? 'text-blue-300' : 'text-zinc-200'}`}
+                      >
+                        {mod.name}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">
+                        +{mod.category} CAT
+                      </span>
+                    </div>
+                    {mod.description && (
+                      <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">
+                        {mod.description}
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <span
+                        className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-500' : isActive ? 'text-blue-400' : 'text-zinc-600'}`}
+                      >
+                        {isBlocked ? validation.reason : 'MELHORIA DE MUNIÇÃO'}
+                      </span>
+                      {isActive && <Check size={11} className="text-blue-400" />}
+                    </div>
+                  </button>
+                )
+              })}
+          </div>
+        </div>
+      </BaseModal>
+
       {/* Modal de Modificação de Arma */}
       <BaseModal
         isOpen={isModifyWeaponModalOpen}
@@ -3774,8 +4064,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
           <div className="space-y-5">
             {modTypeFilter === 'Maldição' ? (
               (['Sangue', 'Morte', 'Energia', 'Conhecimento'] as const).map((element) => {
-                const elemMods = catalogAmmunitions.filter(
-                  (m) => m.type === 'Maldição' && m.element === element
+                const elemMods = (catalogWeaponModifications || []).filter(
+                  (m: any) => m.type === 'Maldição' && m.element === element
                 )
                 if (elemMods.length === 0) return null
 
@@ -3876,8 +4166,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
               })
             ) : (
               <div className="space-y-2">
-                {catalogAmmunitions
-                  .filter((m) => m.type === 'Melhoria')
+                {(catalogWeaponModifications || [])
+                  .filter((m: any) => m.type === 'Melhoria')
                   .map((mod) => {
                     const isActive = modifyingWeapon?.modifications?.some(
                       (m: any) => m.modificationId === mod.id

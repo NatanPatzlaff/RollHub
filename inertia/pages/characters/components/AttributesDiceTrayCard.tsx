@@ -559,14 +559,20 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         const dmgCount = rollParams?.dmgCount || 1
         const isCritical = atkDice.some((val: number) => val >= (rollParams?.critThreshold || 20))
         
-        // Crítico: usa todos os dados. Normal: usa apenas os primeiros dmgCount
+        // Crítico: usa todos os dados. Normal: usa apenas os primeiros dmgCount + extra
+        const extraDamageCountAtk = rollParams?.extraDamageCount || 0
+        const totalDmgCountAtk = dmgCount + extraDamageCountAtk
         const dmgDice = isCritical 
           ? allDmgDice 
-          : allDmgDice.slice(0, dmgCount)
+          : allDmgDice.slice(0, totalDmgCountAtk)
         
         const atkBonus = rollParams?.atkBonus || 0
         const dmgBonus = rollParams?.dmgBonus || 0
         const atkTotal = Math.max(...atkDice) + atkBonus
+        
+        const extraDamageCount = rollParams?.extraDamageCount || 0
+        const totalDmgCount = dmgCount + extraDamageCount
+        
         const baseDiceTotal = dmgDice.reduce((acc: number, val: number) => acc + val, 0)
         const finalDmg = baseDiceTotal + dmgBonus
 
@@ -987,6 +993,10 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
             critMultiplier,
             dmgSides,
             dmgCount,
+            extraDamageCount: (weapon.extraDamageDice || []).reduce((acc, diceStr) => {
+              const m = diceStr.match(/^(\d+)d/i)
+              return acc + (m ? parseInt(m[1]) : 0)
+            }, 0),
             atkLabel,
             dmgLabel,
             skill,

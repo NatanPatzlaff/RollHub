@@ -70,6 +70,16 @@ router
       'removeWeaponModification',
     ])
 
+    // Ammunition Modifications
+    router.post('/characters/:id/ammunitions/:ammunitionId/modifications', [
+      CharactersController,
+      'addAmmunitionModification',
+    ])
+    router.delete('/characters/:id/ammunitions/:ammunitionId/modifications/:modificationId', [
+      CharactersController,
+      'removeAmmunitionModification',
+    ])
+
     router.delete('/characters/:id', [CharactersController, 'destroy'])
     router.put('/characters/:id/stats', [CharacterStatsController, 'update'])
 

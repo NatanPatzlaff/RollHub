@@ -18,6 +18,7 @@ import ParanormalPower from '#models/paranormal_power'
 import CharacterParanormalPower from '#models/character_paranormal_power'
 import OriginAbility from '#models/origin_ability'
 import CampaignRoll from '#models/campaign_roll'
+import Ammunition from '#models/ammunition'
 import {
   storeCharacterValidator,
   updateCharacterValidator,
@@ -340,19 +341,23 @@ export default class CharactersController {
         generalItemsRows,
         cursedItemsRows,
         ammunitionRows,
+        weaponModificationsRows,
         characterWeaponsRows,
+        characterAmmunitionsRows,
         characterWeaponModificationsRows,
         characterProtectionsRows,
         characterGeneralItemsRows,
         protectionModificationsRows,
         characterProtectionModificationsRows,
+        characterAmmunitionModificationsRows,
         characterGeneralItemModificationsRows,
       ] = await Promise.all([
         db.from('weapons').select('*').orderBy('name', 'asc'),
         db.from('protections').select('*').orderBy('name', 'asc'),
         db.from('general_items').select('*').orderBy('name', 'asc'),
         db.from('cursed_items').select('*').orderBy('name', 'asc'),
-        db.from('weapon_modifications').select('*').orderBy('name', 'asc'), // Todas as modificações (Melhorias, Acessórios, Munição)
+        Ammunition.all(),
+        db.from('weapon_modifications').select('*').orderBy('name', 'asc'),
         db
           .from('character_weapons')
           .where('character_id', character.id)
@@ -369,6 +374,17 @@ export default class CharactersController {
             'weapons.description',
             'weapons.spaces',
             'weapons.category'
+          ),
+        db
+          .from('character_ammunitions')
+          .where('character_id', character.id)
+          .leftJoin('ammunitions', 'character_ammunitions.ammunition_id', 'ammunitions.id')
+          .select(
+            'character_ammunitions.*',
+            'ammunitions.name',
+            'ammunitions.spaces',
+            'ammunitions.description',
+            'ammunitions.category'
           ),
         db
           .from('character_weapon_modifications')
@@ -440,6 +456,30 @@ export default class CharactersController {
             'protection_modifications.type as mod_type',
             'protection_modifications.element as mod_element',
             'protection_modifications.category as mod_category'
+          ),
+        db
+          .from('character_ammunition_modifications')
+          .join(
+            'character_ammunitions',
+            'character_ammunition_modifications.character_ammunition_id',
+            'character_ammunitions.id'
+          )
+          .where('character_ammunitions.character_id', character.id)
+          .leftJoin(
+            'weapon_modifications',
+            'character_ammunition_modifications.modification_id',
+            'weapon_modifications.id'
+          )
+          .select(
+            'character_ammunition_modifications.*',
+            'weapon_modifications.name as mod_name',
+            'weapon_modifications.type as mod_type',
+            'weapon_modifications.element as mod_element',
+            'weapon_modifications.category as mod_category',
+            'weapon_modifications.attack_bonus as mod_attack_bonus',
+            'weapon_modifications.damage_bonus as mod_damage_bonus',
+            'weapon_modifications.critical_bonus as mod_critical_bonus',
+            'weapon_modifications.special_properties as mod_special_properties'
           ),
         db
           .from('character_general_item_modifications')
@@ -531,19 +571,31 @@ export default class CharactersController {
         protectionTypeRestriction: r.protection_type_restriction,
       }))
 
-      // Catálogo de munições (tipo especial de modificação de arma)
-      const catalogAmmunitions = ammunitionRows.map((r: any) => ({
+      const catalogWeaponModifications = weaponModificationsRows.map((r: any) => ({
         id: r.id,
         name: r.name,
         category: r.category,
         type: r.type,
+        element: r.element,
         description: r.description,
+        specialProperties: r.special_properties,
         damageBonus: r.damage_bonus,
         damageTypeOverride: r.damage_type_override,
         criticalBonus: r.critical_bonus,
         criticalMultiplierBonus: r.critical_multiplier_bonus,
-        element: r.element,
+        attackBonus: r.attack_bonus,
         weaponTypeRestriction: r.weapon_type_restriction,
+      }))
+
+      // Catálogo de munições (da nova tabela Ammunition)
+      const catalogAmmunitions = ammunitionRows.map((a: Ammunition) => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        category: a.category,
+        spaces: a.spaces,
+        duration: a.duration,
+        weaponTypeRestriction: a.weaponTypeRestriction,
       }))
 
       // Itens do inventário do personagem (armas)
@@ -564,6 +616,36 @@ export default class CharactersController {
         category: cw.category,
         modifications: characterWeaponModificationsRows
           .filter((m: any) => m.character_weapon_id === cw.id)
+          .map((m: any) => ({
+            id: m.id,
+            modificationId: m.modification_id,
+            name: m.mod_name,
+            type: m.mod_type,
+            element: m.mod_element,
+            category: m.mod_category,
+            attackBonus: m.mod_attack_bonus || 0,
+            damageBonus: m.mod_damage_bonus || null,
+            criticalBonus: m.mod_critical_bonus || 0,
+            specialProperties: m.mod_special_properties
+              ? typeof m.mod_special_properties === 'string'
+                ? JSON.parse(m.mod_special_properties)
+                : m.mod_special_properties
+              : null,
+          })),
+      }))
+
+      const inventoryAmmunitions = characterAmmunitionsRows.map((ca: any) => ({
+        id: ca.id,
+        ammunitionId: ca.ammunition_id,
+        name: ca.name,
+        quantity: ca.quantity,
+        spaces: ca.spaces || 0,
+        category: ca.category,
+        description: ca.description,
+        notes: ca.notes,
+        type: 'Ammunition',
+        modifications: characterAmmunitionModificationsRows
+          .filter((m: any) => m.character_ammunition_id === ca.id)
           .map((m: any) => ({
             id: m.id,
             modificationId: m.modification_id,
@@ -730,9 +812,11 @@ export default class CharactersController {
         catalogCursedItems,
         catalogAmmunitions,
         catalogProtectionModifications,
+        catalogWeaponModifications,
         inventoryWeapons,
         inventoryProtections,
         inventoryGeneralItems,
+        inventoryAmmunitions,
       })
     } catch (error) {
       console.error('[CHARACTER SHOW] Error loading character:', error)
@@ -1589,7 +1673,7 @@ export default class CharactersController {
     return response.redirect().back()
   }
 
-  async addItem({ params, request, response, auth }: HttpContext) {
+  async addItem({ params, request, response, auth, session }: HttpContext) {
     const user = auth.user!
     const character = await Character.query()
       .where('id', params.id)
@@ -1854,19 +1938,29 @@ export default class CharactersController {
         updated_at: new Date().toISOString(),
       })
     } else if (type === 'ammunition') {
-      const item = await db.from('weapon_modifications').where('id', itemId).first()
-      if (!item) return response.notFound({ error: 'Munição não encontrada' })
+      const item = await db.from('ammunitions').where('id', itemId).first()
+      if (!item) {
+        session.flash('error', 'Munição não encontrada')
+        return response.redirect().back()
+      }
 
       const itemTotalSpaces = (item.spaces || 0) * qty
       if (totalUsed + itemTotalSpaces > maxCapacity) {
-        return response.badRequest({
-          error: `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`,
-        })
+        session.flash('error', `Limite de carga atingido! Máximo permitido: ${maxCapacity} espaços.`)
+        return response.redirect().back()
       }
 
-      await db.table('character_general_items').insert({
+      if (item.category > 0 && !checkCategoryLimit(item.category, qty)) {
+        session.flash(
+          'error',
+          `Limite de itens de Categoria ${item.category} atingido para a patente ${character.rank || 'Recruta'}.`
+        )
+        return response.redirect().back()
+      }
+
+      await db.table('character_ammunitions').insert({
         character_id: character.id,
-        general_item_id: itemId,
+        ammunition_id: itemId,
         quantity: qty,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1960,6 +2054,29 @@ export default class CharactersController {
         }
       } catch (error: any) {
         console.error('[removeItem] Erro ao verificar character_general_items:', error.message)
+      }
+    }
+
+    // Verifica em character_ammunitions
+    if (!removed) {
+      try {
+        const ammunition = await db
+          .from('character_ammunitions')
+          .where('id', itemId)
+          .where('character_id', character.id)
+          .first()
+        console.log('[removeItem] ammunition:', ammunition)
+        if (ammunition) {
+          await db
+            .from('character_ammunitions')
+            .where('id', itemId)
+            .where('character_id', character.id)
+            .delete()
+          console.log('[removeItem] Munição removida com sucesso')
+          removed = true
+        }
+      } catch (error: any) {
+        console.error('[removeItem] Erro ao verificar character_ammunitions:', error.message)
       }
     }
 
@@ -2175,6 +2292,253 @@ export default class CharactersController {
     await db
       .from('character_weapon_modifications')
       .where('character_weapon_id', characterWeapon.id)
+      .where('modification_id', modificationId)
+      .delete()
+
+    return response.redirect().back()
+  }
+
+  async addAmmunitionModification({ params, request, response, auth, session }: HttpContext) {
+    const user = auth.user!
+    const { id, ammunitionId } = params
+    const { modificationId } = await request.validateUsing(addModificationValidator)
+
+    const character = await Character.query().where('id', id).where('userId', user.id).firstOrFail()
+
+    // Verify character ammunition belongs to character
+    const characterAmmunition = await db
+      .from('character_ammunitions')
+      .where('id', ammunitionId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterAmmunition) {
+      session.flash('error', 'Munição do personagem não encontrada')
+      return response.redirect().back()
+    }
+
+    // Check if modification already exists
+    const existing = await db
+      .from('character_ammunition_modifications')
+      .where('character_ammunition_id', characterAmmunition.id)
+      .where('modification_id', modificationId)
+      .first()
+
+    if (existing) {
+      session.flash('error', 'Modificação já aplicada')
+      return response.redirect().back()
+    }
+
+    const modification = await db.from('weapon_modifications').where('id', modificationId).first()
+    if (!modification) {
+      session.flash('error', 'Modificação não encontrada')
+      return response.redirect().back()
+    }
+
+    if (modification.type !== 'Melhoria de Munição') {
+      session.flash('error', 'Esta modificação não pode ser aplicada em munições.')
+      return response.redirect().back()
+    }
+
+    // Busca a munição base para obter categoria e nome (para restrição)
+    const ammunitionData = await db
+      .from('ammunitions')
+      .where('id', characterAmmunition.ammunition_id)
+      .first()
+
+    if (!ammunitionData) {
+      session.flash('error', 'Dados da munição base não encontrados')
+      return response.redirect().back()
+    }
+
+    // Valida weapon_type_restriction
+    if (modification.weapon_type_restriction) {
+      const allowedTypes = typeof modification.weapon_type_restriction === 'string'
+        ? JSON.parse(modification.weapon_type_restriction)
+        : modification.weapon_type_restriction
+      
+      if (Array.isArray(allowedTypes) && allowedTypes.length > 0) {
+        const ammoName = ammunitionData.name || ''
+        const isAllowed = allowedTypes.some((type: string) => ammoName.includes(type))
+        if (!isAllowed) {
+          session.flash('error', `Esta modificação é restrita a: ${allowedTypes.join(', ')}`)
+          return response.redirect().back()
+        }
+      }
+    }
+
+    const rawBase = ammunitionData
+      ? typeof ammunitionData.category === 'string'
+        ? ['I', 'II', 'III', 'IV', 'V'].indexOf(ammunitionData.category) + 1
+        : Number(ammunitionData.category || 0)
+      : 0
+
+    // Soma das mods já aplicadas à munição específica
+    const currentAmmoMods = await db
+      .from('character_ammunition_modifications')
+      .where('character_ammunition_id', characterAmmunition.id)
+      .leftJoin(
+        'weapon_modifications',
+        'character_ammunition_modifications.modification_id',
+        'weapon_modifications.id'
+      )
+      .sum('weapon_modifications.category as total')
+      .first()
+    const currentModSum = Number(currentAmmoMods?.total || 0)
+
+    const newFinalCat = Math.max(0, rawBase + currentModSum + Number(modification.category || 0))
+
+    if (newFinalCat > 4) {
+      session.flash('error', `Categoria resultante (${newFinalCat}) excede o máximo permitido (IV).`)
+      return response.redirect().back()
+    }
+
+    // Validação de contagem por patente (Problema 2)
+    if (newFinalCat > 0) {
+      const rankName = character.rank || 'Recruta'
+      const RANK_LIMITS_MOD: Record<string, Record<number, number>> = {
+        'Recruta': { 1: 2, 2: 0, 3: 0, 4: 0 },
+        'Operador': { 1: 3, 2: 1, 3: 0, 4: 0 },
+        'Agente Especial': { 1: 3, 2: 2, 3: 1, 4: 0 },
+        'Oficial de Operações': { 1: 3, 2: 3, 3: 2, 4: 1 },
+        'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
+      }
+
+      const limit = RANK_LIMITS_MOD[rankName]?.[newFinalCat] ?? 0
+      if (limit <= 0) {
+        session.flash(
+          'error',
+          `Patente ${rankName} não permite itens de Categoria ${['I', 'II', 'III', 'IV'][newFinalCat - 1]}.`
+        )
+        return response.redirect().back()
+      }
+
+      // Conta quantos itens da mesma categoria o personagem já tem
+      const [weaponsCats, protectionsCats, generalCats, cursedCats, ammunitionsCats] =
+        await Promise.all([
+          db
+            .from('character_weapons')
+            .where('character_id', character.id)
+            .leftJoin('weapons', 'character_weapons.weapon_id', 'weapons.id')
+            .leftJoin(
+              'character_weapon_modifications',
+              'character_weapons.id',
+              'character_weapon_modifications.character_weapon_id'
+            )
+            .leftJoin(
+              'weapon_modifications',
+              'character_weapon_modifications.modification_id',
+              'weapon_modifications.id'
+            )
+            .select('character_weapons.id', 'weapons.category', 'weapons.name')
+            .sum('weapon_modifications.category as mod_sum')
+            .groupBy('character_weapons.id', 'weapons.category', 'weapons.name')
+            .then((rows) =>
+              rows.map((r) => {
+                const base =
+                  typeof r.category === 'string'
+                    ? ['I', 'II', 'III', 'IV', 'V'].indexOf(r.category) + 1
+                    : Number(r.category || 0)
+                // Ignoramos redução de trilha aqui para simplificar a contagem bruta conforme addItem
+                return Math.max(0, base + Number(r.mod_sum || 0))
+              })
+            ),
+          db
+            .from('character_protections')
+            .where('character_id', character.id)
+            .leftJoin('protections', 'character_protections.protection_id', 'protections.id')
+            .select('protections.category')
+            .then((rows) => rows.map((r) => r.category)),
+          db
+            .from('character_general_items')
+            .where('character_id', character.id)
+            .leftJoin('general_items', 'character_general_items.general_item_id', 'general_items.id')
+            .select('general_items.category', 'character_general_items.quantity')
+            .then((rows) => rows.flatMap((r) => Array(r.quantity || 1).fill(r.category))),
+          db
+            .from('character_cursed_items')
+            .where('character_id', character.id)
+            .leftJoin('cursed_items', 'character_cursed_items.cursed_item_id', 'cursed_items.id')
+            .select('cursed_items.category', 'character_cursed_items.quantity')
+            .then((rows) => rows.flatMap((r) => Array(r.quantity || 1).fill(r.category))),
+          db
+            .from('character_ammunitions')
+            .where('character_id', character.id)
+            .leftJoin('ammunitions', 'character_ammunitions.ammunition_id', 'ammunitions.id')
+            .leftJoin(
+              'character_ammunition_modifications',
+              'character_ammunitions.id',
+              'character_ammunition_modifications.character_ammunition_id'
+            )
+            .leftJoin(
+              'weapon_modifications',
+              'character_ammunition_modifications.modification_id',
+              'weapon_modifications.id'
+            )
+            .select('character_ammunitions.id', 'ammunitions.category')
+            .sum('weapon_modifications.category as mod_sum')
+            .groupBy('character_ammunitions.id', 'ammunitions.category')
+            .then((rows) =>
+              rows.map((r) => {
+                const base =
+                  typeof r.category === 'string'
+                    ? ['I', 'II', 'III', 'IV', 'V'].indexOf(r.category) + 1
+                    : Number(r.category || 0)
+                const currentFinal = Math.max(0, base + Number(r.mod_sum || 0))
+                // Se for a munição que estamos editando AGORA, retornamos 0 para não contar ela mesma no limite futuro
+                return r.id === characterAmmunition.id ? 0 : currentFinal
+              })
+            ),
+        ])
+
+      const currentCount = [
+        ...weaponsCats,
+        ...protectionsCats,
+        ...generalCats,
+        ...cursedCats,
+        ...ammunitionsCats,
+      ].filter((c) => c === newFinalCat).length
+
+      if (currentCount >= limit) {
+        session.flash(
+          'error',
+          `Limite de itens de Categoria ${newFinalCat} atingido para a patente ${rankName} (${currentCount}/${limit}).`
+        )
+        return response.redirect().back()
+      }
+    }
+
+    const now = new Date().toISOString()
+    await db.table('character_ammunition_modifications').insert({
+      character_ammunition_id: characterAmmunition.id,
+      modification_id: modificationId,
+      created_at: now,
+      updated_at: now,
+    })
+
+    return response.redirect().back()
+  }
+
+  async removeAmmunitionModification({ params, response, auth }: HttpContext) {
+    const user = auth.user!
+    const { id, ammunitionId, modificationId } = params
+
+    const character = await Character.query().where('id', id).where('userId', user.id).firstOrFail()
+
+    // Verify character ammunition belongs to character
+    const characterAmmunition = await db
+      .from('character_ammunitions')
+      .where('id', ammunitionId)
+      .where('character_id', character.id)
+      .first()
+
+    if (!characterAmmunition) {
+      return response.notFound({ error: 'Munição do personagem não encontrada' })
+    }
+
+    await db
+      .from('character_ammunition_modifications')
+      .where('character_ammunition_id', characterAmmunition.id)
       .where('modification_id', modificationId)
       .delete()
 

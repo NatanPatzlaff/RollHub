@@ -59,14 +59,10 @@ export interface CatalogAmmunition {
   id: number
   name: string
   category: number
-  type: string
   description: string | null
-  damageBonus?: string | null
   spaces: number
-  damageTypeOverride?: string | null
-  criticalBonus?: number | null
-  criticalMultiplierBonus?: string | null
-  weaponTypeRestriction?: string | null
+  duration: string | null
+  weaponTypeRestriction: any | null
 }
 
 export type AddItemType = 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition'
@@ -300,13 +296,12 @@ function WeaponsTab({
                 <StatChip label="Alcance" value={item.range ?? '—'} />
                 <StatChip label="Margem crítico" value={item.critical ?? '—'} />
                 <StatChip label="Mult. crítico" value={item.criticalMultiplier ?? '—'} />
-                {(item.ammoCapacity != null || item.ammoType) && (
+                {item.ammoType && (
                   <StatChip
                     label="Munição"
                     value={
                       <span className="text-sm">
-                        {item.ammoCapacity != null ? `${item.ammoCapacity}` : '—'}
-                        {item.ammoType ? ` · ${item.ammoType}` : ''}
+                        {item.ammoType || '—'}
                       </span>
                     }
                   />
@@ -561,7 +556,7 @@ function AmmunitionsTab({
     <AnimatePresence mode="popLayout">
       {items.map((item) => {
         const key = `ammunition-${item.id}`
-        const statsLine = `${item.type} · Categoria ${item.category} · ${item.spaces} espaço(s)`
+        const statsLine = `Categoria ${item.category} · ${item.spaces} espaço(s)`
 
         return (
           <ItemCard
@@ -576,18 +571,17 @@ function AmmunitionsTab({
             expandedContent={
               <>
                 <StatChip label="Categoria" value={item.category} />
-                <StatChip label="Tipo" value={item.type} />
-                {item.damageBonus && (
-                  <StatChip label="Bônus de dano" value={item.damageBonus} />
+                <StatChip label="Espaços" value={item.spaces} />
+                {item.duration && (
+                  <StatChip label="Duração" value={item.duration} />
                 )}
-                {item.damageTypeOverride && (
-                  <StatChip label="Tipo de dano" value={item.damageTypeOverride} />
-                )}
-                {item.criticalBonus && (
-                  <StatChip label="Bônus crítico" value={item.criticalBonus} />
-                )}
-                {item.criticalMultiplierBonus && (
-                  <StatChip label="Mult. crítico" value={item.criticalMultiplierBonus} />
+                {item.weaponTypeRestriction && (
+                  <StatChip 
+                    label="Armas compatíveis" 
+                    value={Array.isArray(item.weaponTypeRestriction) 
+                      ? item.weaponTypeRestriction.join(', ')
+                      : item.weaponTypeRestriction} 
+                  />
                 )}
               </>
             }
@@ -677,13 +671,11 @@ function buildSearchEntries(
     })
   })
 
-  ammunitions
-    .filter((item: any) => item.type !== 'Melhoria' && item.type !== 'Maldição')
-    .forEach((item) => {
+  ammunitions.forEach((item) => {
     entries.push({
       key: `ammunition-${item.id}`,
       name: item.name,
-      statsLine: `${item.type} · Categoria ${item.category} · ${item.spaces} espaço(s)`,
+      statsLine: `Categoria ${item.category} · ${item.spaces} espaço(s)`,
       description: item.description,
       categoryLabel: 'Munições',
       CategoryIcon: Crosshair,

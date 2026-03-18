@@ -110,6 +110,7 @@ export default class WeaponModificationsSeeder extends BaseSeeder {
         type: 'Maldição',
         element: 'Energia',
         description: 'A arma pode ser arremessada, causa +1 dado de dano e volta voando para você. (Corpo a corpo apenas)',
+        special_properties: JSON.stringify({ throwable: true, throwExtraDice: true }),
         created_at: now,
       },
       {
@@ -176,6 +177,26 @@ export default class WeaponModificationsSeeder extends BaseSeeder {
         type: 'Maldição',
         element: 'Sangue',
         description: 'Causa sangramento cumulativo. Críticos drenam sangue (alvo fraco + 2d10 PV temporários).',
+        created_at: now,
+      },
+
+      // --- MELHORIAS DE MUNIÇÃO ---
+      {
+        name: 'Dum-Dum',
+        category: 1,
+        type: 'Melhoria de Munição',
+        description: 'Aumenta o multiplicador de crítico em +2.',
+        critical_bonus: 2,
+        weapon_type_restriction: JSON.stringify(['Balas Curtas', 'Balas Longas']),
+        created_at: now,
+      },
+      {
+        name: 'Explosiva',
+        category: 1,
+        type: 'Melhoria de Munição',
+        description: 'Causa +2d6 pontos de dano adicional do tipo impacto.',
+        damage_bonus: '+2d6 (impacto)',
+        weapon_type_restriction: JSON.stringify(['Balas Curtas', 'Balas Longas', 'Cartuchos']),
         created_at: now,
       },
     ]

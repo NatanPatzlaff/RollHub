@@ -1,25 +1,33 @@
 import { useState } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
-import { Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react'
+import { Card, CardBody, Divider, Chip, Button, Tabs, Tab, Tooltip } from '@heroui/react'
 import {
-  Backpack,
-  Flame,
   Sword,
+  Shield,
+  Package,
+  Scroll,
   Zap,
-  ChevronDown,
-  Sparkles,
+  Trash2,
   Plus,
+  Minus,
+  Edit,
+  Flame,
+  Circle,
   Square,
   Scale,
-  ArrowUp,
-  Circle,
-  Edit3,
-  Trash2,
-  Shield,
+  Target,
   Activity,
-  Dices,
+  ArrowUp,
+  ChevronDown,
+  Sparkles,
   Check,
+  Backpack,
+  Search,
+  Dices,
+  CircleHelp,
+  ArrowUpRight,
 } from 'lucide-react'
+import { RollEntry, ActiveAbilityBuff } from './AttributesDiceTrayCard'
 import BaseModal from './BaseModal'
 
 const RANK_OPTIONS = [
@@ -57,6 +65,7 @@ export interface CharacterTabsCardProps {
   onAddItem: () => void
   onRankChange: (rank: string) => void
   onModifyWeapon: (item: any) => void
+  onModifyAmmunition: (item: any) => void
   onRemoveItem: (id: number) => void
   onExpandItem: (id: string | number | null) => void
   onEquipItem: (id: number, currentEquipped: boolean) => void
@@ -77,6 +86,8 @@ export interface CharacterTabsCardProps {
     damage: string
     critical: string
     criticalMultiplier: string
+    isThrowable?: boolean
+    isThrow?: boolean
     modifications?: any[]
   }) => void
   classAbilities: any[]
@@ -209,6 +220,7 @@ export default function CharacterTabsCard({
   onAddItem,
   onRankChange,
   onModifyWeapon,
+  onModifyAmmunition,
   onRemoveItem,
   onExpandItem,
   onEquipItem,
@@ -654,6 +666,7 @@ export default function CharacterTabsCard({
                 if (item.type === 'Arma') return <Sword size={18} />
                 if (item.type === 'Armadura') return <Shield size={18} />
                 if (item.type === 'Consumível') return <Zap size={18} />
+                if (item.type === 'Munição') return <Target size={18} />
                 return <Activity size={18} />
               }
               const getIconColors = () => {
@@ -663,6 +676,8 @@ export default function CharacterTabsCard({
                   return 'bg-blue-500/10 border-blue-500/20 text-blue-400'
                 if (item.type === 'Consumível')
                   return 'bg-purple-500/10 border-purple-500/20 text-purple-400'
+                if (item.type === 'Munição')
+                  return 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                 return 'bg-orange-500/10 border-orange-500/20 text-orange-400'
               }
               return (
@@ -681,7 +696,7 @@ export default function CharacterTabsCard({
                       <div>
                         <div className="font-semibold text-zinc-200 text-sm">{item.name}</div>
                         <div className="text-[11px] text-zinc-500">{item.desc}</div>
-                        {item.type === 'Arma' && (
+                        {(item.type === 'Arma' || item.type === 'Munição') && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {/* Badge de categoria com redução da arma favorita */}
                             {(item as any).isFavoriteWeapon && (item as any).categoryReduction > 0 ? (
@@ -773,12 +788,17 @@ export default function CharacterTabsCard({
                             {item.equipped ? 'EQUIPADO' : 'EQUIPAR'}
                           </m.button>
                         )}
-                        {item.type === 'Arma' && (
+                        {(item.type === 'Arma' || item.type === 'Munição') && (
                           <button
                             className="p-1 rounded text-zinc-500 hover:text-blue-400 transition-colors"
                             onClick={(e) => {
                               e.stopPropagation()
-                              onModifyWeapon(item)
+                              if (item.type === 'Arma') {
+                                onModifyWeapon(item)
+                              } else {
+                                // @ts-ignore
+                                onModifyAmmunition?.(item)
+                              }
                             }}
                           >
                             <Edit3 size={16} />
@@ -1277,12 +1297,41 @@ export default function CharacterTabsCard({
                                 damage: w.damage || '1d6',
                                 critical: w.critical || '20',
                                 criticalMultiplier: w.criticalMultiplier || 'x2',
+                                isThrowable: w.is_throwable || false,
                                 modifications: w.modifications || [],
                               })
                             }
                           >
                             <Dices size={15} />
                           </button>
+
+                          {(() => {
+                            const hasEmpuxo = (w.modifications || []).some((m: any) => m.name === 'Empuxo')
+                            const isThrowable = w.is_throwable || hasEmpuxo
+                            if (!isThrowable) return null
+
+                            return (
+                              <button
+                                className="ml-1 p-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 rounded-lg shrink-0 transition-colors"
+                                title={`Arremessar ${w.name}`}
+                                onClick={() =>
+                                  onRollWeapon({
+                                    id: w.id,
+                                    name: w.name,
+                                    range: w.range || 'Corpo a corpo',
+                                    damage: w.damage || '1d6',
+                                    critical: w.critical || '20',
+                                    criticalMultiplier: w.criticalMultiplier || 'x2',
+                                    isThrowable: w.is_throwable || false,
+                                    modifications: w.modifications || [],
+                                    isThrow: true,
+                                  })
+                                }
+                              >
+                                <ArrowUpRight size={15} />
+                              </button>
+                            )
+                          })()}
                         </div>
                       )
                     })}

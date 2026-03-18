@@ -86,7 +86,7 @@
     "dddice-js": "^0.19.34-974",
     "edge.js": "^6.2.1",
     "framer-motion": "^12.34.2",
-    "lucide-react": "^0.575.0",
+    "lucide-react": "^0.577.0",
     "luxon": "^3.7.2",
     "mysql2": "^3.17.2",
     "react": "^19.2.4",
