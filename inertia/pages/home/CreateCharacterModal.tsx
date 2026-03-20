@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
 import { router } from '@inertiajs/react'
-import { X, ChevronRight, ChevronLeft, Check } from 'lucide-react'
+import { X, ChevronRight, ChevronLeft, Check, LucideIcon } from 'lucide-react'
 import { getOriginIcon } from '../../utils/originIcons'
 import { getClassStyle } from '../../utils/classStyles'
 

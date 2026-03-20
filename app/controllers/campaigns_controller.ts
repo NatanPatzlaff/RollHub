@@ -2,6 +2,7 @@ import { HttpContext } from '@adonisjs/core/http'
 import Campaign from '#models/campaign'
 import { createCampaignValidator, updateCampaignValidator } from '#validators/campaign'
 import db from '@adonisjs/lucid/services/db'
+import transmit from '@adonisjs/transmit/services/main'
 
 export default class CampaignsController {
   async store({ request, auth, response, session }: HttpContext) {
@@ -229,5 +230,53 @@ export default class CampaignsController {
       console.error('Erro ao limpar histórico total:', error)
       return response.internalServerError({ error: 'Erro ao limpar histórico da campanha' })
     }
+  }
+
+  async sendReactionRequest({ params, request, response, auth }: HttpContext) {
+    const campaign = await Campaign.findOrFail(params.id)
+    if (campaign.gameMasterId !== auth.user!.id) {
+      return response.forbidden({ error: 'Apenas o mestre pode solicitar reações' })
+    }
+
+    const { characterId, attackerName, actionType } = request.all()
+
+    // Transmitir evento para o canal do personagem específico
+    await transmit.broadcast(`character/${characterId}/reactions`, {
+      type: 'REACTION_REQUEST',
+      attackerName,
+      actionType, // 'attack' | 'spell' | 'other'
+      timestamp: new Date().toISOString()
+    })
+
+    return response.ok({ success: true })
+  }
+
+  async sendReactionResponse({ params, request, response, auth }: HttpContext) {
+    const { reactionType, characterId } = request.all()
+    // reactionType: 'block' | 'dodge' | 'counter'
+
+    const campaignId = params.id
+
+    // Notificar o mestre da resposta
+    await transmit.broadcast(`campaign/${campaignId}/reaction-responses`, {
+      type: 'REACTION_RESPONSE',
+      characterId,
+      reactionType,
+      playerName: auth.user!.fullName || auth.user!.email,
+      timestamp: new Date().toISOString()
+    })
+
+    return response.ok({ success: true })
+  }
+
+  async endScene({ params, response }: HttpContext) {
+    const campaignId = params.id
+
+    await transmit.broadcast(`campaign/${campaignId}/events`, {
+      type: 'SCENE_END',
+      timestamp: new Date().toISOString(),
+    })
+
+    return response.ok({ success: true })
   }
 }

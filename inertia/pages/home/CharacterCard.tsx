@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Trash2, LucideIcon } from 'lucide-react'
 import EntityCard from './EntityCard'
 import { getClassStyle } from '../../utils/classStyles'
 

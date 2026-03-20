@@ -17,8 +17,16 @@ const CharacterStatsController = () => import('#controllers/character_stats_cont
 const CampaignsController = () => import('#controllers/campaigns_controller')
 const CampaignInvitesController = () => import('#controllers/campaign_invites_controller')
 const CampaignNotesController = () => import('#controllers/campaign_notes_controller')
+const MissionsController = () => import('#controllers/missions_controller')
+const CatalogsController = () => import('#controllers/catalogs_controller')
 
 import { middleware } from '#start/kernel'
+import transmit from '@adonisjs/transmit/services/main'
+
+// Registrar rotas SSE do transmit (sem middleware de auth pois EventSource não envia cookies facilmente)
+transmit.registerRoutes((route) => {
+  route.middleware([])
+})
 
 router.get('/', [HomeController, 'index'])
 
@@ -87,9 +95,40 @@ router
     router.get('/api/campaigns/:id/notes', [CampaignNotesController, 'index'])
     router.get('/api/campaigns/:id/rolls', [CampaignsController, 'getRolls'])
     router.delete('/api/campaigns/:id/rolls', [CampaignsController, 'clearAllRolls'])
+    router.post('/api/campaigns/:id/reaction', [CampaignsController, 'sendReactionRequest'])
+    router.post('/api/campaigns/:id/reaction-response', [CampaignsController, 'sendReactionResponse'])
+    router.post('/api/campaigns/:id/end-scene', [CampaignsController, 'endScene'])
     router.post('/api/campaigns/:id/notes', [CampaignNotesController, 'store'])
     router.put('/api/campaigns/notes/:id', [CampaignNotesController, 'update'])
     router.delete('/api/campaigns/notes/:id', [CampaignNotesController, 'destroy'])
+
+    // Missions & Exploration
+    router.get('/api/campaigns/:campaignId/missions', [MissionsController, 'index'])
+    router.post('/api/campaigns/:campaignId/missions', [MissionsController, 'store'])
+    router.get('/api/campaigns/:campaignId/missions/:id', [MissionsController, 'show'])
+    router.put('/api/campaigns/:campaignId/missions/:id', [MissionsController, 'update'])
+    router.delete('/api/campaigns/:campaignId/missions/:id', [MissionsController, 'destroy'])
+
+    router.post('/api/campaigns/:campaignId/missions/:missionId/rooms', [MissionsController, 'storeRoom'])
+    router.put('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId', [MissionsController, 'updateRoom'])
+    router.delete('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId', [MissionsController, 'destroyRoom'])
+
+    router.post('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/clues', [MissionsController, 'storeClue'])
+    router.put('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/clues/:clueId', [MissionsController, 'updateClue'])
+    router.delete('/api/campaigns/:campaignId/missions/:missionId/clues/:clueId', [MissionsController, 'destroyClue'])
+
+    router.post('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/items', [MissionsController, 'storeItem'])
+    router.delete('/api/campaigns/:campaignId/missions/:missionId/items/:itemId', [MissionsController, 'destroyItem'])
+    router.post(
+      '/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/items/:itemId/collect',
+      [MissionsController, 'collectItem']
+    )
+
+    router.get('/api/catalogs', [CatalogsController, 'index'])
+
+    router.post('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/npcs', [MissionsController, 'storeNpc'])
+    router.put('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/npcs/:npcId', [MissionsController, 'updateNpc'])
+    router.delete('/api/campaigns/:campaignId/missions/:missionId/npcs/:npcId', [MissionsController, 'destroyNpc'])
   })
   .use(middleware.auth())
 

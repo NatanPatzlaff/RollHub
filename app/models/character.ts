@@ -15,6 +15,10 @@ import CharacterParanormalPower from '#models/character_paranormal_power'
 import CharacterRitual from '#models/character_ritual'
 import CharacterItem from '#models/character_item'
 import CombatParticipant from '#models/combat_participant'
+import Weapon from '#models/weapon'
+import Protection from '#models/protection'
+import Ammunition from '#models/ammunition'
+import GeneralItem from '#models/general_item'
 
 export default class Character extends BaseModel {
   @column({ isPrimary: true })
@@ -108,4 +112,32 @@ export default class Character extends BaseModel {
     pivotTable: 'campaign_members',
   })
   declare campaigns: ManyToMany<typeof Campaign>
+
+  @manyToMany(() => Weapon, {
+    pivotTable: 'character_weapons',
+    pivotColumns: ['custom_name', 'is_equipped', 'current_ammo', 'notes'],
+    pivotTimestamps: true,
+  })
+  declare weapons: ManyToMany<typeof Weapon>
+
+  @manyToMany(() => Protection, {
+    pivotTable: 'character_protections',
+    pivotColumns: ['custom_name', 'is_equipped', 'notes'],
+    pivotTimestamps: true,
+  })
+  declare protections: ManyToMany<typeof Protection>
+
+  @manyToMany(() => Ammunition, {
+    pivotTable: 'character_ammunitions',
+    pivotColumns: ['quantity', 'notes'],
+    pivotTimestamps: true,
+  })
+  declare ammunitions: ManyToMany<typeof Ammunition>
+
+  @manyToMany(() => GeneralItem, {
+    pivotTable: 'character_general_items',
+    pivotColumns: ['quantity', 'notes'],
+    pivotTimestamps: true,
+  })
+  declare generalItems: ManyToMany<typeof GeneralItem>
 }

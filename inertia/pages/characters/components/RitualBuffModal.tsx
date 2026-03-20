@@ -2,12 +2,12 @@ import { useState } from 'react'
 import BaseModal from './BaseModal'
 import type { RitualBuffEffect } from '../../../utils/ritualBuffs'
 import { getAttributeBonus } from '../../../utils/ritualBuffs'
-import { User, Users, Sword, Wind, Brain, Ghost } from 'lucide-react'
+import { User, Users, Sword, Wind, Brain, Ghost, LucideIcon } from 'lucide-react'
 
 /**
  * Tipos de atributo com seus rótulos e ícones para exibição.
  */
-const ATTR_MAP: Record<string, { label: string; color: string; icon: typeof Sword }> = {
+const ATTR_MAP: Record<string, { label: string; color: string; icon: LucideIcon }> = {
   str: {
     label: 'Força',
     color: 'text-red-400 border-red-500/30 bg-red-500/10 hover:bg-red-500/20',
@@ -136,7 +136,7 @@ export default function RitualBuffModal({
               {buff.attributeChoice!.map((attr) => {
                 const info = ATTR_MAP[attr]
                 if (!info) return null
-                const Icon = info.icon
+                const Icon: LucideIcon = info.icon
                 const isSelected = chosenAttr === attr
                 return (
                   <button

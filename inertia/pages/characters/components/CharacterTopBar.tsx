@@ -1,6 +1,6 @@
 import { Button, Chip } from '@heroui/react'
-import { Link } from '@inertiajs/react'
-import { User, Edit3, Dices } from 'lucide-react'
+import { Link as LinkIcon } from '@inertiajs/react'
+import { User, Edit3, Dices, LucideIcon } from 'lucide-react'
 
 interface CharacterTopBarProps {
     character: {
@@ -18,11 +18,11 @@ export default function CharacterTopBar({ character, onEditModal, onDiceClick }:
         <div className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
             <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/">
+                    <LinkIcon href="/">
                         <Button isIconOnly variant="light" className="text-zinc-400 hover:text-white">
                             <User size={20} />
                         </Button>
-                    </Link>
+                    </LinkIcon>
                     <div>
                         <h1
                             className="font-bold text-white text-lg leading-tight cursor-pointer hover:text-blue-400 transition-colors flex items-center gap-1 group"

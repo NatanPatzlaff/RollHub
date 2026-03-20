@@ -1,6 +1,6 @@
 import { Settings, Shield, UserPlus } from 'lucide-react'
 import { router, usePage } from '@inertiajs/react'
-import { Button, Tooltip } from '@heroui/react'
+import { Button, Tooltip, addToast } from '@heroui/react'
 
 export default function Header() {
   const { campaign } = usePage().props as any
@@ -8,7 +8,7 @@ export default function Header() {
   const copyInviteLink = () => {
     const url = `${window.location.origin}/join/${campaign.inviteCode}`
     navigator.clipboard.writeText(url)
-    alert('Link de convite copiado para a área de transferência!')
+    addToast({ title: 'Link copiado!', description: 'Link de convite copiado para a área de transferência.', color: 'success', timeout: 4000 })
   }
 
   return (

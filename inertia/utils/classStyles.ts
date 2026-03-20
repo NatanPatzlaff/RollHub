@@ -1,4 +1,4 @@
-import { Sword, Wrench, Eye, User, User2 } from 'lucide-react'
+import { Sword, Wrench, Eye, User2 } from 'lucide-react'
 
 export interface ClassStyle {
   color: string
@@ -18,7 +18,7 @@ const DEFAULT_CLASS_STYLE: ClassStyle = {
   color: 'text-zinc-400',
   bg: 'bg-zinc-800/40',
   border: 'border-zinc-600/60',
-  Icon: User,
+  Icon: User2,
 }
 
 export function getClassStyle(className: string | null | undefined): ClassStyle {

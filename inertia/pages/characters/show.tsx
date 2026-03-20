@@ -1,16 +1,17 @@
-import { Card, CardBody, Button, Chip, Divider, useDisclosure } from '@heroui/react'
-import { Head, Link, router, usePage } from '@inertiajs/react'
+import { Card, CardBody, Button, Chip, Divider, useDisclosure, addToast } from '@heroui/react'
+import { Head, Link as LinkIcon, router, usePage } from '@inertiajs/react'
 import axios from 'axios'
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { AnimatePresence } from 'framer-motion'
+import { Transmit } from '@adonisjs/transmit-client'
 import { skillDescriptions } from '../../utils/skillDescriptions'
 import {
   Zap,
   Plus,
-  Dumbbell,
   Brain,
-  Wind,
   Heart,
+  Dumbbell,
+  Wind,
   Ghost,
   User,
   Dices,
@@ -43,6 +44,15 @@ import {
   type RitualBuffEffect,
 } from '../../utils/ritualBuffs'
 import { useRitualCalculations } from '../../hooks/useRitualCalculations'
+
+const applyStepIncrease = (damage: string, steps: number): string => {
+  // Parsear "2d6" em { count: 2, die: 6 }
+  const match = damage.match(/^(\d+)d(\d+)$/)
+  if (!match) return damage
+  const count = parseInt(match[1])
+  const die = parseInt(match[2])
+  return `${count + steps}d${die}`
+}
 
 interface Origin {
   id: number
@@ -326,6 +336,7 @@ interface CharacterProps {
   catalogAmmunitions?: CatalogAmmunition[]
   catalogWeaponModifications?: any[]
   originAbilities?: OriginAbilityData[]
+  campaignId: number | null
 }
 
 export default function CharacterShow(initialProps: CharacterProps) {
@@ -352,7 +363,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
     trailProgressions = [],
     catalogRituals = [],
     originAbilities = [],
+    campaignId = null,
   } = { ...initialProps, ...pageProps } as CharacterProps
+
+  console.log('[SSE] props campaignId:', campaignId)
 
   // Normalize classTrails: backend may send camelCase (classTrails) or snake_case (class_trails)
   const classTrails: Trail[] =
@@ -410,6 +424,65 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [pe, setPe] = useState(calculatedStats?.currentPe || 3)
   const [san, setSan] = useState(calculatedStats?.currentSanity || 12)
   const [permSanLoss, setPermSanLoss] = useState(calculatedStats?.permanentSanityLoss || 0)
+
+  const [pendingReaction, setPendingReaction] = useState<any>(null)
+
+  const handleReaction = async (reactionType: string) => {
+    setPendingReaction(null)
+    try {
+      await axios.post(`/api/campaigns/${campaignId}/reaction-response`, {
+        reactionType,
+        characterId: character.id,
+      })
+      console.log('[REACTION] Resposta enviada:', reactionType)
+    } catch (e) {
+      console.error('[REACTION] Erro ao enviar resposta:', e)
+    }
+  }
+
+  // SSE para receber solicitações de reações
+  useEffect(() => {
+    console.log('[SSE] useEffect rodou, campaignId:', campaignId, 'character.id:', character.id)
+    if (!campaignId) return
+
+    const transmitClient = new Transmit({ baseUrl: window.location.origin })
+    const subscription = transmitClient.subscription(`character/${character.id}/reactions`)
+
+    subscription.create().then(() => {
+      console.log('[SSE] conectado ao canal character/' + character.id + '/reactions')
+    }).catch((e) => {
+      console.error('[SSE] erro ao criar subscription:', e)
+    })
+
+    subscription.onMessage<any>((data) => {
+      console.log('[SSE] mensagem recebida:', data)
+      if (data.type === 'REACTION_REQUEST') {
+        setPendingReaction(data)
+      }
+    })
+
+    // Canal de eventos gerais da campanha
+    const campaignSub = transmitClient.subscription(`campaign/${campaignId}/events`)
+    campaignSub.create().then(() => {
+      console.log('[SSE] conectado ao canal campaign/' + campaignId + '/events')
+    }).catch((e) => {
+      console.error('[SSE] erro canal campanha:', e)
+    })
+
+    campaignSub.onMessage<any>((data) => {
+      console.log('[SSE] evento de campanha:', data)
+      if (data.type === 'SCENE_END') {
+        resetSceneUses()
+        clearAllRitualBuffs()
+        console.log('[SCENE] Fim de cena aplicado — buffs limpos')
+      }
+    })
+
+    return () => {
+      subscription.delete().catch(() => {})
+      campaignSub.delete().catch(() => {})
+    }
+  }, [character.id, campaignId])
 
   // ── Estado de buffs ativos de rituais ───────────────────────────────────────
   interface ActiveRitualBuff {
@@ -1004,12 +1077,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     // Validate for Perito
     if (abilityName === 'Perito' && selectedSkills.length !== 2) {
-      alert('Por favor, selecione exatamente 2 perícias para Perito')
+      addToast({ title: 'Seleção inválida', description: 'Por favor, selecione exatamente 2 perícias para Perito.', color: 'warning', timeout: 4000 })
       return
     }
     // Validate for Ritual Predileto
     if (abilityName === 'Ritual Predileto' && !selectedRitual) {
-      alert('Por favor, selecione um ritual')
+      addToast({ title: 'Seleção inválida', description: 'Por favor, selecione um ritual.', color: 'warning', timeout: 4000 })
       return
     }
     // Validate for element abilities
@@ -1017,7 +1090,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       (abilityName === 'Mestre em Elemento' || abilityName === 'Especialista em Elemento') &&
       !selectedElement
     ) {
-      alert('Por favor, selecione um elemento')
+      addToast({ title: 'Seleção inválida', description: 'Por favor, selecione um elemento.', color: 'warning', timeout: 4000 })
       return
     }
 
@@ -1112,18 +1185,24 @@ export default function CharacterShow(initialProps: CharacterProps) {
       const limit = RANK_LIMITS[rank]?.[itemCategory] ?? 0
 
       if (currentConsumption + qty > limit) {
-        alert(
-          `Limite de Categoria ${categoryLabels[itemCategory]} atingido para a patente ${rank}!\nLimite: ${limit} | Atual: ${currentConsumption}`
-        )
+        addToast({ 
+          title: 'Limite de Categoria atingido', 
+          description: `Limite de Categoria ${categoryLabels[itemCategory]} atingido para a patente ${rank}!\nLimite: ${limit} | Atual: ${currentConsumption}`, 
+          color: 'warning', 
+          timeout: 4000 
+        })
         return
       }
     }
 
     // Validar limite máximo (não pode passar do dobro do limite)
     if (inventoryCapacity.used + totalAddedSpaces > inventoryCapacity.maxCapacity) {
-      alert(
-        `Limite de carga excedido! Você só pode carregar até ${inventoryCapacity.maxCapacity} espaços (o dobro do seu limite de ${inventoryCapacity.limit}).`
-      )
+      addToast({ 
+        title: 'Limite de carga excedido!', 
+        description: `Você só pode carregar até ${inventoryCapacity.maxCapacity} espaços (o dobro do seu limite de ${inventoryCapacity.limit}).`, 
+        color: 'warning', 
+        timeout: 4000 
+      })
       return
     }
 
@@ -1138,7 +1217,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         },
         onError: (errors) => {
           console.error('Erro ao adicionar item:', errors)
-          alert('Erro ao adicionar item. Verifique se o item existe e tente novamente.')
+          addToast({ title: 'Erro', description: 'Erro ao adicionar item. Verifique se o item existe e tente novamente.', color: 'danger', timeout: 4000 })
         },
       }
     )
@@ -2506,7 +2585,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       .catch((error) => {
         console.error('Erro ao remover item:', error)
         console.error('Resposta do servidor:', error.response?.data)
-        alert('Erro ao remover item. Tente novamente.')
+        addToast({ title: 'Erro', description: 'Erro ao remover item. Tente novamente.', color: 'danger', timeout: 4000 })
       })
   }
 
@@ -2519,7 +2598,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       })
       .catch((error) => {
         console.error('Erro ao equipar/desequipar item:', error)
-        alert('Erro ao atualizar item. Tente novamente.')
+        addToast({ title: 'Erro', description: 'Erro ao atualizar item. Tente novamente.', color: 'danger', timeout: 4000 })
       })
   }
 
@@ -2634,11 +2713,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
       <div className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 md:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/">
+            <LinkIcon href="/">
               <Button isIconOnly variant="light" className="text-zinc-400 hover:text-white">
                 <User size={20} />
               </Button>
-            </Link>
+            </LinkIcon>
             <div>
               <h1
                 className="font-bold text-white text-lg leading-tight cursor-pointer hover:text-blue-400 transition-colors flex items-center gap-1 group"
@@ -2720,30 +2799,38 @@ export default function CharacterShow(initialProps: CharacterProps) {
         {/* COLUNA ESQUERDA (Skills & Inventory) */}
         <div className="flex-1 min-w-0 flex flex-col gap-6">
           {/* SKILLS SECTION */}
-          <SkillsCard
-            trainedSkills={trainedSkills}
-            veteranSkills={veteranSkills}
-            expertSkills={expertSkills}
-            skillFilter={skillFilter}
-            isLearningSkills={isLearningSkills}
-            isSavingSkills={isSavingSkills}
-            showSkillInfo={showSkillInfo}
-            availableSkillsToChoose={availableSkillsToChoose}
-            totalVeteranSkillsAllowed={totalVeteranSkillsAllowed}
-            totalExpertSkillsAllowed={totalExpertSkillsAllowed}
-            originSkillsFromOrigin={originSkillsFromOrigin}
-            classMandatorySkills={classMandatorySkills}
-            classSkillPools={classSkillPools}
-            characterNex={character.nex}
-            attrMap={{ FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence }}
-            onFilterChange={setSkillFilter}
-            onToggleLearning={() => setIsLearningSkills(true)}
-            onSaveSkills={saveSkills}
-            onToggleSkill={toggleSkillTraining}
-            onSkillContextMenu={handleSkillContextMenu}
-            onRollSkill={handleRollSkill}
-            onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
-          />
+          {(() => {
+            const hasDiscreta = (inventoryWeapons || []).some((w: any) =>
+              w.equipped && (w.modifications || []).some((m: any) => m.name === 'Discreta')
+            )
+            return (
+              <SkillsCard
+                trainedSkills={trainedSkills}
+                veteranSkills={veteranSkills}
+                expertSkills={expertSkills}
+                skillFilter={skillFilter}
+                isLearningSkills={isLearningSkills}
+                isSavingSkills={isSavingSkills}
+                showSkillInfo={showSkillInfo}
+                availableSkillsToChoose={availableSkillsToChoose}
+                totalVeteranSkillsAllowed={totalVeteranSkillsAllowed}
+                totalExpertSkillsAllowed={totalExpertSkillsAllowed}
+                originSkillsFromOrigin={originSkillsFromOrigin}
+                classMandatorySkills={classMandatorySkills}
+                classSkillPools={classSkillPools}
+                characterNex={character.nex}
+                attrMap={{ FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence }}
+                hasDiscreta={hasDiscreta}
+                onFilterChange={setSkillFilter}
+                onToggleLearning={() => setIsLearningSkills(true)}
+                onSaveSkills={saveSkills}
+                onToggleSkill={toggleSkillTraining}
+                onSkillContextMenu={handleSkillContextMenu}
+                onRollSkill={handleRollSkill}
+                onToggleShowSkillInfo={() => setShowSkillInfo((prev) => !prev)}
+              />
+            )
+          })()}
 
           {/* TABS SECTION */}
           <CharacterTabsCard
@@ -2778,17 +2865,24 @@ export default function CharacterShow(initialProps: CharacterProps) {
             strength={strength}
             peritoPeSpending={peritoPeSpending}
             maxPeritoPe={maxPeritoPe}
-            onRollWeapon={(w: { 
-              id?: number; 
-              name: string; 
-              range: string; 
-              damage: string; 
-              critical: string; 
-              criticalMultiplier: string;
-              isThrowable?: boolean;
-              isThrow?: boolean;
-              modifications?: any[]
-            }) => {
+              onRollWeapon={(w: { 
+                id?: number; 
+                name: string; 
+                range: string; 
+                damage: string; 
+                critical: string; 
+                criticalMultiplier: string;
+                isThrowable?: boolean;
+                isThrow?: boolean;
+                isExtraAttack?: boolean;
+                extraAttackPeCost?: number;
+                modifications?: any[]
+              }) => {
+                console.log('[ON-ROLL-WEAPON] w recebido:', JSON.stringify({
+                  name: w.name,
+                  isExtraAttack: w.isExtraAttack,
+                  extraAttackPeCost: w.extraAttackPeCost
+                }))
               const isMelee = w.range === 'Corpo a corpo'
               const wType = isMelee ? 'melee' : 'ranged'
 
@@ -2796,6 +2890,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
               const modAttackBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.attackBonus ?? 0), 0)
               const modDamageBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.damageBonus ?? 0), 0)
               const modCritBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.criticalBonus ?? 0), 0)
+
+              const hasCalibreGrosso = ((w as any).modifications || []).some(
+                (m: any) => m.name === 'Calibre Grosso'
+              )
+
+              const finalDamage = hasCalibreGrosso
+                ? applyStepIncrease(w.damage, 1)
+                : w.damage
+
+              if (w.isExtraAttack) {
+                handleDeductPe(w.extraAttackPeCost ?? 2)
+              }
 
               // --- BÔNUS DE HABILIDADES ATIVAS (já existente) ---
               const combatBuffs = activeAbilityBuffs.filter((b) => {
@@ -2837,9 +2943,13 @@ export default function CharacterShow(initialProps: CharacterProps) {
               const ritualExtraDice = ritualBuffs.map(b => b.weaponExtraDamageDice).filter(Boolean) as string[]
 
               // --- LÓGICA DE ARREMESSO (EMPUXO) ---
+              const NATURALLY_THROWABLE = ['Faca', 'Machadinha', 'Lança']
+              const isNaturallyThrowable = NATURALLY_THROWABLE.some(
+                (name) => w.name.toLowerCase().includes(name.toLowerCase())
+              )
               const hasEmpuxo = (w.modifications || []).some((m: any) => m.name === 'Empuxo')
               const throwExtraDice: string[] = []
-              if (w.isThrow && hasEmpuxo) {
+              if (w.isThrow && hasEmpuxo && isNaturallyThrowable) {
                 // "2d6" -> "1d6"
                 const diceMatch = w.damage.match(/d(\d+)/i)
                 if (diceMatch) {
@@ -2873,7 +2983,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 {
                   name: w.name,
                   range: w.range,
-                  damage: w.damage,
+                  damage: finalDamage,
                   critical: w.critical || '20',
                   criticalMultiplier: w.criticalMultiplier || 'x2',
                   extraAttackBonus: extraAttackBonus + modAttackBonus + ritualAttackBonus,
@@ -4290,6 +4400,46 @@ export default function CharacterShow(initialProps: CharacterProps) {
         onClear={handleClearHistory}
         onDeleteRoll={handleDeleteRoll}
       />
+
+      {/* Modal de Reação de Combate */}
+      <BaseModal
+        isOpen={Boolean(pendingReaction)}
+        onClose={() => setPendingReaction(null)}
+        title={
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">⚔️</span> Você está sendo atacado!
+          </div>
+        }
+        description={
+          pendingReaction && (
+            <span>
+              <span className="text-orange-500 font-bold">{pendingReaction.attackerName}</span> está realizando um ataque contra você. Como você deseja reagir?
+            </span>
+          )
+        }
+        maxWidth="max-w-md"
+      >
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => handleReaction('block')}
+            className="w-full py-3 rounded-lg font-bold transition-all border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 flex items-center justify-center gap-2"
+          >
+            🛡️ Bloquear
+          </button>
+          <button
+            onClick={() => handleReaction('dodge')}
+            className="w-full py-3 rounded-lg font-bold transition-all border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 text-green-400 flex items-center justify-center gap-2"
+          >
+            💨 Esquivar
+          </button>
+          <button
+            onClick={() => handleReaction('counter')}
+            className="w-full py-3 rounded-lg font-bold transition-all border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 flex items-center justify-center gap-2"
+          >
+            ⚔️ Contra-atacar
+          </button>
+        </div>
+      </BaseModal>
     </div>
   )
 }

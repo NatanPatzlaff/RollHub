@@ -2,34 +2,27 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, Swords, Zap, Dices } from 'lucide-react'
 import GroupOverview from '../components/GroupOverview'
 import CampaignNotes from '../components/CampaignNotes'
+import MissionsTab from './MissionsTab'
 
 interface MainContentProps {
   activeTab: string
   campaign: any
   showStats: boolean
   isOwner?: boolean
+  onEndScene: () => void
 }
 
-export default function MainContent({ activeTab, campaign, showStats, isOwner = false }: MainContentProps) {
+export default function MainContent({ activeTab, campaign, showStats, isOwner = false, onEndScene }: MainContentProps) {
   return (
     <div className="flex-1 bg-[#09090B] p-6 overflow-y-auto relative">
       <AnimatePresence mode="wait">
         
-        {activeTab === 'salas' && (
-          <motion.div key="salas" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="h-full flex flex-col gap-4">
-            <h2 className="text-xl font-bold text-white mb-2">Gestor de Salas (Cenas)</h2>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="bg-[#18181B] border-2 border-[#F97316] rounded-xl p-4 cursor-pointer relative overflow-hidden">
-                <div className="absolute top-2 right-2 bg-[#F97316] text-[#09090B] text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Ativa</div>
-                <h3 className="font-bold text-white mb-1">Mansão Abandonada</h3>
-                <p className="text-xs text-[#A1A1AA]">Ambiente: Escuro • Investigação</p>
-              </div>
-              <div className="bg-[#101012] border border-[#27272A] hover:border-[#3F3F46] rounded-xl p-4 cursor-pointer">
-                <h3 className="font-bold text-white mb-1">Esgotos da Cidade</h3>
-                <p className="text-xs text-[#A1A1AA]">Ambiente: Húmido • Combate</p>
-              </div>
-            </div>
-          </motion.div>
+        {activeTab === 'missoes' && (
+          <MissionsTab 
+            campaignId={campaign.id} 
+            campaignCharacters={campaign.characters || []}
+            onEndScene={onEndScene}
+          />
         )}
 
         {activeTab === 'combates' && (

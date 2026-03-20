@@ -1,6 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { m } from 'framer-motion'
-import { Button, Card, CardBody, CardHeader, Divider, Select, SelectItem } from '@heroui/react'
+import { Button, Card, CardBody, CardHeader, Divider, Select, SelectItem, addToast } from '@heroui/react'
 import { Map, Users, Shield, Check, UserCircle } from 'lucide-react'
 import { useState } from 'react'
 
@@ -31,7 +31,7 @@ export default function InviteShow({ campaign, token, myCharacters }: Props) {
     }
 
     if (!selectedCharacter && myCharacters.length > 0) {
-      alert('Por favor, selecione um personagem para entrar na campanha.')
+      addToast({ title: 'Seleção inválida', description: 'Por favor, selecione um personagem para entrar na campanha.', color: 'warning', timeout: 4000 })
       return
     }
 

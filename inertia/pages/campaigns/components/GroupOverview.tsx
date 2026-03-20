@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { addToast } from '@heroui/react'
 import { UserPlus } from 'lucide-react'
 import { usePage } from '@inertiajs/react'
 import PlayerCard from './PlayerCard'
 
 interface GroupOverviewProps {
   players: any[]
-  showStats: boolean
+  showStats?: boolean
   isOwner?: boolean
 }
 
@@ -39,14 +40,14 @@ export default function GroupOverview({ players, showStats, isOwner = false }: G
         
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(url)
-          alert('Link de convite copiado para a área de transferência!')
+          addToast({ title: 'Link copiado!', description: 'Link de convite copiado para a área de transferência.', color: 'success', timeout: 4000 })
         } else {
           prompt('Copie o link abaixo para convidar jogadores:', url)
         }
       }
     } catch (error) {
       console.error('Erro ao gerar convite:', error)
-      alert('Falha ao gerar link de convite.')
+      addToast({ title: 'Erro', description: 'Falha ao gerar link de convite.', color: 'danger', timeout: 4000 })
     } finally {
       setIsGenerating(false)
     }

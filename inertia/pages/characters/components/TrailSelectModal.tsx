@@ -21,6 +21,7 @@ import {
   Heart,
   ActivitySquare,
   Check,
+  LucideIcon,
 } from 'lucide-react'
 import BaseModal from './BaseModal'
 
@@ -49,7 +50,7 @@ export interface TrailSelectModalProps {
 }
 
 /** Mapeamento de nome de trilha → ícone lucide-react */
-function getTrailIcon(name: string) {
+function getTrailIcon(name: string): LucideIcon {
   const n = name.toLowerCase()
   if (n.includes('aniquilador') || n.includes('atirador')) return Crosshair
   if (n.includes('comandante') || n.includes('campo')) return Users
@@ -133,7 +134,7 @@ export default function TrailSelectModal({
         <div className="flex flex-col gap-4">
           {trails.map((trail) => {
             const isSelected = selectedId === trail.id
-            const Icon = getTrailIcon(trail.name)
+            const Icon: LucideIcon = getTrailIcon(trail.name)
             const progression = trail.progression || []
 
             return (

@@ -1,16 +1,12 @@
 import { useState } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
-import { Card, CardBody, Divider, Chip, Button, Tabs, Tab, Tooltip } from '@heroui/react'
+import { Card, CardBody, Divider, Chip, Button, Tabs, Tab, Tooltip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react'
 import {
   Sword,
   Shield,
-  Package,
-  Scroll,
   Zap,
   Trash2,
   Plus,
-  Minus,
-  Edit,
   Flame,
   Circle,
   Square,
@@ -22,13 +18,22 @@ import {
   Sparkles,
   Check,
   Backpack,
-  Search,
   Dices,
-  CircleHelp,
   ArrowUpRight,
+  Swords,
+  LucideIcon,
+  Edit3,
 } from 'lucide-react'
 import { RollEntry, ActiveAbilityBuff } from './AttributesDiceTrayCard'
 import BaseModal from './BaseModal'
+
+const displayDamage = (w: any): string => {
+  const hasCalibreGrosso = (w.modifications || []).some((m: any) => m.name === 'Calibre Grosso')
+  if (!hasCalibreGrosso) return w.damage
+  const match = w.damage?.match(/^(\d+)d(\d+)$/)
+  if (!match) return w.damage
+  return `${parseInt(match[1]) + 1}d${match[2]}`
+}
 
 const RANK_OPTIONS = [
   'Recruta',
@@ -88,6 +93,8 @@ export interface CharacterTabsCardProps {
     criticalMultiplier: string
     isThrowable?: boolean
     isThrow?: boolean
+    isExtraAttack?: boolean
+    extraAttackPeCost?: number
     modifications?: any[]
   }) => void
   classAbilities: any[]
@@ -483,7 +490,7 @@ export default function CharacterTabsCard({
       {/* ═══════ TABS CUSTOMIZADOS ═══════ */}
       <div className="flex overflow-x-auto border-b border-zinc-800 mb-6 pb-[1px] scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
         {TABS.map((tab) => {
-          const Icon = tab.icon
+          const Icon: LucideIcon = tab.icon
           const isActive = activeTab === tab.id
           return (
             <button
@@ -1278,7 +1285,7 @@ export default function CharacterTabsCard({
                               {w.name}
                             </div>
                             <div className="text-[11px] text-zinc-500 mt-0.5">
-                              <span className="text-orange-400/80 font-bold">{w.damage}</span>
+                              <span className="text-orange-400/80 font-bold">{displayDamage(w)}</span>
                               <span className="mx-1.5 text-zinc-700">·</span>
                               <span>{skillName}</span>
                               {!isMelee && w.range && (
@@ -1304,6 +1311,47 @@ export default function CharacterTabsCard({
                           >
                             <Dices size={15} />
                           </button>
+
+                          {(() => {
+                            const hasExtraAttack = (classAbilities || []).some(
+                              (a: any) => (a.classAbility?.name === 'Ataque Extra' || a.title === 'Ataque Extra')
+                            )
+                            const hasVibrante = (w.modifications || []).some(
+                              (m: any) => m.name === 'Vibrante'
+                            )
+                            const showExtraAttackButton = hasExtraAttack || hasVibrante
+                            const extraAttackPeCost = (hasVibrante && hasExtraAttack) ? 1 : 2
+                            const canAffordExtraAttack = (pe ?? 0) >= extraAttackPeCost
+
+                            if (!showExtraAttackButton) return null
+
+                            return (
+                              <button
+                                className={`ml-1 p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 rounded-lg shrink-0 transition-colors ${
+                                  !canAffordExtraAttack ? 'opacity-40 cursor-not-allowed' : ''
+                                }`}
+                                title={`Ataque Extra (-${extraAttackPeCost} PE)`}
+                                disabled={!canAffordExtraAttack}
+                                onClick={() => {
+                                  console.log('[ATAQUE EXTRA] PE atual:', pe, 'Custo:', extraAttackPeCost, 'isExtraAttack enviado:', true)
+                                  onRollWeapon({
+                                    id: w.id,
+                                    name: w.name,
+                                    range: w.range || 'Corpo a corpo',
+                                    damage: w.damage || '1d6',
+                                    critical: w.critical || '20',
+                                    criticalMultiplier: w.criticalMultiplier || 'x2',
+                                    isThrowable: w.is_throwable || false,
+                                    modifications: w.modifications || [],
+                                    isExtraAttack: true,
+                                    extraAttackPeCost,
+                                  })
+                                }}
+                              >
+                                <Swords size={15} />
+                              </button>
+                            )
+                          })()}
 
                           {(() => {
                             const hasEmpuxo = (w.modifications || []).some((m: any) => m.name === 'Empuxo')

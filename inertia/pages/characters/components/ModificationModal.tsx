@@ -11,7 +11,7 @@ import {
     CardBody,
     Divider,
 } from '@heroui/react'
-import { Edit3, Check, Activity, Plus, Ghost } from 'lucide-react'
+import { Check, Activity, Ghost } from 'lucide-react'
 
 interface Modification {
     id: number

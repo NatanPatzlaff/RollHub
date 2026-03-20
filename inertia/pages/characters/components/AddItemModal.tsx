@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
-import { X, Sword, Shield, Briefcase, Eye, Crosshair, Plus, Check, Search } from 'lucide-react'
+import { X, Sword, Shield, Briefcase, Eye, Crosshair, Plus, Check, Search, LucideIcon } from 'lucide-react'
 
 // ─── Interfaces de catálogo ───────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ export interface AddItemModalProps {
 
 type TabId = 'weapons' | 'protections' | 'general' | 'cursed' | 'ammunitions'
 
-const TABS: { id: TabId; label: string; Icon: React.ElementType }[] = [
+const TABS: { id: TabId; label: string; Icon: LucideIcon }[] = [
   { id: 'weapons', label: 'Armas', Icon: Sword },
   { id: 'protections', label: 'Proteções', Icon: Shield },
   { id: 'general', label: 'Itens Gerais', Icon: Briefcase },

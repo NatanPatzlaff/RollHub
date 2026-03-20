@@ -66,6 +66,7 @@ export interface SkillsCardProps {
   onSkillContextMenu: (skillName: string, e: React.MouseEvent) => void
   onRollSkill: (skill: string, attrVal: number, trainingBonus: number, label: string) => void
   onToggleShowSkillInfo: () => void
+  hasDiscreta?: boolean
 }
 
 /**
@@ -95,6 +96,7 @@ export default function SkillsCard({
   onSkillContextMenu,
   onRollSkill,
   onToggleShowSkillInfo,
+  hasDiscreta,
 }: SkillsCardProps) {
   const originProvidedSkills = originSkillsFromOrigin.length
 
@@ -273,8 +275,13 @@ export default function SkillsCard({
                       onToggleSkill(skill.name)
                     } else if (!isLearningSkills) {
                       const attrVal = Math.max(1, attrMap[skill.attr] ?? 1)
-                      const trainingBonus = isExpert ? 15 : isVeteran ? 10 : isTrained ? 5 : 0
-                      const label = `${skill.name} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
+                      
+                      const isDiscretaCrime = hasDiscreta && skill.name === 'Crime'
+                      const effectivelyTrained = isTrained || isDiscretaCrime
+                      const baseBonus = isExpert ? 15 : isVeteran ? 10 : effectivelyTrained ? 5 : 0
+                      const trainingBonus = baseBonus + (isDiscretaCrime ? 5 : 0)
+
+                      const label = `${skill.name}${isDiscretaCrime ? ' (Discreta)' : ''} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
                       onRollSkill(skill.name, attrVal, trainingBonus, label)
                     }
                   }}
@@ -326,13 +333,22 @@ export default function SkillsCard({
                   </span>
                   <div className="flex items-center gap-1 text-[10px]">
                     <span className="opacity-70">{skill.attr}</span>
-                    {isExpert ? (
-                      <span className="font-bold text-amber-500">+15</span>
-                    ) : isVeteran ? (
-                      <span className="font-bold text-purple-400">+10</span>
-                    ) : isTrained ? (
-                      <span className="font-bold text-blue-400">+5</span>
-                    ) : null}
+                    {(() => {
+                      const isDiscretaCrime = hasDiscreta && skill.name === 'Crime'
+                      const effectivelyTrained = isTrained || isDiscretaCrime
+                      const baseBonus = isExpert ? 15 : isVeteran ? 10 : effectivelyTrained ? 5 : 0
+                      const totalBonus = baseBonus + (isDiscretaCrime ? 5 : 0)
+
+                      if (totalBonus <= 0) return null
+
+                      const colorClass = isExpert || (isDiscretaCrime && isVeteran) 
+                        ? 'text-amber-500' 
+                        : isVeteran || (isDiscretaCrime && isTrained)
+                        ? 'text-purple-400' 
+                        : 'text-blue-400'
+
+                      return <span className={`font-bold ${colorClass}`}>+{totalBonus}</span>
+                    })()}
                   </div>
                 </Button>
               )

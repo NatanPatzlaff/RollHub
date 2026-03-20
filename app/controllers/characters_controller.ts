@@ -768,7 +768,14 @@ export default class CharactersController {
         }
       }
 
+      // Buscar se o personagem está em alguma campanha
+      const campaignMember = await db
+        .from('campaign_members')
+        .where('character_id', character.id)
+        .first()
+
       return inertia.render('characters/show', {
+        campaignId: campaignMember?.campaign_id ?? null,
         character,
         classes,
         origins,

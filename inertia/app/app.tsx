@@ -2,7 +2,7 @@
 /// <reference path="../../config/inertia.ts" />
 
 import '../css/app.css';
-import { HeroUIProvider } from "@heroui/react";
+import { HeroUIProvider, ToastProvider } from "@heroui/react";
 import { LazyMotion, domAnimation } from 'framer-motion'
 import { createRoot } from 'react-dom/client';
 import { createInertiaApp } from '@inertiajs/react';
@@ -26,6 +26,7 @@ createInertiaApp({
 
     createRoot(el).render(
       <HeroUIProvider>
+        <ToastProvider placement="top-right" />
         <LazyMotion features={domAnimation}>
           <App {...props} />
         </LazyMotion>

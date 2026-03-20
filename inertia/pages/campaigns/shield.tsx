@@ -1,4 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { addToast } from "@heroui/react"
+import { Transmit } from '@adonisjs/transmit-client'
 import { Head, usePage } from '@inertiajs/react'
 import axios from 'axios'
 
@@ -14,10 +16,9 @@ const mockEntities = [
   { id: 2, name: 'Kaiser', class: 'Especialista', hp: 22, maxHp: 30, pe: 25, maxPe: 25, sanity: 15, maxSanity: 45, status: 'Machucado', initiative: 14, isMonster: false },
   { id: 3, name: 'Joui Jouki', class: 'Ocultista', hp: 15, maxHp: 20, pe: 35, maxPe: 35, sanity: 8, maxSanity: 50, status: 'Enlouquecendo', initiative: 8, isMonster: false },
 ]
-
 export default function ShieldDashboard() {
   const { campaign, auth } = usePage().props as any
-  const [activeTab, setActiveTab] = useState('salas')
+  const [activeTab, setActiveTab] = useState('missoes')
   const [showStats, setShowStats] = useState<boolean>(Boolean(campaign.showPlayerStats ?? false))
   
   const handleToggleStats = async () => {
@@ -33,12 +34,74 @@ export default function ShieldDashboard() {
       setShowStats(!newValue)
     }
   }
+
   const [campaignRolls, setCampaignRolls] = useState<any[]>([])
+  
+  // Memorizar personagens para estabilidade de referência
+  const characters = useMemo(() => campaign.characters || [], [campaign.characters])
+
   
   // Estados para Pedir Iniciativa
   const [requestingInitiative, setRequestingInitiative] = useState(false)
   const [initiativePending, setInitiativePending] = useState<Set<number>>(new Set())
   const [localInitiatives, setLocalInitiatives] = useState<Record<number, number>>({})
+  const [reactionResponse, setReactionResponse] = useState<any>(null)
+
+  const handleAttackCharacter = async (characterId: number, characterName: string) => {
+    try {
+      await axios.post(`/api/campaigns/${campaign.id}/reaction`, {
+        characterId,
+        attackerName: 'Monstro', // Pode ser expandido futuramente
+        actionType: 'attack'
+      })
+      console.log(`[REACTION] Solicitação enviada para ${characterName}`)
+    } catch (error) {
+      console.error('[REACTION] Erro ao enviar solicitação:', error)
+    }
+  }
+
+  const handleEndScene = async () => {
+    try {
+      await axios.post(`/api/campaigns/${campaign.id}/end-scene`)
+      console.log('[SCENE] Fim de cena enviado')
+    } catch (error) {
+      console.error('[SCENE] Erro ao enviar fim de cena:', error)
+    }
+  }
+
+  // SSE para receber respostas de reações
+  useEffect(() => {
+    const transmitClient = new Transmit({ baseUrl: window.location.origin })
+    const subscription = transmitClient.subscription(`campaign/${campaign.id}/reaction-responses`)
+
+    subscription.create().then(() => {
+      console.log('[SSE] mestre conectado ao canal campaign/' + campaign.id + '/reaction-responses')
+    }).catch((e) => {
+      console.error('[SSE] erro:', e)
+    })
+
+    subscription.onMessage<any>((data) => {
+      console.log('[REACTION] Resposta recebida:', data)
+      if (data.type === 'REACTION_RESPONSE') {
+        const reactionLabels: Record<string, string> = {
+          block: '🛡️ Bloquear',
+          dodge: '💨 Esquivar',
+          counter: '⚔️ Contra-atacar',
+        }
+
+        addToast({
+          title: `${data.playerName} reagiu!`,
+          description: `${data.characterName || 'Personagem'} escolheu: ${reactionLabels[data.reactionType] || data.reactionType}`,
+          color: data.reactionType === 'block' ? 'primary' : data.reactionType === 'dodge' ? 'success' : 'danger',
+          timeout: 6000,
+        })
+      }
+    })
+
+    return () => {
+      subscription.delete().catch(() => {})
+    }
+  }, [campaign.id])
 
 
 
@@ -53,19 +116,19 @@ export default function ShieldDashboard() {
   }, [initiativePending])
 
   useEffect(() => {
-    campaignCharactersRef.current = campaign.characters || []
-  }, [campaign.characters])
+    campaignCharactersRef.current = characters
+  }, [characters])
 
   const handleRequestInitiative = () => {
     setLocalInitiatives({})
     initiativeRequestedAtRef.current = new Date()
-    const characterIds = new Set<number>(campaign.characters.map((c: any) => c.id))
+    const characterIds = new Set<number>(characters.map((c: any) => c.id))
     requestingInitiativeRef.current = true
     setInitiativePending(characterIds)
     setRequestingInitiative(true)
   }
 
-  const loadRolls = async () => {
+  const loadRolls = useCallback(async () => {
     if (!campaign?.id) return
     try {
       const response = await axios.get(`/api/campaigns/${campaign.id}/rolls`)
@@ -94,37 +157,22 @@ export default function ShieldDashboard() {
 
       // Se estiver pedindo iniciativa, processar as novas rolagens
       if (requestingInitiativeRef.current) {
-        console.log('[INIT] processando', formattedRolls.length, 'rolls, pendentes:', initiativePendingRef.current.size, [...initiativePendingRef.current])
         formattedRolls.forEach((roll: any) => {
           const passaTempo = !initiativeRequestedAtRef.current || roll.rolledAt >= initiativeRequestedAtRef.current
           const passaAcao = roll.action?.toLowerCase().includes('iniciativa')
           const character = campaignCharactersRef.current.find((c: any) => c.name === roll.player)
           const estaPendente = character ? initiativePendingRef.current.has(character.id) : false
 
-          console.log('[INIT] roll:', {
-            player: roll.player,
-            action: roll.action,
-            rolledAt: roll.rolledAt,
-            threshold: initiativeRequestedAtRef.current,
-            passaTempo,
-            passaAcao,
-            characterEncontrado: character?.name ?? 'NENHUM',
-            estaPendente
-          })
-
           if (!passaTempo) return
           if (!passaAcao) return
           if (!character || !estaPendente) return
 
-          console.log('[INIT] ✅ capturando iniciativa:', character.name, roll.result)
           updateInitiative(character.id, roll.result)
           setInitiativePending(prev => {
             const next = new Set(prev)
             next.delete(character.id)
             initiativePendingRef.current = next
-            console.log('[INIT] pendentes restantes:', next.size, [...next])
             if (next.size === 0) {
-              console.log('[INIT] ✅ todos rolaram, encerrando aguardando')
               setRequestingInitiative(false)
               requestingInitiativeRef.current = false
             }
@@ -135,7 +183,7 @@ export default function ShieldDashboard() {
     } catch (e) {
       console.error('Erro ao buscar rolagens:', e)
     }
-  }
+  }, [campaign?.id])
 
   const handleClearHistory = async () => {
     if (!campaign?.id) return
@@ -168,7 +216,7 @@ export default function ShieldDashboard() {
 
   useEffect(() => {
     loadRollsRef.current = loadRolls
-  })
+  }, [loadRolls])
 
   useEffect(() => {
     loadRollsRef.current()
@@ -177,11 +225,10 @@ export default function ShieldDashboard() {
   }, [campaign?.id])
 
   useEffect(() => {
-    console.log('[INIT] useEffect rodou, campaignRolls:', campaignRolls.length, 'requestingInitiativeRef:', requestingInitiativeRef.current)
     if (!requestingInitiativeRef.current) return
     
     campaignRolls.forEach((roll: any) => {
-      console.log('[INIT] verificando roll:', roll.action, roll.player, roll.rolledAt, 'threshold:', initiativeRequestedAtRef.current)
+      // processamento de depuração opcional removido para limpar o console
     })
   }, [campaignRolls])
 
@@ -198,18 +245,19 @@ export default function ShieldDashboard() {
         <div className="flex flex-1 overflow-hidden">
           
           {/* Painel Esquerdo: Ordem de Turno / Personagens */}
-          <PlayersSidebar 
-            characters={campaign.characters || []} 
-            localInitiatives={localInitiatives}
-            requestingInitiative={requestingInitiative}
-            onRequestInitiative={handleRequestInitiative}
-            showStats={true}
-            onToggleStats={handleToggleStats}
-            switchValue={showStats}
-          />
-          
-          {/* Área Central: Conteúdo das Abas */}
-          <MainContent activeTab={activeTab} campaign={campaign} showStats={true} isOwner={true} />
+            <PlayersSidebar 
+              characters={characters} 
+              localInitiatives={localInitiatives}
+              requestingInitiative={requestingInitiative}
+              onRequestInitiative={handleRequestInitiative}
+              showStats={true}
+              onToggleStats={handleToggleStats}
+              switchValue={showStats}
+              onAttackCharacter={handleAttackCharacter}
+            />
+            
+            {/* Área Central: Conteúdo das Abas */}
+            <MainContent activeTab={activeTab} campaign={campaign} showStats={true} isOwner={true} onEndScene={handleEndScene} />
           
           {/* Registro do Sistema */}
           <div className="lg:col-span-1 h-full">

@@ -3,7 +3,7 @@ import { usePage } from '@inertiajs/react'
 import { m, AnimatePresence } from 'framer-motion'
 import { Card, CardHeader, CardBody, Chip, Button, Switch } from '@heroui/react'
 import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts'
-import { Dices, Save, Dumbbell, Wind, Brain, Heart, Ghost } from 'lucide-react'
+import { Dices, Save, Dumbbell, Wind, Brain, Heart, Ghost, Radar as RadarIcon } from 'lucide-react'
 import { AbilityEffectsResult } from '../../../hooks/useAbilityEffects'
 
 // ─── Tipos públicos ────────────────────────────────────────────────────────────
@@ -611,7 +611,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         onNewRollRef.current?.({
           id: roll.uuid + '-atk',
           player: playerNameRef.current,
-          action: `${weapon.name} (Ataque)`,
+          action: `${weapon.name} (${weapon.isExtraAttack ? 'Ataque Extra' : 'Ataque'})`,
           roll: rollParams?.atkLabel,
           result: atkTotal,
           time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
@@ -917,7 +917,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
   // ── rollWeapon ─────────────────────────────────────────────────────────────
   const rollWeapon = useCallback(
     async (
-      weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number; extraDamageDice?: string[] },
+      weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number; extraDamageDice?: string[]; isExtraAttack?: boolean },
       str: number,
       agi: number,
       characterSkills: any[] = []
@@ -978,7 +978,9 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           })
 
           const atkBonusStr = (trainingBonus + extraAtk) > 0 ? `+${trainingBonus + extraAtk}` : ''
-          const atkLabel = `${skill} (${attrVal}d20${atkBonusStr})`
+          const atkLabel = weapon.isExtraAttack
+            ? `${skill} (${attrVal}d20${atkBonusStr}) [Ataque Extra]`
+            : `${skill} (${attrVal}d20${atkBonusStr})`
           const dmgLabel = `${weapon.damage}${extraDmg > 0 ? `+${extraDmg}` : ''}`
 
           isWaitingForRollRef.current = true

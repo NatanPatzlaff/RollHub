@@ -8,7 +8,7 @@ interface BrowserTabsProps {
 
 export default function BrowserTabs({ activeTab, setActiveTab }: BrowserTabsProps) {
   const tabs = [
-    { id: 'salas', label: 'Salas', icon: Monitor },
+    { id: 'missoes', label: 'Missões', icon: Monitor },
     { id: 'combates', label: 'Combates', icon: Swords },
     { id: 'dados', label: 'Dados', icon: Dices },
     { id: 'jogadores', label: 'Grupo', icon: Users },

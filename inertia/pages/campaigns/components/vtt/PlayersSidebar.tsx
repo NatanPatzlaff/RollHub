@@ -8,6 +8,7 @@ interface PlayersSidebarProps {
   showStats: boolean
   onToggleStats?: () => void
   switchValue?: boolean
+  onAttackCharacter?: (id: number, name: string) => void
 }
 
 // Helper functions for status display
@@ -35,7 +36,8 @@ export default function PlayersSidebar({
   onRequestInitiative,
   showStats,
   onToggleStats,
-  switchValue
+  switchValue,
+  onAttackCharacter
 }: PlayersSidebarProps) {
   // Sort by initiative if available, otherwise keep existing order
   const sortedEntities = [...characters].sort((a, b) => {
@@ -148,6 +150,15 @@ export default function PlayersSidebar({
                   <div className="h-[46px] bg-[#09090B]/50 rounded border border-dashed border-[#27272A] flex items-center justify-center">
                     <span className="text-[#3F3F46] text-[10px] font-medium italic">Status ocultado</span>
                   </div>
+                )}
+                
+                {onAttackCharacter && !entity.isMonster && (
+                  <button
+                    onClick={() => onAttackCharacter(entity.id, entity.name)}
+                    className="mt-3 w-full py-1.5 bg-[#EF4444]/10 hover:bg-[#EF4444]/20 text-[#EF4444] text-[10px] font-bold rounded border border-[#EF4444]/20 transition-colors uppercase tracking-wider"
+                  >
+                    Atacar Personagem
+                  </button>
                 )}
               </div>
             </div>

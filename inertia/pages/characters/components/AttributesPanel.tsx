@@ -4,7 +4,7 @@ import {
     RadarChart, PolarGrid, PolarAngleAxis, Radar,
     ResponsiveContainer
 } from 'recharts'
-import { Dices, Zap, Sword, Brain, Eye, Heart } from 'lucide-react'
+import { Dices, Zap, Sword, Brain, Eye, Heart, Radar as RadarIcon } from 'lucide-react'
 
 interface AttributesPanelProps {
     strength: number

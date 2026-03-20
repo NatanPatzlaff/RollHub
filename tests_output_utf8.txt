@@ -1,0 +1,129 @@
+﻿c[ info ] booting application to run tests...
+node : [31mWebSocket server 
+error: Port 24678 is already in 
+use[39m
+No linha:1 caractere:1
++ node ace test --suite=unit > 
+tests_output.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : No 
+   tSpecified: ([31mWebSocket   
+  ...ady in use[39m:String) [   
+ ], RemoteException
+    + FullyQualifiedErrorId : Na 
+   tiveCommandError
+ 
+
+unit / Banco ÔÇö Maldi├º├Áes cadastradas corretamente (tests\unit\weapon_curses.spec.ts)
+  ÔêÜ Antielemento ├® Maldi├º├úo Categoria 2 do elemento Conhecimento (17.98ms)
+  ÔêÜ Ritual├¡stica ├® Maldi├º├úo Categoria 2 do elemento Conhecimento (1.21ms)
+  ÔêÜ Senciente ├® Maldi├º├úo Categoria 4 do elemento Conhecimento (0.97ms)
+  ÔêÜ Empuxo ├® Maldi├º├úo Categoria 2 do elemento Energia (0.89ms)
+  ÔêÜ Energ├®tica ├® Maldi├º├úo Categoria 2 do elemento Energia (0.83ms)
+  ÔêÜ Vibrante ├® Maldi├º├úo Categoria 2 do elemento Energia (0.71ms)
+  ÔêÜ Consumidora ├® Maldi├º├úo Categoria 2 do elemento Morte (3.17ms)
+  ÔêÜ Erosiva ├® Maldi├º├úo Categoria 2 do elemento Morte (0.98ms)
+  ÔêÜ Repulsora ├® Maldi├º├úo Categoria 2 do elemento Morte (1.43ms)
+  ÔêÜ Lancinante ├® Maldi├º├úo Categoria 2 do elemento Sangue (1.24ms)
+  ÔêÜ Predadora ├® Maldi├º├úo Categoria 2 do elemento Sangue (1.04ms)
+  ÔêÜ Sanguin├íria ├® Maldi├º├úo Categoria 2 do elemento Sangue (0.71ms)
+  ÔêÜ Todas as maldi├º├Áes possuem descri├º├úo n├úo vazia (1.88ms)
+  ÔêÜ Todas as maldi├º├Áes possuem elemento definido (2.56ms)
+  ÔêÜ Existem exatamente 12 maldi├º├Áes cadastradas (1.33ms)
+
+unit / PENDENTE ÔÇö Lancinante (+1d8 Sangue, multiplicado em cr├¡tico) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: +1d8 Sangue (multiplicado em cr├¡tico) (0ms)
+
+unit / PENDENTE ÔÇö Predadora (dobra margem de amea├ºa) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: anula penalidades camuflagem, aumenta alcance, DOBRA margem (0ms)
+
+unit / PENDENTE ÔÇö Energ├®tica (+5 ataque, ativa com 2 PE) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: gasta 2 PE, converte Energia, +5 ataque, ignora RD (0ms)
+
+unit / PENDENTE ÔÇö Erosiva (+1d8 Morte, +2d4 com 2 PE) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: +1d8 Morte, +2d4 com 2 PE por 2 rodadas (0ms)
+
+unit / PENDENTE ÔÇö Repulsora (+2 Defesa, +5 ao bloquear com PE) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: +2 Defesa passivo, +5 ao bloquear com 2 PE (0ms)
+
+unit / PENDENTE ÔÇö Antielemento (+4d8 vs elemento espec├¡fico) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: +4d8 vs elemento espec├¡fico com 2 PE (0ms)
+
+unit / PENDENTE ÔÇö Ritual├¡stica (armazena ritual) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: armazena ritual, descarrega ao acertar (0ms)
+
+unit / PENDENTE ÔÇö Senciente (arma ataca sozinha) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: arma ataca sozinha, 2 PE + 1 PE/turno (0ms)
+
+unit / Empuxo (arremess├ível, +1 dado, volta para m├úo) (tests\unit\weapon_curses.spec.ts)
+  ÔêÜ Empuxo: faca (arremess├ível natural) com isThrow=true adiciona 1d extra (0.28ms)
+  ÔêÜ Empuxo: machadinha com isThrow=true adiciona 1d extra (0.19ms)
+  ÔêÜ Empuxo: espada (n├úo arremess├ível natural) N├âO ganha dado extra (0.14ms)
+  ÔêÜ Empuxo: lan├ºa com isThrow=false N├âO adiciona dado extra (0.12ms)
+
+unit / Vibrante (Ataque Extra ou -1 PE em habilidade) (tests\unit\weapon_curses.spec.ts)
+  ÔêÜ Vibrante sem Ataque Extra: bot├úo aparece com custo 2 PE (0.25ms)
+  ÔêÜ Vibrante com Ataque Extra: custo reduz para 1 PE (0.14ms)
+  ÔêÜ sem Vibrante com Ataque Extra: custo ├® 2 PE (0.12ms)
+  ÔêÜ sem Vibrante sem Ataque Extra: bot├úo n├úo aparece (0.14ms)
+  ÔêÜ hist├│rico diferencia Ataque Extra de Ataque Normal (0.16ms)
+
+unit / PENDENTE ÔÇö Consumidora (alvo im├│vel 1 rodada com 2 PE) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: 2 PE para deixar alvo Im├│vel 1 rodada (0ms)
+
+unit / PENDENTE ÔÇö Sanguin├íria (sangramento cumulativo, cr├¡tico especial) (tests\unit\weapon_curses.spec.ts)
+  * PENDENTE: sangramento cumulativo, cr├¡tico deixa alvo Fraco, cr├¡tico concede 2d10 PV tempor├írios (0ms)
+
+unit / Banco de Dados ÔÇö Modifica├º├Áes cadastradas corretamente (tests\unit\weapon_modifications.spec.ts)
+  ÔêÜ Certeira tem attack_bonus = 2 (0.85ms)
+  ÔêÜ Cruel tem damage_bonus = +2 (0.81ms)
+  ÔêÜ Perigosa tem critical_bonus = 2 (0.76ms)
+  ÔêÜ Alongada tem attack_bonus = 2 e restricao a Arma de fogo (0.73ms)
+  ÔêÜ Calibre Grosso tem damage_bonus = +1d e restricao a Arma de fogo (0.74ms)
+  ÔêÜ Discreta tem special_properties com crime_bonus=5 e space_reduction=1 (0.71ms)
+  ÔêÜ T├ítica tem special_properties com free_draw=true (0.81ms)
+  ÔêÜ Ferrolho Autom├ítico tem special_properties com automatic=true (0.84ms)
+  ÔêÜ Lancinante ├® Maldi├º├úo do elemento Sangue (0.8ms)
+  ÔêÜ Predadora ├® Maldi├º├úo do elemento Sangue (0.67ms)
+  ÔêÜ Sanguin├íria ├® Maldi├º├úo do elemento Sangue (0.63ms)
+  ÔêÜ Energ├®tica ├® Maldi├º├úo do elemento Energia (0.75ms)
+  ÔêÜ Vibrante ├® Maldi├º├úo do elemento Energia (0.88ms)
+  ÔêÜ Empuxo ├® Maldi├º├úo do elemento Energia (0.67ms)
+  ÔêÜ Erosiva ├® Maldi├º├úo do elemento Morte (0.72ms)
+  ÔêÜ Consumidora ├® Maldi├º├úo do elemento Morte (0.69ms)
+  ÔêÜ Repulsora ├® Maldi├º├úo do elemento Morte (0.62ms)
+  ÔêÜ Antielemento ├® Maldi├º├úo do elemento Conhecimento (0.64ms)
+  ÔêÜ Ritual├¡stica ├® Maldi├º├úo do elemento Conhecimento (0.63ms)
+  ÔêÜ Senciente ├® Maldi├º├úo Categoria 4 do elemento Conhecimento (0.62ms)
+  ÔêÜ Dum-Dum tem critical_bonus=2 e restricao a Balas Curtas e Longas (0.76ms)
+  ÔêÜ Explosiva tem damage_bonus +2d6 e permitida em Cartuchos (0.86ms)
+
+unit / L├│gica de Rolagem ÔÇö Margem de Cr├¡tico (tests\unit\weapon_modifications.spec.ts)
+  ÔêÜ Perigosa: cr├¡tico 20 vira 18 (0.22ms)
+  ÔêÜ Perigosa: dado 18 com threshold 18 ├ë cr├¡tico (0.14ms)
+  ÔêÜ Perigosa: dado 17 com threshold 18 N├âO ├® cr├¡tico (0.09ms)
+  ÔêÜ Dum-Dum: cr├¡tico 20 vira 18 (0.11ms)
+  ÔêÜ sem mods: dado 20 com threshold 20 ├ë cr├¡tico (0.09ms)
+  ÔêÜ sem mods: dado 19 com threshold 20 N├âO ├® cr├¡tico (0.08ms)
+  ÔêÜ threshold nunca fica abaixo de 1 (0.08ms)
+
+unit / L├│gica de Rolagem ÔÇö Dano Cr├¡tico vs Normal (tests\unit\weapon_modifications.spec.ts)
+  ÔêÜ cr├¡tico usa todos os dados de dano (x2) (0.12ms)
+  ÔêÜ normal usa apenas dmgCount dados (0.08ms)
+  ÔêÜ Cruel: +2 de dano aplicado corretamente em hit normal (0.1ms)
+  ÔêÜ Cruel: +2 de dano aplicado corretamente em cr├¡tico (0.09ms)
+
+unit / L├│gica de Rolagem ÔÇö B├┤nus de Ataque (tests\unit\weapon_modifications.spec.ts)
+  ÔêÜ Certeira: +2 ataque somado ao trainingBonus (0.09ms)
+  ÔêÜ Alongada: +2 ataque somado ao trainingBonus (0.09ms)
+  ÔêÜ Certeira + Alongada: +4 ataque total (0.11ms)
+
+unit / L├│gica de Rolagem ÔÇö Combina├º├Áes (tests\unit\weapon_modifications.spec.ts)
+  ÔêÜ Certeira + Perigosa + Cruel: ataque+2, cr├¡tico 18, dano+2 (0.16ms)
+  ÔêÜ sem modifica├º├Áes: todos b├┤nus s├úo zero (0.11ms)
+
+ PASSED 
+
+Tests  62 passed, 10 skipped (72)
+ Time  87ms
