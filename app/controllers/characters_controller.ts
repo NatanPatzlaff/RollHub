@@ -212,6 +212,7 @@ export default class CharactersController {
           query.whereNotNull('ritual_id').preload('ritual')
         )
         .preload('campaigns')
+        .preload('homebrewItems')
         .first()
 
       if (!character) {
@@ -434,7 +435,10 @@ export default class CharactersController {
             'general_items.spaces',
             'general_items.description',
             'general_items.category',
-            'general_items.type'
+            'general_items.type',
+            'general_items.skill_bonus_name',
+            'general_items.skill_bonus_value',
+            'general_items.skill_bonus_is_choosable'
           ),
         db.from('protection_modifications').select('*').orderBy('name', 'asc'),
         db
@@ -541,6 +545,9 @@ export default class CharactersController {
         description: r.description,
         effects:
           typeof r.effects === 'string' ? (r.effects ? JSON.parse(r.effects) : null) : r.effects,
+        skillBonusName: r.skill_bonus_name,
+        skillBonusValue: r.skill_bonus_value,
+        skillBonusIsChoosable: Boolean(r.skill_bonus_is_choosable),
       }))
       const catalogCursedItems = cursedItemsRows.map((r: any) => ({
         id: r.id,
@@ -693,7 +700,12 @@ export default class CharactersController {
         id: r.id,
         generalItemId: r.general_item_id,
         name: r.name,
-        type: r.type, // Use o tipo real do banco (Acessório, Consumível, etc)
+        type: r.type,
+        skillBonusName: r.skill_bonus_name,
+        skillBonusValue: r.skill_bonus_value,
+        skillBonusIsChoosable: !!r.skill_bonus_is_choosable,
+        chosenSkillBonusName: r.chosen_skill_bonus_name,
+        chosenSkillBonusValue: r.chosen_skill_bonus_value,
         description: r.description,
         quantity: r.quantity || 1,
         spaces: r.spaces || 0,
@@ -1694,7 +1706,7 @@ export default class CharactersController {
       .preload('classAbilities', (query) => query.preload('classAbility'))
       .firstOrFail()
 
-    const { type, itemId, quantity } = await request.validateUsing(addItemValidator)
+    const { type, itemId, quantity, chosenSkillBonusName } = await request.validateUsing(addItemValidator)
     if (!type || !itemId) {
       return response.badRequest({ error: 'type e itemId são obrigatórios' })
     }
@@ -1916,6 +1928,8 @@ export default class CharactersController {
         character_id: character.id,
         general_item_id: itemId,
         quantity: qty,
+        chosen_skill_bonus_name: item.skill_bonus_is_choosable ? chosenSkillBonusName : null,
+        chosen_skill_bonus_value: item.skill_bonus_is_choosable ? item.skill_bonus_value : null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

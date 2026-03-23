@@ -33,6 +33,12 @@ const HomeHeader = ({ user, onLogout }: HomeHeaderProps) => {
             classNames={{ base: 'bg-card border border-border' }}
           >
             <DropdownItem
+              key="homebrew"
+              onPress={() => router.visit('/homebrew')}
+            >
+              Homebrew
+            </DropdownItem>
+            <DropdownItem
               key="logout"
               className="text-destructive"
               onPress={onLogout}

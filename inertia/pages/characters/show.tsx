@@ -12,14 +12,33 @@ import {
   Heart,
   Dumbbell,
   Wind,
+  Sword,
+  Shield,
+  Briefcase,
+  Eye,
+  Crosshair,
+  Sparkles,
+  BookOpen,
+  Search,
+  Calculator,
+  Dice5,
+  History,
+  ChevronRight,
+  Target,
   Ghost,
+  Skull,
+  UserCheck,
+  Droplets,
+  ShieldCheck,
+  Lock,
+  AlertCircle,
+  Wand2,
+  Info,
   User,
   Dices,
   RotateCcw,
   Check,
   Edit3,
-  Search,
-  Target,
 } from 'lucide-react'
 import TrailSelectModal from './components/TrailSelectModal'
 import RitualSelectModal from './components/RitualSelectModal'
@@ -283,6 +302,12 @@ interface CharacterProps {
       id: number
       ritualId: number
       ritual?: Ritual
+    }>
+    homebrewItems?: Array<{
+      id: number
+      name: string
+      skillBonusName: string | null
+      skillBonusValue: number | null
     }>
     campaigns?: Array<{ dddiceRoomSlug: string | null }>
   }
@@ -1135,7 +1160,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const addItemToCharacter = (
     type: 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition',
     itemId: number,
-    quantity?: number
+    quantity?: number,
+    chosenSkillBonusName?: string
   ) => {
     // Buscar os espaços que o item ocupa
     let itemSpaces = 0
@@ -1208,7 +1234,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     router.post(
       `/characters/${character.id}/items`,
-      { type, itemId, quantity: qty },
+      { type, itemId, quantity: qty, chosenSkillBonusName },
       {
         preserveState: true,
         preserveScroll: true,
@@ -2368,7 +2394,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     { name: 'Sobrevivência', attr: 'INT' },
     { name: 'Tática', attr: 'INT' },
     { name: 'Tecnologia', attr: 'INT' },
-    { name: 'Vontade', attr: 'PRE' },
+    { name: 'Vontade', attr: 'PRE', },
   ]
 
   // Mock Data (will be replaced by real data later)
@@ -2501,6 +2527,36 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     return allItems
   }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems, inventoryAmmunitions, favoriteWeaponName, favoriteWeaponCategoryReduction])
+
+  const skillItemBonuses = useMemo(() => {
+    const bonuses: Record<string, { total: number; sources: { name: string; value: number }[] }> = {}
+    
+    const addBonus = (skill: string, value: number, name: string) => {
+      const key = skill.toLowerCase()
+      if (!bonuses[key]) bonuses[key] = { total: 0, sources: [] }
+      bonuses[key].total += value
+      bonuses[key].sources.push({ name, value })
+    }
+
+    character.homebrewItems?.forEach((item: any) => {
+      if (item.skillBonusName && item.skillBonusValue) {
+        addBonus(item.skillBonusName, item.skillBonusValue, item.name)
+      }
+    })
+
+    inventoryGeneralItems?.forEach((item: any) => {
+      // Bônus fixo
+      if (!item.skillBonusIsChoosable && item.skillBonusName && item.skillBonusValue) {
+        addBonus(item.skillBonusName, item.skillBonusValue, item.name)
+      }
+      // Bônus escolhível
+      if (item.skillBonusIsChoosable && item.chosenSkillBonusName && item.chosenSkillBonusValue) {
+        addBonus(item.chosenSkillBonusName, item.chosenSkillBonusValue, item.name)
+      }
+    })
+
+    return bonuses
+  }, [character.homebrewItems, inventoryGeneralItems])
 
   // Calcular consumo por categoria (moved here after inventory declaration)
   const categoryConsumption = useMemo(() => {
@@ -2820,6 +2876,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 classSkillPools={classSkillPools}
                 characterNex={character.nex}
                 attrMap={{ FOR: strength, AGI: agility, INT: intellect, VIG: vigor, PRE: presence }}
+                itemBonuses={skillItemBonuses}
                 hasDiscreta={hasDiscreta}
                 onFilterChange={setSkillFilter}
                 onToggleLearning={() => setIsLearningSkills(true)}

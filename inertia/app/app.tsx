@@ -25,7 +25,7 @@ createInertiaApp({
   setup({ el, App, props }) {
 
     createRoot(el).render(
-      <HeroUIProvider>
+      <HeroUIProvider defaultTheme="dark">
         <ToastProvider placement="top-right" />
         <LazyMotion features={domAnimation}>
           <App {...props} />

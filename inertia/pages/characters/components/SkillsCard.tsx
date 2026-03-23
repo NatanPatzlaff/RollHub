@@ -8,7 +8,38 @@ import {
   DropdownMenu,
   DropdownItem,
 } from '@heroui/react'
-import { Filter, Plus, Save, Dices } from 'lucide-react'
+import {
+  Sword,
+  Shield,
+  Briefcase,
+  Eye,
+  Crosshair,
+  Sparkles,
+  BookOpen,
+  Search,
+  Calculator,
+  Dice5,
+  History,
+  ChevronRight,
+  Zap,
+  Target,
+  Ghost,
+  Skull,
+  UserCheck,
+  Heart,
+  Droplets,
+  Brain,
+  ShieldCheck,
+  Wind,
+  Lock,
+  AlertCircle,
+  Wand2,
+  Info,
+  Filter,
+  Save,
+  Plus,
+} from 'lucide-react'
+import { Tooltip } from '@heroui/react'
 
 /** Lista completa de perícias do sistema Ordem Paranormal */
 const ALL_SKILLS: { name: string; attr: string }[] = [
@@ -67,6 +98,7 @@ export interface SkillsCardProps {
   onRollSkill: (skill: string, attrVal: number, trainingBonus: number, label: string) => void
   onToggleShowSkillInfo: () => void
   hasDiscreta?: boolean
+  itemBonuses?: Record<string, { total: number; sources: { name: string; value: number }[] }>
 }
 
 /**
@@ -97,6 +129,7 @@ export default function SkillsCard({
   onRollSkill,
   onToggleShowSkillInfo,
   hasDiscreta,
+  itemBonuses = {},
 }: SkillsCardProps) {
   const originProvidedSkills = originSkillsFromOrigin.length
 
@@ -278,11 +311,13 @@ export default function SkillsCard({
                       
                       const isDiscretaCrime = hasDiscreta && skill.name === 'Crime'
                       const effectivelyTrained = isTrained || isDiscretaCrime
-                      const baseBonus = isExpert ? 15 : isVeteran ? 10 : effectivelyTrained ? 5 : 0
-                      const trainingBonus = baseBonus + (isDiscretaCrime ? 5 : 0)
+                      const trainingBase = isExpert ? 15 : isVeteran ? 10 : effectivelyTrained ? 5 : 0
+                      const bonusData = itemBonuses[skill.name.toLowerCase()]
+                      const itemBonusTotal = bonusData?.total || 0
+                      const totalBonus = trainingBase + itemBonusTotal + (isDiscretaCrime ? 5 : 0)
 
-                      const label = `${skill.name}${isDiscretaCrime ? ' (Discreta)' : ''} (${attrVal}d20${trainingBonus > 0 ? `+${trainingBonus}` : ''})`
-                      onRollSkill(skill.name, attrVal, trainingBonus, label)
+                      const label = `${skill.name}${isDiscretaCrime ? ' (Discreta)' : ''} (${attrVal}d20${totalBonus > 0 ? `+${totalBonus}` : ''})`
+                      onRollSkill(skill.name, attrVal, totalBonus, label)
                     }
                   }}
                   onContextMenu={(e) => onSkillContextMenu(skill.name, e)}
@@ -323,7 +358,7 @@ export default function SkillsCard({
                 >
                   {/* Ícone de dado no hover para perícias treinadas */}
                   {isTrained && !isLearningSkills && (
-                    <Dices
+                    <Dice5
                       size={14}
                       className="absolute top-1 right-1 opacity-0 group-hover:opacity-70 transition-opacity text-amber-400"
                     />
@@ -334,10 +369,13 @@ export default function SkillsCard({
                   <div className="flex items-center gap-1 text-[10px]">
                     <span className="opacity-70">{skill.attr}</span>
                     {(() => {
+                      const skillKey = skill.name.toLowerCase()
                       const isDiscretaCrime = hasDiscreta && skill.name === 'Crime'
                       const effectivelyTrained = isTrained || isDiscretaCrime
-                      const baseBonus = isExpert ? 15 : isVeteran ? 10 : effectivelyTrained ? 5 : 0
-                      const totalBonus = baseBonus + (isDiscretaCrime ? 5 : 0)
+                      const trainingBonus = isExpert ? 15 : isVeteran ? 10 : effectivelyTrained ? 5 : 0
+                      const bonusData = itemBonuses[skillKey]
+                      const itemBonusTotal = bonusData?.total || 0
+                      const totalBonus = trainingBonus + itemBonusTotal + (isDiscretaCrime ? 5 : 0)
 
                       if (totalBonus <= 0) return null
 
@@ -347,7 +385,31 @@ export default function SkillsCard({
                         ? 'text-purple-400' 
                         : 'text-blue-400'
 
-                      return <span className={`font-bold ${colorClass}`}>+{totalBonus}</span>
+                      return (
+                        <div className="flex items-center gap-0.5">
+                          <span className={`font-bold ${colorClass}`}>+{totalBonus}</span>
+                          {itemBonusTotal !== 0 && (
+                            <Tooltip
+                              content={
+                                <div className="px-1 py-2">
+                                  <div className="text-tiny font-bold text-amber-500 mb-1">
+                                    Bônus de Item: +{itemBonusTotal}
+                                  </div>
+                                  {bonusData?.sources.map((source, i) => (
+                                    <div key={i} className="text-[10px] text-zinc-300">
+                                      {source.name}: +{source.value}
+                                    </div>
+                                  ))}
+                                </div>
+                              }
+                              placement="top"
+                              className="bg-zinc-900 border border-zinc-800"
+                            >
+                              <Sparkles size={10} className="text-amber-400 cursor-help" />
+                            </Tooltip>
+                          )}
+                        </div>
+                      )
                     })()}
                   </div>
                 </Button>

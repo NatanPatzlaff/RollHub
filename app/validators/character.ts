@@ -96,6 +96,7 @@ export const addItemValidator = vine.compile(
     type: vine.string().trim(),
     itemId: vine.number().positive(),
     quantity: vine.number().min(1).optional(),
+    chosenSkillBonusName: vine.string().trim().optional(),
   })
 )
 

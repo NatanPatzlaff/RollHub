@@ -26,6 +26,9 @@ export default class RoomItem extends BaseModel {
   declare catalogItemId: number | null
 
   @column()
+  declare homebrewItemId: number | null
+
+  @column()
   declare collected: boolean
 
   @column()

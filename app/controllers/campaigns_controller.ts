@@ -1,5 +1,6 @@
 import { HttpContext } from '@adonisjs/core/http'
 import Campaign from '#models/campaign'
+import HomebrewItem from '#models/homebrew_item'
 import { createCampaignValidator, updateCampaignValidator } from '#validators/campaign'
 import db from '@adonisjs/lucid/services/db'
 import transmit from '@adonisjs/transmit/services/main'
@@ -84,6 +85,8 @@ export default class CampaignsController {
       return response.forbidden({ message: 'Apenas o mestre pode acessar o escudo' })
     }
 
+    const homebrewItems = await HomebrewItem.query().orderBy('name', 'asc')
+
     return inertia.render('campaigns/shield', {
       campaign: {
         ...campaign.serialize(),
@@ -91,6 +94,7 @@ export default class CampaignsController {
         showPlayerStats: campaign.showPlayerStats
       },
       isGM: true,
+      homebrewItems,
     })
   }
 

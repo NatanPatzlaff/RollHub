@@ -106,7 +106,7 @@ export default class MissionsController {
   // --- ITEMS ---
 
   async storeItem({ params, request, response }: HttpContext) {
-    const data = request.only(['name', 'description', 'quantity', 'item_type', 'catalog_item_id'])
+    const data = request.only(['name', 'description', 'quantity', 'item_type', 'catalog_item_id', 'homebrew_item_id'])
     
     // Mapear snake_case do request para camelCase do modelo Lucid
     const item = await RoomItem.create({
@@ -116,6 +116,7 @@ export default class MissionsController {
       quantity: data.quantity,
       itemType: data.item_type,
       catalogItemId: data.catalog_item_id,
+      homebrewItemId: data.homebrew_item_id,
     })
     
     return response.created(item)
@@ -188,6 +189,19 @@ export default class MissionsController {
           await character
             .related('generalItems')
             .attach({ [item.catalogItemId]: { quantity: item.quantity } }, trx)
+        }
+      } else if (item.homebrewItemId) {
+        // Caso para itens homebrew (focado por enquanto em item_type === 'general' conforme plano)
+        if (item.itemType === 'general') {
+          const now = new Date()
+          await trx.table('character_homebrew_items').insert({
+            character_id: characterId,
+            homebrew_item_id: item.homebrewItemId,
+            quantity: item.quantity,
+            notes: item.description,
+            created_at: now,
+            updated_at: now,
+          })
         }
       }
 

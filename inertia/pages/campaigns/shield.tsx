@@ -17,7 +17,7 @@ const mockEntities = [
   { id: 3, name: 'Joui Jouki', class: 'Ocultista', hp: 15, maxHp: 20, pe: 35, maxPe: 35, sanity: 8, maxSanity: 50, status: 'Enlouquecendo', initiative: 8, isMonster: false },
 ]
 export default function ShieldDashboard() {
-  const { campaign, auth } = usePage().props as any
+  const { campaign, auth, homebrewItems } = usePage().props as any
   const [activeTab, setActiveTab] = useState('missoes')
   const [showStats, setShowStats] = useState<boolean>(Boolean(campaign.showPlayerStats ?? false))
   
@@ -257,7 +257,14 @@ export default function ShieldDashboard() {
             />
             
             {/* Área Central: Conteúdo das Abas */}
-            <MainContent activeTab={activeTab} campaign={campaign} showStats={true} isOwner={true} onEndScene={handleEndScene} />
+            <MainContent 
+              activeTab={activeTab} 
+              campaign={campaign} 
+              showStats={true} 
+              isOwner={true} 
+              onEndScene={handleEndScene} 
+              homebrewItems={homebrewItems}
+            />
           
           {/* Registro do Sistema */}
           <div className="lg:col-span-1 h-full">

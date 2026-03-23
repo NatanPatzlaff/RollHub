@@ -3,6 +3,7 @@ import { BaseModel, column, belongsTo, hasOne, hasMany, manyToMany } from '@adon
 import type { BelongsTo, HasOne, HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
 import User from '#models/user'
 import Campaign from '#models/campaign'
+import HomebrewItem from '#models/homebrew_item'
 import Class from '#models/class'
 import Origin from '#models/origin'
 import Trail from '#models/trail'
@@ -136,8 +137,15 @@ export default class Character extends BaseModel {
 
   @manyToMany(() => GeneralItem, {
     pivotTable: 'character_general_items',
-    pivotColumns: ['quantity', 'notes'],
+    pivotColumns: ['quantity', 'notes', 'chosen_skill_bonus_name', 'chosen_skill_bonus_value'],
     pivotTimestamps: true,
   })
   declare generalItems: ManyToMany<typeof GeneralItem>
+
+  @manyToMany(() => HomebrewItem, {
+    pivotTable: 'character_homebrew_items',
+    pivotColumns: ['quantity', 'notes'],
+    pivotTimestamps: true,
+  })
+  declare homebrewItems: ManyToMany<typeof HomebrewItem>
 }

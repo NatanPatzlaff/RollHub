@@ -2464,16 +2464,24 @@ export default function CharacterTabsCard({
                       <div className="w-2 h-2 rounded-full bg-purple-500" />
                       TRILHA: {characterTrail.name}
                     </div>
-                    <button
+                    <div
+                      role="button"
+                      tabIndex={0}
                       onClick={(e) => {
                         e.stopPropagation()
                         onOpenTrailModal()
                       }}
-                      className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 text-[10px] font-bold transition-all"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation()
+                          onOpenTrailModal()
+                        }
+                      }}
+                      className="flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded border border-zinc-700 text-[10px] font-bold transition-all cursor-pointer"
                     >
                       <Edit3 size={10} />
                       TROCAR
-                    </button>
+                    </div>
                   </div>
                   <ChevronDown
                     className={`w-5 h-5 transition-transform ${expandedSections.trailAbilities ? 'rotate-180' : ''}`}

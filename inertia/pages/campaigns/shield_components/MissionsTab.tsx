@@ -55,6 +55,7 @@ interface Item {
   quantity: number
   itemType?: string
   catalogItemId?: number | null
+  homebrewItemId?: number | null
   collected?: boolean
   collectedByCharacterId?: number | null
 }
@@ -71,10 +72,16 @@ interface MissionsTabProps {
   campaignId: number
   campaignCharacters: { id: number; name: string }[]
   onEndScene: () => void
+  homebrewItems: any[]
 }
 
-export default function MissionsTab({ campaignId, campaignCharacters, onEndScene }: MissionsTabProps) {
+export default function MissionsTab({ campaignId, campaignCharacters, onEndScene, homebrewItems }: MissionsTabProps) {
   const [missions, setMissions] = useState<Mission[]>([])
+  const [localHomebrewItems, setLocalHomebrewItems] = useState<any[]>(homebrewItems || [])
+  
+  useEffect(() => {
+    setLocalHomebrewItems(homebrewItems || [])
+  }, [homebrewItems])
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null)
   const [activeRoomId, setActiveRoomId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -728,6 +735,10 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
               catalogProtections={catalogProtections}
               catalogAmmunitions={catalogAmmunitions}
               catalogGeneralItems={catalogGeneralItems}
+              homebrewItems={localHomebrewItems}
+              onHomebrewCreated={(newItem) => {
+                setLocalHomebrewItems(prev => [...prev, newItem])
+              }}
             />
           </motion.div>
         )}

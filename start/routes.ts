@@ -19,6 +19,7 @@ const CampaignInvitesController = () => import('#controllers/campaign_invites_co
 const CampaignNotesController = () => import('#controllers/campaign_notes_controller')
 const MissionsController = () => import('#controllers/missions_controller')
 const CatalogsController = () => import('#controllers/catalogs_controller')
+const HomebrewItemsController = () => import('#controllers/homebrew_items_controller')
 
 import { middleware } from '#start/kernel'
 import transmit from '@adonisjs/transmit/services/main'
@@ -125,6 +126,12 @@ router
     )
 
     router.get('/api/catalogs', [CatalogsController, 'index'])
+
+    // Homebrew Items
+    router.get('/api/homebrew-items', [HomebrewItemsController, 'index'])
+    router.post('/api/homebrew-items', [HomebrewItemsController, 'store'])
+    router.delete('/api/homebrew-items/:id', [HomebrewItemsController, 'destroy'])
+    router.get('/homebrew', [HomebrewItemsController, 'render'])
 
     router.post('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/npcs', [MissionsController, 'storeNpc'])
     router.put('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/npcs/:npcId', [MissionsController, 'updateNpc'])

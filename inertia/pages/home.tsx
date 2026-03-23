@@ -103,7 +103,7 @@ export default function Home({
     <>
       <Head title="Início - RollHub" />
 
-      <div className="flex min-h-screen flex-col bg-background">
+      <div className="flex min-h-screen flex-col bg-[#18181B]">
         {/* Header */}
         <HomeHeader user={user} onLogout={handleLogout} />
 

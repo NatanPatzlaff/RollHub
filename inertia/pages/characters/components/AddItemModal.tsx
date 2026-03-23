@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
-import { X, Sword, Shield, Briefcase, Eye, Crosshair, Plus, Check, Search, LucideIcon } from 'lucide-react'
+import { X, Sword, Shield, Briefcase, Eye, Crosshair, Plus, Check, Search, LucideIcon, Sparkles } from 'lucide-react'
+import { Select, SelectItem } from '@heroui/react'
 
 // ─── Interfaces de catálogo ───────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ export interface CatalogGeneralItem {
   spaces: number
   description: string | null
   effects: any
+  skillBonusIsChoosable?: boolean
+  skillBonusValue?: number
 }
 
 export interface CatalogCursedItem {
@@ -77,7 +80,7 @@ export interface AddItemModalProps {
   catalogAmmunitions: CatalogAmmunition[]
   /** DT de explosivos pré-computada: 10 + floor(nex/5) + agilidade */
   explosiveDt: number
-  onAdd: (type: AddItemType, itemId: number, quantity?: number) => void
+  onAdd: (type: AddItemType, itemId: number, quantity?: number, chosenSkillBonusName?: string) => void
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -93,6 +96,14 @@ const TABS: { id: TabId; label: string; Icon: LucideIcon }[] = [
 ]
 
 const CAT_LABELS: Record<number, string> = { 0: '0', 1: 'I', 2: 'II', 3: 'III', 4: 'IV' }
+
+const ALL_SKILLS = [
+  'Acrobacia', 'Adestramento', 'Artes', 'Atletismo', 'Atualidades', 'Ciências',
+  'Crime', 'Diplomacia', 'Enganação', 'Fortitude', 'Furtividade', 'Iniciativa',
+  'Intimidação', 'Intuição', 'Investigação', 'Luta', 'Medicina', 'Ocultismo',
+  'Percepção', 'Pilotagem', 'Pontaria', 'Profissão', 'Reflexos', 'Religião',
+  'Sobrevivência', 'Tática', 'Tecnologia', 'Vontade'
+]
 
 const STAT_CHIP =
   'bg-orange-500/15 border border-orange-500/40 rounded-lg p-3'
@@ -377,7 +388,7 @@ function GeneralItemsTab({
   items: CatalogGeneralItem[]
   expandedKey: string | null
   onToggle: (k: string) => void
-  onAdd: (id: number) => void
+  onAdd: (itemId: number, quantity?: number, chosenSkillBonusName?: string) => void
   explosiveDt: number
 }) {
   if (items.length === 0)
@@ -444,15 +455,14 @@ function GeneralItemsTab({
                     : item.description
 
                 return (
-                  <ItemCard
+                  <GeneralItemRow
                     key={key}
-                    id={key}
-                    name={item.name}
+                    item={item}
                     statsLine={statsLine}
                     description={desc}
                     expandedKey={expandedKey}
                     onToggle={onToggle}
-                    onAdd={() => onAdd(item.id)}
+                    onAdd={(id, qty, skill) => onAdd(id, qty, skill)}
                     expandedContent={
                       <>
                         <StatChip label="Categoria" value={catLabel} />
@@ -535,6 +545,80 @@ function CursedItemsTab({
         )
       })}
     </AnimatePresence>
+  )
+}
+
+function GeneralItemRow({
+  item,
+  statsLine,
+  description,
+  expandedKey,
+  onToggle,
+  onAdd,
+}: {
+  item: CatalogGeneralItem
+  statsLine: string
+  description: string | null
+  expandedKey: string | null
+  onToggle: (k: string) => void
+  onAdd: AddItemModalProps['onAdd']
+}) {
+  const [selectedSkill, setSelectedSkill] = useState<string>('')
+  const key = `general-${item.id}`
+  const isChoosable = item.skillBonusIsChoosable
+
+  return (
+    <div className="space-y-3">
+      <ItemCard
+        id={key}
+        name={item.name}
+        statsLine={statsLine}
+        description={description}
+        expandedKey={expandedKey}
+        onToggle={onToggle}
+        onAdd={() => onAdd('general', item.id, 1, isChoosable ? selectedSkill : undefined)}
+        addDisabled={isChoosable && !selectedSkill}
+        expandedContent={
+          <>
+            <StatChip label="Categoria" value={CAT_LABELS[item.category] ?? item.category} />
+            <StatChip label="Espaços" value={item.spaces} />
+            {isChoosable && (
+              <div className="col-span-2 sm:col-span-3 mt-2 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Sparkles size={16} className="text-amber-400" />
+                  <span className="text-sm font-bold text-amber-100">Bônus Escolhível (+{item.skillBonusValue})</span>
+                </div>
+                <Select
+                  label="Escolha a perícia para este item"
+                  placeholder="Selecione uma perícia"
+                  labelPlacement="outside"
+                  variant="bordered"
+                  selectedKeys={selectedSkill ? [selectedSkill] : []}
+                  onSelectionChange={(keys) => setSelectedSkill(Array.from(keys)[0] as string)}
+                  className="max-w-xs"
+                  classNames={{
+                    trigger: 'bg-zinc-900 border-zinc-700 hover:border-zinc-500',
+                    value: 'text-zinc-100',
+                    label: 'text-zinc-400 font-medium mb-2',
+                  }}
+                >
+                  {ALL_SKILLS.map((skill) => (
+                    <SelectItem key={skill} textValue={skill} className="text-zinc-200">
+                      {skill}
+                    </SelectItem>
+                  ))}
+                </Select>
+                {selectedSkill && (
+                  <p className="text-[10px] text-zinc-500 mt-2">
+                    Este item fornecerá +{item.skillBonusValue} em {selectedSkill} enquanto estiver equipado.
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        }
+      />
+    </div>
   )
 }
 
@@ -937,7 +1021,7 @@ export default function AddItemModal({
                     items={catalogGeneralItems}
                     expandedKey={expandedKey}
                     onToggle={toggleExpanded}
-                    onAdd={(id) => onAdd('general', id)}
+                    onAdd={(id, qty, skill) => onAdd('general', id, qty, skill)}
                     explosiveDt={explosiveDt}
                   />
                 )}

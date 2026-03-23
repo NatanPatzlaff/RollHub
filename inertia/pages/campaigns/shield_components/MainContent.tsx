@@ -10,9 +10,10 @@ interface MainContentProps {
   showStats: boolean
   isOwner?: boolean
   onEndScene: () => void
+  homebrewItems: any[]
 }
 
-export default function MainContent({ activeTab, campaign, showStats, isOwner = false, onEndScene }: MainContentProps) {
+export default function MainContent({ activeTab, campaign, showStats, isOwner = false, onEndScene, homebrewItems }: MainContentProps) {
   return (
     <div className="flex-1 bg-[#09090B] p-6 overflow-y-auto relative">
       <AnimatePresence mode="wait">
@@ -22,6 +23,7 @@ export default function MainContent({ activeTab, campaign, showStats, isOwner = 
             campaignId={campaign.id} 
             campaignCharacters={campaign.characters || []}
             onEndScene={onEndScene}
+            homebrewItems={homebrewItems}
           />
         )}
 
