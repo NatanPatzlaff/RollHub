@@ -1,10 +1,14 @@
 # 🏠 Configuração Remota — Acessar o RollHub de Casa
 
-## Pré-requisitos
+## Status do Notebook do Trabalho
 
-O notebook do **trabalho** já está configurado com:
-- ✅ Tailscale instalado (IP: `100.76.141.110`)
+- ✅ Tailscale instalado e conectado
+- ✅ Conta: `NatanPatzlaff@github`
+- ✅ Device: `desktop-nv50vkh`
+- ✅ IP Tailscale: `100.76.141.110`
 - ✅ SSH Server rodando (StartType: Automatic)
+- ✅ Tampa configurada para não suspender ao fechar
+- ✅ Site rodando (`npm run dev`)
 
 ---
 
@@ -13,7 +17,7 @@ O notebook do **trabalho** já está configurado com:
 ### 1. Instalar o Tailscale
 
 1. Acesse: https://tailscale.com/download/windows
-2. Instale e faça login com a **mesma conta** usada no notebook do trabalho
+2. Instale e faça login com a conta **NatanPatzlaff@github** (mesma do trabalho)
 3. Após logar, os dois notebooks vão se enxergar pela rede Tailscale
 
 ### 2. Testar a conexão SSH
@@ -39,43 +43,32 @@ ssh User@100.76.141.110
 
 ---
 
-## Antes de sair do trabalho (checklist)
+## Checklist — Antes de sair do trabalho
 
-- [ ] `npm run dev` rodando no terminal (ou `npm run build` + `node bin/server.js`)
-- [ ] Notebook configurado para **NÃO suspender** ao fechar a tampa
+- [ ] `npm run dev` rodando no terminal
+- [ ] Notebook conectado na **tomada** (senão a bateria acaba)
 - [ ] Tailscale conectado (ícone na bandeja do sistema)
 - [ ] Fechar a tampa e ir embora
 
 ---
 
-## Comandos úteis
-
-### Verificar se o SSH está rodando (notebook do trabalho)
+## Comandos Úteis
 
 ```powershell
+# Verificar se o SSH está rodando (no notebook do trabalho)
 Get-Service sshd | Format-List Name, Status, StartType
+
+# Ver o IP Tailscale
+# Ou acesse: https://login.tailscale.com/admin/machines
 ```
-
-### Ver o IP Tailscale
-
-```powershell
-tailscale ip -4
-```
-
-Ou acesse: https://login.tailscale.com/admin/machines
 
 ---
 
 ## Troubleshooting
 
-### Não consigo conectar via SSH
-1. Verifique se o Tailscale está conectado nos **dois** notebooks
-2. Verifique se o SSH está rodando: `Get-Service sshd`
-3. Se o SSH parou, reinicie: `Start-Service sshd` (como Admin)
-
-### O site não está acessível
-1. Verifique se o `npm run dev` ainda está rodando no notebook do trabalho
-2. Acesse remotamente e reinicie se necessário
-
-### Esqueci a senha do Windows
-- A senha é a mesma do login do Windows no notebook do trabalho
+| Problema | Solução |
+|---|---|
+| Não conecta via SSH | Verifique se o Tailscale está conectado nos **dois** notebooks |
+| SSH parou | Rode `Start-Service sshd` como Admin no notebook do trabalho |
+| Site caiu | Acesse remotamente e reinicie o `npm run dev` |
+| Esqueci a senha | É a senha do login do Windows do notebook do trabalho |
