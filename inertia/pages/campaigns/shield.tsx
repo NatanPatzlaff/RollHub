@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { addToast } from "@heroui/react"
 import { Transmit } from '@adonisjs/transmit-client'
-import { Head, usePage } from '@inertiajs/react'
+import { Head, usePage, router } from '@inertiajs/react'
 import axios from 'axios'
 
 import BrowserTabs from './shield_components/BrowserTabs'
@@ -9,15 +9,9 @@ import PlayersSidebar from './components/vtt/PlayersSidebar'
 import MainContent from './shield_components/MainContent'
 import RollHistoryPanel from './shield_components/RollHistoryPanel'
 
-// --- DADOS DE TESTE (MOCKS) ---
-const mockEntities = [
-  { id: 1, name: 'Arthur Cervero', class: 'Combatente', hp: 45, maxHp: 45, pe: 12, maxPe: 15, sanity: 30, maxSanity: 40, status: 'Saudável', initiative: 24, isMonster: false },
-  { id: 'm1', name: 'Zumbi de Sangue (Alfa)', class: 'Criatura - Sangue', hp: 80, maxHp: 80, pe: 0, maxPe: 0, sanity: 0, maxSanity: 0, status: 'Machucado', initiative: 18, isMonster: true },
-  { id: 2, name: 'Kaiser', class: 'Especialista', hp: 22, maxHp: 30, pe: 25, maxPe: 25, sanity: 15, maxSanity: 45, status: 'Machucado', initiative: 14, isMonster: false },
-  { id: 3, name: 'Joui Jouki', class: 'Ocultista', hp: 15, maxHp: 20, pe: 35, maxPe: 35, sanity: 8, maxSanity: 50, status: 'Enlouquecendo', initiative: 8, isMonster: false },
-]
+
 export default function ShieldDashboard() {
-  const { campaign, auth, homebrewItems } = usePage().props as any
+  const { campaign, auth, homebrewItems, activeCombat, campaignMonsters } = usePage().props as any
   const [activeTab, setActiveTab] = useState('missoes')
   const [showStats, setShowStats] = useState<boolean>(Boolean(campaign.showPlayerStats ?? false))
   
@@ -45,7 +39,6 @@ export default function ShieldDashboard() {
   const [requestingInitiative, setRequestingInitiative] = useState(false)
   const [initiativePending, setInitiativePending] = useState<Set<number>>(new Set())
   const [localInitiatives, setLocalInitiatives] = useState<Record<number, number>>({})
-  const [reactionResponse, setReactionResponse] = useState<any>(null)
 
   const handleAttackCharacter = async (characterId: number, characterName: string) => {
     try {
@@ -72,16 +65,31 @@ export default function ShieldDashboard() {
   // SSE para receber respostas de reações
   useEffect(() => {
     const transmitClient = new Transmit({ baseUrl: window.location.origin })
-    const subscription = transmitClient.subscription(`campaign/${campaign.id}/reaction-responses`)
+    const subscription = transmitClient.subscription(`campaign/${campaign.id}/events`)
 
     subscription.create().then(() => {
-      console.log('[SSE] mestre conectado ao canal campaign/' + campaign.id + '/reaction-responses')
+      console.log('[SSE] mestre conectado ao canal campaign/' + campaign.id + '/events')
     }).catch((e) => {
       console.error('[SSE] erro:', e)
     })
 
     subscription.onMessage<any>((data) => {
-      console.log('[REACTION] Resposta recebida:', data)
+      console.log('[SSE] Evento recebido:', data)
+      
+      if (data.type === 'ATTACK_ROLLED') {
+        addToast({
+          title: `💥 Ataque de ${data.characterName}!`,
+          description: `${data.action} -> Resultado: ${data.result} (${data.damageType})`,
+          color: data.isCritical ? 'danger' : 'primary',
+          timeout: 8000,
+        })
+        router.reload({ only: ['activeCombat'] })
+      }
+
+      if (['COMBAT_STARTED', 'PARTICIPANT_ADDED', 'DAMAGE_APPLIED', 'TURN_START', 'SCENE_END', 'INITIATIVE_UPDATED'].includes(data.type)) {
+        router.reload({ only: ['activeCombat', 'campaignMonsters'] })
+      }
+
       if (data.type === 'REACTION_RESPONSE') {
         const reactionLabels: Record<string, string> = {
           block: '🛡️ Bloquear',
@@ -224,13 +232,7 @@ export default function ShieldDashboard() {
     return () => clearInterval(interval)
   }, [campaign?.id])
 
-  useEffect(() => {
-    if (!requestingInitiativeRef.current) return
     
-    campaignRolls.forEach((roll: any) => {
-      // processamento de depuração opcional removido para limpar o console
-    })
-  }, [campaignRolls])
 
   return (
     <>
@@ -274,6 +276,9 @@ export default function ShieldDashboard() {
               isOwner={true} 
               onEndScene={handleEndScene} 
               homebrewItems={homebrewItems}
+              activeCombat={activeCombat}
+              campaignMonsters={campaignMonsters}
+              setActiveTab={setActiveTab}
             />
           
           {/* Registro do Sistema */}

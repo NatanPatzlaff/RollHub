@@ -1,5 +1,7 @@
 import { HttpContext } from '@adonisjs/core/http'
 import Campaign from '#models/campaign'
+import Combat from '#models/combat'
+import Monster from '#models/monster'
 import HomebrewItem from '#models/homebrew_item'
 import { createCampaignValidator, updateCampaignValidator } from '#validators/campaign'
 import db from '@adonisjs/lucid/services/db'
@@ -21,7 +23,7 @@ export default class CampaignsController {
         description: payload.description,
       })
 
-      return response.redirect().toPath(`/campaigns/${campaign.id}`)
+      return response.redirect().toPath(`/campaigns/${campaign.id}/shield`)
     } catch (error) {
       session.flash('errors', error.messages || { name: 'Erro ao criar campanha' })
       return response.redirect().back()
@@ -87,6 +89,20 @@ export default class CampaignsController {
 
     const homebrewItems = await HomebrewItem.query().orderBy('name', 'asc')
 
+    const activeCombat = await Combat.query()
+      .where('campaign_id', params.id)
+      .where('active', true)
+      .preload('participants', (query) => {
+        query.preload('character', (q) => q.preload('stats').preload('class'))
+        query.preload('monster')
+      })
+      .first()
+
+    const campaignMonsters = await Monster.query()
+      .where('campaign_id', params.id)
+      .orWhereNull('campaign_id')
+      .orderBy('name', 'asc')
+
     return inertia.render('campaigns/shield', {
       campaign: {
         ...campaign.serialize(),
@@ -95,6 +111,8 @@ export default class CampaignsController {
       },
       isGM: true,
       homebrewItems,
+      activeCombat: activeCombat ? activeCombat.serialize() : null,
+      campaignMonsters: campaignMonsters.map(m => m.serialize()),
     })
   }
 

@@ -12,10 +12,16 @@ export default class Combat extends BaseModel {
     declare campaignId: number
 
     @column()
+    declare roomId: number | null
+
+    @column()
     declare round: number
 
     @column()
     declare active: boolean
+
+    @column()
+    declare currentParticipantId: number | null
 
     @column.dateTime()
     declare startedAt: DateTime | null

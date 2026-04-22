@@ -14,6 +14,8 @@ const RegisterController = () => import('#controllers/register_controller')
 const LogoutController = () => import('#controllers/logout_controller')
 const CharactersController = () => import('#controllers/characters_controller')
 const CharacterStatsController = () => import('#controllers/character_stats_controller')
+const CombatsController = () => import('#controllers/combats_controller')
+const MonstersController = () => import('#controllers/monsters_controller')
 const CampaignsController = () => import('#controllers/campaigns_controller')
 const CampaignInvitesController = () => import('#controllers/campaign_invites_controller')
 const CampaignNotesController = () => import('#controllers/campaign_notes_controller')
@@ -136,16 +138,36 @@ router
     router.post('/api/homebrew-items', [HomebrewItemsController, 'store'])
     router.delete('/api/homebrew-items/:id', [HomebrewItemsController, 'destroy'])
     router.get('/homebrew', [HomebrewItemsController, 'render'])
+    router.post('/characters/:characterId/homebrew-items', [HomebrewItemsController, 'storeForPlayer'])
+    router.post('/characters/:characterId/homebrew-items/add-existing', [
+      HomebrewItemsController,
+      'addExistingToCharacter',
+    ])
+    router.patch('/homebrew-items/:id/approve', [HomebrewItemsController, 'approveItem'])
+    router.patch('/homebrew-items/:id/reject', [HomebrewItemsController, 'rejectItem'])
 
     router.post('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/npcs', [MissionsController, 'storeNpc'])
     router.put('/api/campaigns/:campaignId/missions/:missionId/rooms/:roomId/npcs/:npcId', [MissionsController, 'updateNpc'])
     router.delete('/api/campaigns/:campaignId/missions/:missionId/npcs/:npcId', [MissionsController, 'destroyNpc'])
 
-    // Homebrew item player endpoints
-    router.post('/characters/:characterId/homebrew-items', [HomebrewItemsController, 'storeForPlayer'])
-    router.post('/characters/:characterId/homebrew-items/add-existing', [HomebrewItemsController, 'addExistingToCharacter'])
-    router.patch('/homebrew-items/:id/approve', [HomebrewItemsController, 'approveItem'])
-    router.patch('/homebrew-items/:id/reject', [HomebrewItemsController, 'rejectItem'])
+    // Combates
+    router.post('/campaigns/:campaignId/combats', [CombatsController, 'store'])
+    router.post('/combats/:combatId/participants', [CombatsController, 'addParticipant'])
+    router.patch('/combats/:combatId/next-turn', [CombatsController, 'nextTurn'])
+    router.patch('/combat-participants/:participantId/damage', [CombatsController, 'applyDamage'])
+    router.patch('/combat-participants/:participantId/initiative', [CombatsController, 'updateInitiative'])
+    router.patch('/combats/:combatId/end', [CombatsController, 'endCombat'])
+
+    // Monstros
+    router.post('/monsters', [MonstersController, 'store'])
+    router.put('/monsters/:id', [MonstersController, 'update'])
+    router.delete('/monsters/:id', [MonstersController, 'destroy'])
+
+    router.post('/rooms/:roomId/monsters', [MissionsController, 'addRoomMonster'])
+    router.patch('/room-monsters/:id', [MissionsController, 'updateRoomMonster'])
+    router.put('/room-monsters/:id', [MissionsController, 'updateRoomMonsterFull'])
+    router.delete('/room-monsters/:id', [MissionsController, 'removeRoomMonster'])
+
   })
   .use(middleware.auth())
 

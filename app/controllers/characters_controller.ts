@@ -1,7 +1,9 @@
 import { DateTime } from 'luxon'
 import type { HttpContext } from '@adonisjs/core/http'
+import transmit from '@adonisjs/transmit/services/main'
 import db from '@adonisjs/lucid/services/db'
 import Character from '#models/character'
+import Combat from '#models/combat'
 import Class from '#models/class'
 import Origin from '#models/origin'
 import Skill from '#models/skill'
@@ -2840,6 +2842,32 @@ export default class CharactersController {
       diceValues: data.diceValues ? (typeof data.diceValues === 'string' ? data.diceValues : JSON.stringify(data.diceValues)) : null,
       rolledAt: DateTime.now(),
     })
+
+    // Se for um ataque e houver campanha, verificar se existe combate ativo
+    if (campaignMember?.campaign_id && data.action?.startsWith('Ataque')) {
+      const activeCombat = await Combat.query()
+        .where('campaign_id', campaignMember.campaign_id)
+        .where('active', true)
+        .first()
+
+      if (activeCombat) {
+        // Tentar extrair o tipo de dano da string de ação (ex: "Ataque: Garras — 1d8 Corte")
+        const damageTypeMatch = data.action.match(/(\w+)$/)
+        const damageType = damageTypeMatch ? damageTypeMatch[1] : 'Físico'
+
+        await transmit.broadcast(`campaign/${campaignMember.campaign_id}/events`, {
+          type: 'ATTACK_ROLLED',
+          characterId: character.id,
+          characterName: character.name,
+          action: data.action,
+          result: data.result,
+          damage: data.result, // No sistema simplificado, o resultado do dado de dano é o resultado final
+          damageType,
+          isCritical: data.is_critical || false,
+          timestamp: DateTime.now().toISO(),
+        })
+      }
+    }
 
     return response.created({ roll })
   }

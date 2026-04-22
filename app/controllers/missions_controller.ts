@@ -3,6 +3,8 @@ import Room from '#models/room'
 import RoomClue from '#models/room_clue'
 import RoomItem from '#models/room_item'
 import RoomNpc from '#models/room_npc'
+import RoomMonster from '#models/room_monster'
+import Monster from '#models/monster'
 import type { HttpContext } from '@adonisjs/core/http'
 
 export default class MissionsController {
@@ -14,6 +16,7 @@ export default class MissionsController {
         .preload('roomClues')
         .preload('roomItems')
         .preload('roomNpcs')
+        .preload('roomMonsters', (rmq) => rmq.preload('monster'))
       )
     return response.ok({ missions })
   }
@@ -36,6 +39,7 @@ export default class MissionsController {
         .preload('roomClues')
         .preload('roomItems')
         .preload('roomNpcs')
+        .preload('roomMonsters', (rmq) => rmq.preload('monster'))
       )
       .firstOrFail()
     return response.ok(mission)
@@ -251,5 +255,108 @@ export default class MissionsController {
     const npc = await RoomNpc.findOrFail(params.npcId)
     await npc.delete()
     return response.ok({ success: true })
+  }
+
+  // --- ROOM MONSTERS ---
+
+  async addRoomMonster({ params, request, response }: HttpContext) {
+    const { monsterId, quantity } = request.only(['monsterId', 'quantity'])
+    
+    // Busca o template base
+    const template = await Monster.findOrFail(monsterId)
+    
+    // Sempre cria uma nova instância independente (clonagem profunda)
+    await RoomMonster.create({
+      roomId: params.roomId,
+      monsterId: template.id,
+      quantity: quantity || 1,
+      // Copiar atributos base
+      name: template.name,
+      type: template.type,
+      size: template.size,
+      element: template.element,
+      secondaryElements: template.secondaryElements,
+      vd: template.vd,
+      defense: template.defense,
+      hpMax: template.hpMax,
+      hpCurrent: template.hpMax, // Instância começa com HP cheio
+      movement: template.movement,
+      alternativeMovements: template.alternativeMovements,
+      nexImmune: template.nexImmune,
+      immunities: template.immunities,
+      additionalImmunities: template.additionalImmunities,
+      vulnerabilities: template.vulnerabilities,
+      // Copiar Atributos
+      agi: template.agi,
+      str: template.str,
+      int: template.int,
+      pre: template.pre,
+      vig: template.vig,
+      // Copiar Perícias
+      perceptionDice: template.perceptionDice,
+      perceptionBonus: template.perceptionBonus,
+      initiativeDice: template.initiativeDice,
+      initiativeBonus: template.initiativeBonus,
+      fortitudeDice: template.fortitudeDice,
+      fortitudeBonus: template.fortitudeBonus,
+      reflexDice: template.reflexDice,
+      reflexBonus: template.reflexBonus,
+      willDice: template.willDice,
+      willBonus: template.willBonus,
+      additionalSkills: template.additionalSkills,
+      // Copiar CombatData
+      attacks: template.attacks,
+      abilities: template.abilities,
+      resistances: template.resistances,
+      disturbingPresenceDt: template.disturbingPresenceDt,
+      disturbingPresenceDamage: template.disturbingPresenceDamage,
+      // Copiar Textos
+      description: template.description,
+      fearEnigma: template.fearEnigma,
+      notes: template.notes,
+    })
+    
+    return response.redirect().back()
+  }
+
+  async updateRoomMonster({ params, request, response }: HttpContext) {
+    const { quantity } = request.only(['quantity'])
+    const roomMonster = await RoomMonster.findOrFail(params.id)
+    
+    if (quantity <= 0) {
+      await roomMonster.delete()
+    } else {
+      roomMonster.quantity = quantity
+      await roomMonster.save()
+    }
+    
+    return response.redirect().back()
+  }
+
+  async updateRoomMonsterFull({ params, request, response }: HttpContext) {
+    const roomMonster = await RoomMonster.findOrFail(params.id)
+    
+    const fields = [
+      'name', 'type', 'size', 'element', 'secondaryElements', 'vd', 'defense', 
+      'hpMax', 'hpCurrent', 'movement', 'alternativeMovements', 'nexImmune',
+      'agi', 'str', 'int', 'pre', 'vig', 'perceptionDice', 'perceptionBonus',
+      'initiativeDice', 'initiativeBonus', 'fortitudeDice', 'fortitudeBonus',
+      'reflexDice', 'reflexBonus', 'willDice', 'willBonus', 'additionalSkills',
+      'immunities', 'additionalImmunities', 'vulnerabilities', 
+      'disturbingPresenceDt', 'disturbingPresenceDamage', 'attacks', 'abilities',
+      'resistances', 'description', 'fearEnigma', 'notes', 'quantity'
+    ]
+    
+    const data = request.only(fields)
+    roomMonster.merge(data)
+    await roomMonster.save()
+    
+    return response.redirect().back()
+  }
+
+  async removeRoomMonster({ params, response }: HttpContext) {
+    const roomMonster = await RoomMonster.findOrFail(params.id)
+    await roomMonster.delete()
+    return response.redirect().back()
   }
 }

@@ -5,6 +5,7 @@ import Mission from '#models/mission'
 import RoomClue from '#models/room_clue'
 import RoomItem from '#models/room_item'
 import RoomNpc from '#models/room_npc'
+import RoomMonster from '#models/room_monster'
 
 export default class Room extends BaseModel {
   @column({ isPrimary: true })
@@ -39,4 +40,7 @@ export default class Room extends BaseModel {
 
   @hasMany(() => RoomNpc)
   declare roomNpcs: HasMany<typeof RoomNpc>
+
+  @hasMany(() => RoomMonster)
+  declare roomMonsters: HasMany<typeof RoomMonster>
 }

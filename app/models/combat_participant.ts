@@ -3,6 +3,7 @@ import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 import Combat from '#models/combat'
 import Character from '#models/character'
+import Monster from '#models/monster'
 
 export default class CombatParticipant extends BaseModel {
     @column({ isPrimary: true })
@@ -26,6 +27,9 @@ export default class CombatParticipant extends BaseModel {
     @column()
     declare hpCurrent: number | null
 
+    @column()
+    declare hpMax: number
+
     @column({ prepare: (value: any) => JSON.stringify(value) })
     declare status: any | null
 
@@ -40,4 +44,7 @@ export default class CombatParticipant extends BaseModel {
 
     @belongsTo(() => Character)
     declare character: BelongsTo<typeof Character>
+
+    @belongsTo(() => Monster)
+    declare monster: BelongsTo<typeof Monster>
 }

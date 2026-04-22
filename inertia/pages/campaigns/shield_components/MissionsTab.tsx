@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { router } from '@inertiajs/react'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -17,11 +18,13 @@ import {
   Play,
   FileText,
   Eye,
-  EyeOff
+  EyeOff,
+  Ghost
 } from 'lucide-react'
 import NpcNotesModal from './NpcNotesModal'
 import ClueNotesModal from './ClueNotesModal'
 import RoomItemModal from './RoomItemModal'
+import MonsterFormModal from './MonsterFormModal'
 
 interface Mission {
   id: number
@@ -40,6 +43,7 @@ interface Room {
   roomClues: Clue[]
   roomItems: Item[]
   roomNpcs: Npc[]
+  roomMonsters: any[]
 }
 
 interface Clue {
@@ -73,9 +77,11 @@ interface MissionsTabProps {
   campaignCharacters: { id: number; name: string }[]
   onEndScene: () => void
   homebrewItems: any[]
+  campaignMonsters: any[]
+  setActiveTab: (tab: string) => void
 }
 
-export default function MissionsTab({ campaignId, campaignCharacters, onEndScene, homebrewItems }: MissionsTabProps) {
+export default function MissionsTab({ campaignId, campaignCharacters, onEndScene, homebrewItems, campaignMonsters, setActiveTab }: MissionsTabProps) {
   const [missions, setMissions] = useState<Mission[]>([])
   const [localHomebrewItems, setLocalHomebrewItems] = useState<any[]>(homebrewItems || [])
   
@@ -97,7 +103,12 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
   const [selectedNpc, setSelectedNpc] = useState<Npc | null>(null)
   const [newNpcIsMonster, setNewNpcIsMonster] = useState(false)
 
-  // Estados para Pistas
+  // Estados para Monstros e Combate
+  const [isCombatModalOpen, setIsCombatModalOpen] = useState(false)
+  const [selectedMonstersForCombat, setSelectedMonstersForCombat] = useState<Record<number, boolean>>({})
+  const [showMonsterSelect, setShowMonsterSelect] = useState(false)
+
+  // Estados para Pistas (Restaurados)
   const [clueModalOpen, setClueModalOpen] = useState(false)
   const [selectedClue, setSelectedClue] = useState<Clue | null>(null)
 
@@ -109,6 +120,10 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
   const [catalogProtections, setCatalogProtections] = useState([])
   const [catalogAmmunitions, setCatalogAmmunitions] = useState([])
   const [catalogGeneralItems, setCatalogGeneralItems] = useState([])
+
+  // Estados para Edição de Instância de Monstro
+  const [editingInstance, setEditingInstance] = useState<any>(null)
+  const [isInstanceModalOpen, setIsInstanceModalOpen] = useState(false)
 
   useEffect(() => {
     fetchMissions()
@@ -286,19 +301,51 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
     }
   }
 
-  const handleAddNpc = async (roomId: number) => {
-    const name = prompt('Nome do NPC/Monstro:')
-    if (!name) return
+  const handleAddMonsterToRoom = async (monsterId: number) => {
     try {
-      await axios.post(`/api/campaigns/${campaignId}/missions/${selectedMission?.id}/rooms/${roomId}/npcs`, { 
-        name, 
-        notes: '', 
-        quantity: 1, 
-        is_monster: newNpcIsMonster 
-      })
+      await router.post(`/rooms/${activeRoomId}/monsters`, { monsterId, quantity: 1 })
+      fetchMissions()
+      setShowMonsterSelect(false)
+    } catch (e) {
+      console.error('[MONSTERS] Erro ao adicionar monstro:', e)
+    }
+  }
+
+  const handleUpdateMonsterQuantity = async (id: number, quantity: number) => {
+    try {
+      await router.patch(`/room-monsters/${id}`, { quantity })
       fetchMissions()
     } catch (e) {
-      console.error('[NPCS] Erro ao adicionar NPC:', e)
+      console.error('[MONSTERS] Erro ao atualizar quantidade:', e)
+    }
+  }
+
+  const handleRemoveMonster = async (id: number) => {
+    try {
+      await router.delete(`/room-monsters/${id}`)
+      fetchMissions()
+    } catch (e) {
+      console.error('[MONSTERS] Erro ao remover monstro:', e)
+    }
+  }
+
+  const handleStartRoomCombat = async () => {
+    const monstersToInclude = activeRoom?.roomMonsters
+      .filter(rm => selectedMonstersForCombat[rm.id])
+      .map(rm => ({ roomMonsterId: rm.id, initiative: 0 }))
+
+    try {
+      await router.post(`/campaigns/${campaignId}/combats`, {
+        roomId: activeRoomId,
+        monsterParticipantIds: monstersToInclude
+      }, {
+        onSuccess: () => {
+          setIsCombatModalOpen(false)
+          setActiveTab('combate')
+        }
+      })
+    } catch (e) {
+      console.error('[COMBAT] Erro ao iniciar combate:', e)
     }
   }
 
@@ -466,6 +513,19 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
                 >
                   <Plus size={16} /> Nova Sala
                 </button>
+                {activeRoom && (
+                  <button 
+                    onClick={() => {
+                      const initialSelection: Record<number, boolean> = {}
+                      activeRoom.roomMonsters?.forEach(rm => initialSelection[rm.id] = true)
+                      setSelectedMonstersForCombat(initialSelection)
+                      setIsCombatModalOpen(true)
+                    }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold text-xs transition-all shadow-lg shadow-red-900/20"
+                  >
+                    <Play size={14} /> Iniciar Combate
+                  </button>
+                )}
               </div>
             </div>
 
@@ -651,36 +711,94 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
                         </div>
                       </div>
 
-                      {/* NPCs */}
+                      {/* Monstros (Bestiário) */}
                       <div className="space-y-4">
-                        <div className="flex justify-between items-center border-b border-[#F97316]/20 pb-2">
-                          <h4 className="text-[10px] font-black text-[#F97316] uppercase tracking-widest flex items-center gap-2">
-                            <UserPlus size={14} /> NPCs / Inimigos
+                        <div className="flex justify-between items-center border-b border-red-500/20 pb-2">
+                          <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-2">
+                            <Ghost size={14} /> Criaturas / Combate
                           </h4>
-                          <button onClick={() => handleAddNpc(activeRoom.id)} className="p-1 hover:bg-[#18181B] rounded text-[#F97316] flex items-center gap-1 text-[10px] font-bold">
+                          <button 
+                            onClick={() => setShowMonsterSelect(!showMonsterSelect)} 
+                            className="p-1 hover:bg-[#18181B] rounded text-red-500 flex items-center gap-1 text-[10px] font-bold"
+                          >
                             <Plus size={14} /> Adicionar
                           </button>
                         </div>
                         
-                        <label className="flex items-center gap-2 text-[10px] text-zinc-500 mb-2 cursor-pointer hover:text-zinc-300 transition-colors">
-                          <input 
-                            type="checkbox" 
-                            checked={newNpcIsMonster}
-                            onChange={e => setNewNpcIsMonster(e.target.checked)}
-                            className="accent-[#F97316]"
-                          />
-                          Próximo será monstro
-                        </label>
+                        {showMonsterSelect && (
+                          <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-2 max-h-48 overflow-y-auto custom-scrollbar">
+                            {campaignMonsters.map(m => (
+                              <button
+                                key={m.id}
+                                onClick={() => handleAddMonsterToRoom(m.id)}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#27272A] text-xs transition-colors flex justify-between items-center"
+                              >
+                                <span className="font-bold text-zinc-300">{m.name}</span>
+                                <span className="text-[10px] text-zinc-500 uppercase">{m.type} (VD {m.vd})</span>
+                              </button>
+                            ))}
+                            {campaignMonsters.length === 0 && (
+                              <p className="p-3 text-center text-xs text-zinc-600">Nenhum monstro no bestiário.</p>
+                            )}
+                          </div>
+                        )}
+
                         <div className="space-y-2">
-                          {(activeRoom.roomNpcs ?? []).map(npc => (
-                            <div key={npc.id} className="group bg-[#18181B] border border-[#27272A] p-3 rounded-lg flex justify-between items-center">
+                          {(activeRoom.roomMonsters ?? []).map(rm => (
+                            <div key={rm.id} className="group bg-[#18181B] border border-[#27272A] p-3 rounded-lg flex justify-between items-center hover:border-red-500/30 transition-all">
+                              <div className="flex-1">
+                                <h5 className="text-xs font-bold text-white uppercase">{rm.monster?.name}</h5>
+                                <p className="text-[9px] text-zinc-500 flex gap-2">
+                                  <span>🛡️ {rm.monster?.defense}</span>
+                                  <span>❤️ {rm.monster?.hpMax}</span>
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-1 bg-[#09090B] px-2 py-0.5 rounded border border-[#27272A]">
+                                  <button onClick={() => handleUpdateMonsterQuantity(rm.id, rm.quantity - 1)} className="text-zinc-500 hover:text-white transition-colors">－</button>
+                                  <span className="text-[10px] font-black text-red-500 min-w-[20px] text-center">x{rm.quantity}</span>
+                                  <button onClick={() => handleUpdateMonsterQuantity(rm.id, rm.quantity + 1)} className="text-zinc-500 hover:text-white transition-colors">＋</button>
+                                </div>
+                                <button 
+                                  onClick={() => { setEditingInstance(rm); setIsInstanceModalOpen(true) }}
+                                  className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors px-1"
+                                >
+                                  📝
+                                </button>
+                                <button onClick={() => handleRemoveMonster(rm.id)} className="opacity-0 group-hover:opacity-100 text-red-500 transition-opacity"><Trash2 size={12} /></button>
+                              </div>
+                            </div>
+                          ))}
+                          {(activeRoom.roomMonsters?.length ?? 0) === 0 && <p className="text-[10px] text-zinc-700 italic">Nenhuma criatura hostil.</p>}
+                        </div>
+                      </div>
+
+                      {/* NPCs (Sociais) */}
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center border-b border-blue-500/20 pb-2">
+                          <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-widest flex items-center gap-2">
+                            <UserPlus size={14} /> NPCs Sociais
+                          </h4>
+                          <button 
+                            onClick={async () => {
+                              const name = prompt('Nome do NPC:')
+                              if (!name) return
+                              await axios.post(`/api/campaigns/${campaignId}/missions/${selectedMission?.id}/rooms/${activeRoomId}/npcs`, { name, notes: '', quantity: 1, is_monster: false })
+                              fetchMissions()
+                            }} 
+                            className="p-1 hover:bg-[#18181B] rounded text-blue-500 flex items-center gap-1 text-[10px] font-bold"
+                          >
+                            <Plus size={14} /> Adicionar
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          {(activeRoom.roomNpcs ?? []).filter(npc => !npc.isMonster).map(npc => (
+                            <div key={npc.id} className="group bg-[#18181B] border border-[#27272A] p-3 rounded-lg flex justify-between items-center hover:border-blue-500/30 transition-all">
                               <div>
                                 <h5 className="text-xs font-bold text-white uppercase">{npc.name}</h5>
                               </div>
                               <div className="flex items-center gap-3">
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-black ${npc.isMonster ? 'bg-red-500 text-[#09090B]' : 'bg-blue-500 text-[#09090B]'}`}>
-                                  X{npc.quantity}
-                                </span>
                                 <button 
                                   onClick={() => { setSelectedNpc(npc); setNpcModalOpen(true) }}
                                   className="text-[10px] text-zinc-500 hover:text-blue-400 transition-colors px-2 flex items-center gap-1"
@@ -691,7 +809,7 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
                               </div>
                             </div>
                           ))}
-                          {(activeRoom.roomNpcs?.length ?? 0) === 0 && <p className="text-[10px] text-zinc-700 italic">Nenhum perigo detectado.</p>}
+                          {(activeRoom.roomNpcs?.filter(n => !n.isMonster).length ?? 0) === 0 && <p className="text-[10px] text-zinc-700 italic">Nenhum civil por aqui.</p>}
                         </div>
                       </div>
 
@@ -740,6 +858,79 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
                 setLocalHomebrewItems(prev => [...prev, newItem])
               }}
             />
+
+            <MonsterFormModal
+              isOpen={isInstanceModalOpen}
+              onClose={() => { setIsInstanceModalOpen(false); setEditingInstance(null) }}
+              monster={editingInstance}
+              campaignId={campaignId}
+              mode="room-instance"
+            />
+
+            {/* Modal de Iniciar Combate */}
+            <AnimatePresence>
+              {isCombatModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="bg-[#18181B] border border-[#27272A] rounded-2xl p-6 w-full max-w-md shadow-2xl"
+                  >
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">
+                        <Ghost size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-white leading-none">Iniciar Combate</h3>
+                        <p className="text-xs text-zinc-500 mt-1">Selecione as criaturas da sala que entrarão no combate.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 mb-8 max-h-64 overflow-y-auto custom-scrollbar">
+                      {activeRoom?.roomMonsters?.map(rm => (
+                        <label 
+                          key={rm.id} 
+                          className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
+                            selectedMonstersForCombat[rm.id] ? 'bg-red-500/5 border-red-500/50 text-white' : 'bg-[#09090B] border-[#27272A] text-zinc-500'
+                          }`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold uppercase">{rm.monster?.name}</span>
+                            <span className="text-[10px] opacity-70">Quantidade: {rm.quantity}</span>
+                          </div>
+                          <input 
+                            type="checkbox"
+                            checked={!!selectedMonstersForCombat[rm.id]}
+                            onChange={(e) => setSelectedMonstersForCombat(prev => ({ ...prev, [rm.id]: e.target.checked }))}
+                            className="accent-red-500 h-4 w-4"
+                          />
+                        </label>
+                      ))}
+                      {activeRoom?.roomMonsters?.length === 0 && (
+                        <p className="text-center py-4 text-xs text-zinc-600">Nenhum monstro cadastrado nesta sala.</p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setIsCombatModalOpen(false)}
+                        className="flex-1 px-4 py-2 rounded-lg font-bold text-xs text-zinc-400 hover:bg-[#27272A] transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        onClick={handleStartRoomCombat}
+                        disabled={!Object.values(selectedMonstersForCombat).some(v => v)}
+                        className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:hover:bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-xs transition-all shadow-lg shadow-red-900/20"
+                      >
+                        Iniciar Agora
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>

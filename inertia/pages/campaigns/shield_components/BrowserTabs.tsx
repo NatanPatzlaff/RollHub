@@ -1,15 +1,17 @@
-import { Monitor, Swords, Dices, X, Users, FileText, LucideIcon } from 'lucide-react'
+import { Monitor, Swords, Dices, X, Users, FileText, Settings, LucideIcon, Ghost } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 interface BrowserTabsProps {
   activeTab: string
   setActiveTab: (tab: string) => void
+  onOpenSettings?: () => void
 }
 
-export default function BrowserTabs({ activeTab, setActiveTab }: BrowserTabsProps) {
+export default function BrowserTabs({ activeTab, setActiveTab, onOpenSettings }: BrowserTabsProps) {
   const tabs = [
     { id: 'missoes', label: 'Missões', icon: Monitor },
     { id: 'combates', label: 'Combates', icon: Swords },
+    { id: 'bestiario', label: 'Bestiário', icon: Ghost },
     { id: 'dados', label: 'Dados', icon: Dices },
     { id: 'jogadores', label: 'Grupo', icon: Users },
     { id: 'anotacoes', label: 'Anotações', icon: FileText },
@@ -52,6 +54,18 @@ export default function BrowserTabs({ activeTab, setActiveTab }: BrowserTabsProp
       <button className="flex items-center justify-center w-8 h-8 mt-1 ml-1 rounded-md text-[#A1A1AA] hover:bg-[#1C1C1E] hover:text-white transition-colors">
         <span className="text-xl leading-none">+</span>
       </button>
+
+      {onOpenSettings && (
+        <div className="ml-auto flex items-center pr-4">
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center justify-center w-8 h-8 rounded-md text-[#A1A1AA] hover:bg-[#1C1C1E] hover:text-[#F97316] transition-colors"
+            title="Configurações da Campanha"
+          >
+            <Settings size={18} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
