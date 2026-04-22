@@ -206,6 +206,16 @@ export default class MissionsController {
       }
 
       await trx.commit()
+
+      // SSE para atualização do inventário em tempo real
+      const transmit = (await import('@adonisjs/transmit/services/main')).default;
+      await transmit.broadcast(`campaign/${params.campaignId}/events`, {
+        type: 'ITEM_COLLECTED',
+        characterId: characterId,
+        item: item.serialize(),
+        timestamp: new Date().toISOString()
+      });
+
       return response.ok(item)
     } catch (error) {
       await trx.rollback()

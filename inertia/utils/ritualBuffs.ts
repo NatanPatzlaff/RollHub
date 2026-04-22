@@ -45,11 +45,19 @@ export interface RitualBuffEffect {
   /** Tipo de arma afetada */
   weaponType?: 'melee' | 'all'
   /** Duração do buff de arma */
-  weaponDuration?: 'scene' | 'sustained' | 'next_attack'
+  buffDuration?: 'scene' | 'sustained' | 'next_attack'
   /** Se true, cura PV igual a metade do dano total causado */
   healHalfDamage?: boolean
   /** Fator de cura por dano: 0.5 = metade, 1.0 = total */
   healByDamageFactor?: number
+  /** Vantagens em perícias (dado extra) */
+  skillAdvantage?: string[]
+  /** Desvantagem para ataques de inimigos contra você */
+  enemyAttackDisadvantage?: boolean
+  /** Imunidade a ser surpreendido */
+  immuneSurprised?: boolean
+  /** Bônus de Reflexos */
+  reflexBonus?: number
 }
 
 export interface RitualBuffEntry {
@@ -113,15 +121,27 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
 
   'fortalecimento sensorial': {
     base: {
-      selfOnly: true,
       label: 'Fortalecimento Sensorial',
-      // +1d20 em Investigação, Luta, Percepção, Pontaria — não altera stats visíveis diretamente
+      selfOnly: true,
+      buffDuration: 'scene',
+      skillAdvantage: ['Investigação', 'Luta', 'Percepção', 'Pontaria'],
+    },
+    discente: {
+      label: 'Fortalecimento Sensorial (D)',
+      selfOnly: true,
+      buffDuration: 'scene',
+      skillAdvantage: ['Investigação', 'Luta', 'Percepção', 'Pontaria'],
+      enemyAttackDisadvantage: true,
     },
     verdadeiro: {
-      defenseBonus: 10,
-      dodgeBonus: 10,
-      selfOnly: true,
       label: 'Fortalecimento Sensorial (V)',
+      selfOnly: true,
+      buffDuration: 'scene',
+      skillAdvantage: ['Investigação', 'Luta', 'Percepção', 'Pontaria'],
+      enemyAttackDisadvantage: true,
+      defenseBonus: 10,
+      reflexBonus: 10,
+      immuneSurprised: true,
     },
   },
 
@@ -240,7 +260,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Ódio Incontrolável',
       weaponAttackBonus: 2,
       weaponDamageBonus: 2,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -248,7 +268,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Ódio Incontrolável (V)',
       weaponAttackBonus: 5,
       weaponDamageBonus: 5,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -258,21 +278,21 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
     base: {
       label: 'Amaldiçoar Arma',
       weaponExtraDamageDice: '1d6',
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
       selfOnly: true,
     },
     discente: {
       label: 'Amaldiçoar Arma (D)',
       weaponExtraDamageDice: '2d6',
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
       selfOnly: true,
     },
     verdadeiro: {
       label: 'Amaldiçoar Arma (V)',
       weaponExtraDamageDice: '4d6',
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
       selfOnly: true,
     },
@@ -283,14 +303,14 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Arma Atroz',
       weaponAttackBonus: 2,
       weaponThreatRangeBonus: 1,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
       selfOnly: true,
     },
     discente: {
       label: 'Arma Atroz (D)',
       weaponAttackBonus: 5,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
       selfOnly: true,
     },
@@ -299,7 +319,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponAttackBonus: 5,
       weaponThreatRangeBonus: 2,
       weaponCritMultiplierBonus: 2,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
       selfOnly: true,
     },
@@ -311,7 +331,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Forma Monstruosa',
       weaponAttackBonus: 5,
       weaponDamageBonus: 5,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -320,7 +340,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Forma Monstruosa (V)',
       weaponAttackBonus: 10,
       weaponDamageBonus: 10,
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -331,7 +351,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Chamas do Caos',
       weaponExtraDamageDice: '1d6',
       weaponDamageElement: 'Fogo',
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -343,7 +363,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponExtraDamageDice: '3d8',
       weaponDamageBonus: 3,
       weaponDamageElement: 'Morte',
-      weaponDuration: 'next_attack',
+      buffDuration: 'next_attack',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -354,7 +374,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       label: 'Descarnar (V)',
       weaponExtraDamageDice: '4d8',
       weaponDamageElement: 'Sangue',
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'melee',
       selfOnly: true,
     },
@@ -374,7 +394,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       // Discente: buff de próximo ataque com dano extra de ritual
       weaponExtraDamageDice: '6d6',
       weaponDamageElement: 'Sangue',
-      weaponDuration: 'next_attack',
+      buffDuration: 'next_attack',
       weaponType: 'all',
     },
     verdadeiro: {
@@ -382,7 +402,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       healByDamageFactor: 0.5,
       selfOnly: true,
       // Verdadeiro: buff de cena sustentado
-      weaponDuration: 'scene',
+      buffDuration: 'scene',
       weaponType: 'all',
     },
   },

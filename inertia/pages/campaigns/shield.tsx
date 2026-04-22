@@ -250,6 +250,16 @@ export default function ShieldDashboard() {
               localInitiatives={localInitiatives}
               requestingInitiative={requestingInitiative}
               onRequestInitiative={handleRequestInitiative}
+              onInitiativeChange={(characterId, value) =>
+                setLocalInitiatives(prev => ({ ...prev, [characterId]: value }))
+              }
+              onNextTurn={async (characterId, characterName) => {
+                try {
+                  await axios.post(`/api/campaigns/${campaign.id}/notify-turn`, { characterId, characterName })
+                } catch (e) {
+                  console.error('[TURN] Erro ao notificar turno:', e)
+                }
+              }}
               showStats={true}
               onToggleStats={handleToggleStats}
               switchValue={showStats}

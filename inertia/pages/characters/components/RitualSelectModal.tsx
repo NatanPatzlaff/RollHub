@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
 import { Filter, Sparkles, CircleDot, Check } from 'lucide-react'
 import BaseModal from './BaseModal'
-import { canUseRitualUpgrade } from '../../../utils/ritualReqs'
 
 /** Representação de um ritual do catálogo */
 export interface CatalogRitual {
@@ -322,7 +321,7 @@ export default function RitualSelectModal({
                     layout="position"
                     className="flex flex-col gap-1.5 border-t border-zinc-800/50 pt-3"
                   >
-                    {ritual.discente && canUseRitualUpgrade(ritual.discente, ritual.element ?? '', circuloMaximo, characterAffinity) && (
+                    {ritual.discente && (
                       <p
                         className={`text-sm text-zinc-400 leading-relaxed ${isSelected ? '' : 'line-clamp-1'}`}
                       >
@@ -330,7 +329,7 @@ export default function RitualSelectModal({
                         {ritual.discente}
                       </p>
                     )}
-                    {ritual.verdadeiro && canUseRitualUpgrade(ritual.verdadeiro, ritual.element ?? '', circuloMaximo, characterAffinity) && (
+                    {ritual.verdadeiro && (
                       <p
                         className={`text-sm text-zinc-400 leading-relaxed ${isSelected ? '' : 'line-clamp-1'}`}
                       >

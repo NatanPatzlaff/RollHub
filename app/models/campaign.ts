@@ -57,6 +57,9 @@ export default class Campaign extends BaseModel {
   @column({ columnName: 'show_player_stats' })
   declare showPlayerStats: boolean
 
+  @column({ columnName: 'require_item_approval' })
+  declare requireItemApproval: boolean
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 

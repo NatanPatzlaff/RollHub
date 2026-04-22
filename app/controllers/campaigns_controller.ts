@@ -273,6 +273,40 @@ export default class CampaignsController {
     return response.ok({ success: true })
   }
 
+  async destroy({ params, auth, response }: HttpContext) {
+    const user = auth.user
+    if (!user) {
+      return response.unauthorized({ message: 'Usuário não autenticado' })
+    }
+
+    const campaign = await Campaign.find(params.id)
+    if (!campaign) {
+      return response.notFound({ message: 'Campanha não encontrada' })
+    }
+
+    if (campaign.gameMasterId !== user.id) {
+      return response.forbidden({ message: 'Apenas o mestre pode excluir a campanha' })
+    }
+
+    await campaign.delete()
+
+    return response.redirect().toPath('/')
+  }
+
+  async notifyTurn({ params, request, response }: HttpContext) {
+    const campaignId = params.id
+    const { characterId, characterName } = request.all()
+
+    await transmit.broadcast(`campaign/${campaignId}/events`, {
+      type: 'TURN_START',
+      characterId,
+      characterName,
+      timestamp: new Date().toISOString(),
+    })
+
+    return response.ok({ success: true })
+  }
+
   async endScene({ params, response }: HttpContext) {
     const campaignId = params.id
 

@@ -68,7 +68,27 @@ export interface CatalogAmmunition {
   weaponTypeRestriction: any | null
 }
 
-export type AddItemType = 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition'
+export interface CatalogHomebrewItem {
+  id: number
+  name: string
+  description: string | null
+  itemType: 'weapon' | 'protection' | 'ammunition' | 'general'
+  damage: string | null
+  damageType: string | null
+  range: string | null
+  defenseBonus: number | null
+  penalty: number | null
+  caliber: string | null
+  quantityPerBox: number | null
+  weight: number | null
+  price: number | null
+  category: number | null
+  skillBonusName: string | null
+  skillBonusValue: number | null
+  createdByUserId: number | null
+}
+
+export type AddItemType = 'weapon' | 'protection' | 'general' | 'cursed' | 'ammunition' | 'homebrew'
 
 export interface AddItemModalProps {
   isOpen: boolean
@@ -78,14 +98,19 @@ export interface AddItemModalProps {
   catalogGeneralItems: CatalogGeneralItem[]
   catalogCursedItems: CatalogCursedItem[]
   catalogAmmunitions: CatalogAmmunition[]
+  catalogHomebrewItems: CatalogHomebrewItem[]
+  inventory: any[]
+  characterHomebrewIds: number[]
+  onRemoveItem: (id: number) => void
   /** DT de explosivos pré-computada: 10 + floor(nex/5) + agilidade */
   explosiveDt: number
   onAdd: (type: AddItemType, itemId: number, quantity?: number, chosenSkillBonusName?: string) => void
+  onAddHomebrew: (homebrewItemId: number) => void
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-type TabId = 'weapons' | 'protections' | 'general' | 'cursed' | 'ammunitions'
+type TabId = 'weapons' | 'protections' | 'general' | 'cursed' | 'ammunitions' | 'homebrew'
 
 const TABS: { id: TabId; label: string; Icon: LucideIcon }[] = [
   { id: 'weapons', label: 'Armas', Icon: Sword },
@@ -93,6 +118,7 @@ const TABS: { id: TabId; label: string; Icon: LucideIcon }[] = [
   { id: 'general', label: 'Itens Gerais', Icon: Briefcase },
   { id: 'cursed', label: 'Itens Amaldiçoados', Icon: Eye },
   { id: 'ammunitions', label: 'Munições', Icon: Crosshair },
+  { id: 'homebrew', label: 'Homebrew', Icon: Sparkles },
 ]
 
 const CAT_LABELS: Record<number, string> = { 0: '0', 1: 'I', 2: 'II', 3: 'III', 4: 'IV' }
@@ -110,15 +136,28 @@ const STAT_CHIP =
 
 // ─── Botão Adicionar com feedback visual ──────────────────────────────────────
 
-function AddItemButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+function AddItemButton({ onClick, disabled, variant = 'add' }: { onClick: () => void; disabled?: boolean; variant?: 'add' | 'delete' }) {
   const [added, setAdded] = useState(false)
 
   const handleClick = () => {
     if (disabled || added) return
     onClick()
-    setAdded(true)
-    setTimeout(() => setAdded(false), 2000)
+    if (variant === 'add') {
+      setAdded(true)
+      setTimeout(() => setAdded(false), 2000)
+    }
   }
+
+  const baseStyles = 'relative overflow-hidden rounded-md px-4 py-2 text-sm font-bold transition-colors min-w-[120px] flex items-center justify-center gap-2 shadow-sm'
+  
+  const variantStyles = 
+    disabled 
+      ? 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed'
+      : variant === 'delete'
+        ? 'bg-red-500/10 text-red-500 border border-red-500/30 hover:bg-red-500/20'
+        : added
+          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+          : 'bg-amber-600 text-white hover:bg-amber-500'
 
   return (
     <m.button
@@ -126,20 +165,24 @@ function AddItemButton({ onClick, disabled }: { onClick: () => void; disabled?: 
       whileTap={!added && !disabled ? { scale: 0.95 } : {}}
       onClick={handleClick}
       disabled={disabled}
-      className={`relative overflow-hidden rounded-md px-4 py-2 text-sm font-bold transition-colors min-w-[120px] flex items-center justify-center gap-2 ${
-        disabled
-          ? 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed'
-          : added
-            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
-            : 'bg-amber-600 text-white hover:bg-amber-500'
-      }`}
+      className={`${baseStyles} ${variantStyles}`}
     >
       <AnimatePresence mode="wait">
         {disabled ? (
           <m.span key="disabled" className="flex items-center gap-2">
             <Plus size={16} strokeWidth={3} />
-            Em breve
+            {variant === 'delete' ? 'Bloqueado' : 'Em breve'}
           </m.span>
+        ) : variant === 'delete' ? (
+          <m.div 
+            key="delete"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex items-center gap-2"
+          >
+            <X size={16} strokeWidth={3} />
+            Excluir
+          </m.div>
         ) : added ? (
           <m.div
             key="added"
@@ -180,6 +223,9 @@ function ItemCard({
   onToggle,
   onAdd,
   addDisabled,
+  status,
+  rejectionReason,
+  onDelete,
 }: {
   id: string
   name: string
@@ -190,8 +236,14 @@ function ItemCard({
   onToggle: (key: string) => void
   onAdd: () => void
   addDisabled?: boolean
+  status?: 'active' | 'pending' | 'rejected'
+  rejectionReason?: string
+  onDelete?: () => void
 }) {
   const isExpanded = expandedKey === id
+
+  const isRejected = status === 'rejected'
+  const isPending = status === 'pending'
 
   return (
     <m.div
@@ -205,8 +257,30 @@ function ItemCard({
       onClick={() => onToggle(id)}
     >
       <div className="flex flex-col gap-1 flex-1 pr-4">
-        <h3 className="text-base font-bold text-zinc-100">{name}</h3>
+        <div className="flex flex-wrap items-center gap-2 mb-1">
+          <h3 className="text-base font-bold text-zinc-100">{name}</h3>
+          
+          {isPending && (
+            <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-500 ring-1 ring-inset ring-amber-500/20 uppercase tracking-tight">
+              Aguardando aprovação
+            </span>
+          )}
+          
+          {isRejected && (
+            <span className="inline-flex items-center rounded-md bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-500 ring-1 ring-inset ring-red-500/20 uppercase tracking-tight">
+              Rejeitado
+            </span>
+          )}
+        </div>
+
         <span className="text-xs font-medium text-zinc-500">{statsLine}</span>
+        
+        {isRejected && rejectionReason && (
+          <div className="mt-2 text-xs bg-red-500/5 border border-red-500/20 rounded p-2 text-red-400 font-medium">
+            <span className="font-bold opacity-70">Motivo: </span> {rejectionReason}
+          </div>
+        )}
+
         {description && (
           <p
             className={`text-sm text-zinc-400 mt-1 leading-relaxed ${isExpanded ? '' : 'line-clamp-2'}`}
@@ -231,7 +305,11 @@ function ItemCard({
       </div>
 
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-        <AddItemButton onClick={onAdd} disabled={addDisabled} />
+        {isRejected ? (
+          <AddItemButton onClick={onDelete || (() => {})} variant="delete" />
+        ) : (
+          <AddItemButton onClick={onAdd} disabled={addDisabled || isPending} />
+        )}
       </div>
     </m.div>
   )
@@ -248,6 +326,72 @@ function StatChip({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+// ─── Seção de Itens Homebrew ──────────────────────────────────────────────────
+
+function HomebrewSection({
+  items,
+  expandedKey,
+  onToggle,
+  onRemoveItem,
+}: {
+  items: any[]
+  expandedKey: string | null
+  onToggle: (k: string) => void
+  onRemoveItem: (id: number) => void
+}) {
+  if (items.length === 0) return null
+
+  return (
+    <div className="mt-8 space-y-4 border-t border-zinc-800 pt-8">
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-amber-500/5 border-amber-500/20">
+        <Sparkles size={14} className="text-amber-500" />
+        <span className="text-xs font-black uppercase tracking-widest text-amber-500">
+          Seus Itens Customizados
+        </span>
+      </div>
+      
+      <div className="flex flex-col gap-3">
+        {items.map((item) => {
+          const statsLine = item.type === 'Arma' 
+            ? [item.weaponType, item.range, `Dano ${item.damage}`].filter(Boolean).join(' · ')
+            : item.type === 'Armadura'
+              ? `Def +${item.defenseBonus}`
+              : `Espaços: ${item.spaces}`
+
+          return (
+            <ItemCard
+              key={item.uniqueId}
+              id={item.uniqueId}
+              name={item.name}
+              statsLine={statsLine}
+              description={item.desc}
+              status={item.status}
+              rejectionReason={item.rejectionReason}
+              onDelete={() => onRemoveItem(item.id)}
+              expandedKey={expandedKey}
+              onToggle={onToggle}
+              onAdd={() => {}} // Não aplicável aqui
+              addDisabled={true}
+              expandedContent={
+                <>
+                  {item.damage && <StatChip label="Dano" value={item.damage} />}
+                  <StatChip label="Espaços" value={item.spaces} />
+                  {item.status === 'active' && (
+                    <div className="col-span-2 sm:col-span-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Item Ativo</p>
+                      <p className="text-xs text-emerald-200/70 mt-1">Este item já faz parte do seu inventário.</p>
+                    </div>
+                  )}
+                </>
+              }
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Conteúdo de cada aba ─────────────────────────────────────────────────────
 
 function WeaponsTab({
@@ -255,74 +399,89 @@ function WeaponsTab({
   expandedKey,
   onToggle,
   onAdd,
+  inventory,
+  onRemoveItem,
 }: {
   items: CatalogWeapon[]
   expandedKey: string | null
   onToggle: (k: string) => void
   onAdd: (id: number) => void
+  inventory: any[]
+  onRemoveItem: (id: number) => void
 }) {
-  if (items.length === 0)
+  const homebrewItems = inventory.filter(i => i.isHomebrew && i.itemKind === 'weapon')
+  
+  if (items.length === 0 && homebrewItems.length === 0)
     return <EmptyState icon={Sword} message="Nenhuma arma cadastrada." />
 
   return (
-    <AnimatePresence mode="popLayout">
-      {items.map((item) => {
-        const key = `weapon-${item.id}`
-        const statsLine = [
-          item.type,
-          item.weaponType,
-          item.range,
-          `Dano ${item.damage}${item.damageType ? ` (${item.damageType})` : ''}`,
-        ]
-          .filter(Boolean)
-          .join(' · ')
+    <>
+      <div className="flex flex-col gap-3">
+        {items.map((item) => {
+          const key = `weapon-${item.id}`
+          const statsLine = [
+            item.type,
+            item.weaponType,
+            item.range,
+            `Dano ${item.damage}${item.damageType ? ` (${item.damageType})` : ''}`,
+          ]
+            .filter(Boolean)
+            .join(' · ')
 
-        return (
-          <ItemCard
-            key={key}
-            id={key}
-            name={item.name}
-            statsLine={statsLine}
-            description={item.description}
-            expandedKey={expandedKey}
-            onToggle={onToggle}
-            onAdd={() => onAdd(item.id)}
-            expandedContent={
-              <>
-                <StatChip
-                  label="Dano"
-                  value={
-                    <>
-                      {item.damage}
-                      {item.damageType && (
-                        <span className="text-sm font-normal text-orange-200/80">
-                          {' '}
-                          ({item.damageType})
-                        </span>
-                      )}
-                    </>
-                  }
-                />
-                <StatChip label="Categoria" value={CAT_LABELS[item.category] ?? item.category} />
-                <StatChip label="Alcance" value={item.range ?? '—'} />
-                <StatChip label="Margem crítico" value={item.critical ?? '—'} />
-                <StatChip label="Mult. crítico" value={item.criticalMultiplier ?? '—'} />
-                {item.ammoType && (
+          return (
+            <ItemCard
+              key={key}
+              id={key}
+              name={item.name}
+              statsLine={statsLine}
+              description={item.description}
+              expandedKey={expandedKey}
+              onToggle={onToggle}
+              onAdd={() => onAdd(item.id)}
+              expandedContent={
+                <>
                   <StatChip
-                    label="Munição"
+                    label="Dano"
                     value={
-                      <span className="text-sm">
-                        {item.ammoType || '—'}
-                      </span>
+                      <>
+                        {item.damage}
+                        {item.damageType && (
+                          <span className="text-sm font-normal text-orange-200/80">
+                            {' '}
+                            ({item.damageType})
+                          </span>
+                        )}
+                      </>
                     }
                   />
-                )}
-              </>
-            }
-          />
-        )
-      })}
-    </AnimatePresence>
+                  <StatChip label="Categoria" value={CAT_LABELS[item.category] ?? item.category} />
+                  <StatChip label="Alcance" value={item.range ?? '—'} />
+                  <StatChip label="Margem crítico" value={item.critical ?? '—'} />
+                  <StatChip label="Mult. crítico" value={item.criticalMultiplier ?? '—'} />
+                  {item.ammoType && (
+                    <StatChip
+                      label="Munição"
+                      value={
+                        <span className="text-sm">
+                          {item.ammoType || '—'}
+                        </span>
+                      }
+                    />
+                  )}
+                </>
+              }
+            />
+          )
+        })}
+      </div>
+      
+      <HomebrewSection 
+        items={homebrewItems} 
+        expandedKey={expandedKey} 
+        onToggle={onToggle} 
+        onRemoveItem={onRemoveItem} 
+      />
+    </>
   )
 }
 
@@ -331,50 +490,65 @@ function ProtectionsTab({
   expandedKey,
   onToggle,
   onAdd,
+  inventory,
+  onRemoveItem,
 }: {
   items: CatalogProtection[]
   expandedKey: string | null
   onToggle: (k: string) => void
   onAdd: (id: number) => void
+  inventory: any[]
+  onRemoveItem: (id: number) => void
 }) {
-  if (items.length === 0)
+  const homebrewItems = inventory.filter(i => i.isHomebrew && i.itemKind === 'protection')
+
+  if (items.length === 0 && homebrewItems.length === 0)
     return <EmptyState icon={Shield} message="Nenhuma proteção cadastrada." />
 
   return (
-    <AnimatePresence mode="popLayout">
-      {items.map((item) => {
-        const key = `protection-${item.id}`
-        const statsLine = [
-          item.type,
-          `Def +${item.defenseBonus}`,
-          item.dodgePenalty !== 0 ? `Esquiva ${item.dodgePenalty}` : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')
+    <>
+      <div className="flex flex-col gap-3">
+        {items.map((item) => {
+          const key = `protection-${item.id}`
+          const statsLine = [
+            item.type,
+            `Def +${item.defenseBonus}`,
+            item.dodgePenalty !== 0 ? `Esquiva ${item.dodgePenalty}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')
 
-        return (
-          <ItemCard
-            key={key}
-            id={key}
-            name={item.name}
-            statsLine={statsLine}
-            description={item.description}
-            expandedKey={expandedKey}
-            onToggle={onToggle}
-            onAdd={() => onAdd(item.id)}
-            expandedContent={
-              <>
-                <StatChip label="Bônus de defesa" value={`+${item.defenseBonus}`} />
-                <StatChip label="Penalidade esquiva" value={item.dodgePenalty} />
-                <StatChip label="Categoria" value={CAT_LABELS[item.category] ?? item.category} />
-                <StatChip label="Tipo" value={item.type} />
-                <StatChip label="Espaços" value={item.spaces} />
-              </>
-            }
-          />
-        )
-      })}
-    </AnimatePresence>
+          return (
+            <ItemCard
+              key={key}
+              id={key}
+              name={item.name}
+              statsLine={statsLine}
+              description={item.description}
+              expandedKey={expandedKey}
+              onToggle={onToggle}
+              onAdd={() => onAdd(item.id)}
+              expandedContent={
+                <>
+                  <StatChip label="Bônus de defesa" value={`+${item.defenseBonus}`} />
+                  <StatChip label="Penalidade esquiva" value={item.dodgePenalty} />
+                  <StatChip label="Categoria" value={CAT_LABELS[item.category] ?? item.category} />
+                  <StatChip label="Tipo" value={item.type} />
+                  <StatChip label="Espaços" value={item.spaces} />
+                </>
+              }
+            />
+          )
+        })}
+      </div>
+
+      <HomebrewSection 
+        items={homebrewItems} 
+        expandedKey={expandedKey} 
+        onToggle={onToggle} 
+        onRemoveItem={onRemoveItem} 
+      />
+    </>
   )
 }
 
@@ -384,14 +558,20 @@ function GeneralItemsTab({
   onToggle,
   onAdd,
   explosiveDt,
+  inventory,
+  onRemoveItem,
 }: {
   items: CatalogGeneralItem[]
   expandedKey: string | null
   onToggle: (k: string) => void
   onAdd: (itemId: number, quantity?: number, chosenSkillBonusName?: string) => void
   explosiveDt: number
+  inventory: any[]
+  onRemoveItem: (id: number) => void
 }) {
-  if (items.length === 0)
+  const homebrewItems = inventory.filter(i => i.isHomebrew && i.itemKind === 'general')
+
+  if (items.length === 0 && homebrewItems.length === 0)
     return <EmptyState icon={Briefcase} message="Nenhum item geral cadastrado." />
 
   const SECTION_STYLES: Record<
@@ -476,6 +656,12 @@ function GeneralItemsTab({
           </div>
         )
       })}
+      <HomebrewSection 
+        items={homebrewItems} 
+        expandedKey={expandedKey} 
+        onToggle={onToggle} 
+        onRemoveItem={onRemoveItem} 
+      />
     </>
   )
 }
@@ -627,52 +813,152 @@ function AmmunitionsTab({
   expandedKey,
   onToggle,
   onAdd,
+  inventory,
+  onRemoveItem,
 }: {
   items: CatalogAmmunition[]
   expandedKey: string | null
   onToggle: (k: string) => void
   onAdd: (id: number) => void
+  inventory: any[]
+  onRemoveItem: (id: number) => void
 }) {
-  if (items.length === 0)
+  const homebrewItems = inventory.filter(i => i.isHomebrew && (i.itemKind === 'ammunition' || i.type === 'Munição'))
+
+  if (items.length === 0 && homebrewItems.length === 0)
     return <EmptyState icon={Crosshair} message="Nenhuma munição cadastrada." />
 
   return (
-    <AnimatePresence mode="popLayout">
-      {items.map((item) => {
-        const key = `ammunition-${item.id}`
-        const statsLine = `Categoria ${item.category} · ${item.spaces} espaço(s)`
+    <>
+      <div className="flex flex-col gap-3">
+        {items.map((item) => {
+          const key = `ammunition-${item.id}`
+          const statsLine = `Categoria ${item.category} · ${item.spaces} espaço(s)`
+
+          return (
+            <ItemCard
+              key={key}
+              id={key}
+              name={item.name}
+              statsLine={statsLine}
+              description={item.description}
+              expandedKey={expandedKey}
+              onToggle={onToggle}
+              onAdd={() => onAdd(item.id)}
+              expandedContent={
+                <>
+                  <StatChip label="Categoria" value={item.category} />
+                  <StatChip label="Espaços" value={item.spaces} />
+                  {item.duration && (
+                    <StatChip label="Duração" value={item.duration} />
+                  )}
+                  {item.weaponTypeRestriction && (
+                    <StatChip 
+                      label="Armas compatíveis" 
+                      value={Array.isArray(item.weaponTypeRestriction) 
+                        ? item.weaponTypeRestriction.join(', ')
+                        : item.weaponTypeRestriction} 
+                    />
+                  )}
+                </>
+              }
+            />
+          )
+        })}
+      </div>
+
+      <HomebrewSection 
+        items={homebrewItems} 
+        expandedKey={expandedKey} 
+        onToggle={onToggle} 
+        onRemoveItem={onRemoveItem} 
+      />
+    </>
+  )
+}
+
+function HomebrewTab({
+  items,
+  characterHomebrewIds,
+  onAddHomebrew,
+  expandedKey,
+  onToggle,
+}: {
+  items: CatalogHomebrewItem[]
+  characterHomebrewIds: number[]
+  onAddHomebrew: (id: number) => void
+  expandedKey: string | null
+  onToggle: (k: string) => void
+}) {
+  if (items.length === 0)
+    return <EmptyState icon={Sparkles} message="Nenhum item customizado encontrado no catálogo global." />
+
+  const types = [
+    { id: 'weapon', label: 'Armas', Icon: Sword, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20', emoji: '⚔️' },
+    { id: 'protection', label: 'Proteções', Icon: Shield, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20', emoji: '🛡️' },
+    { id: 'ammunition', label: 'Munições', Icon: Crosshair, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', emoji: '🏹' },
+    { id: 'general', label: 'Itens Gerais', Icon: Briefcase, color: 'text-zinc-400', bg: 'bg-zinc-500/10', border: 'border-zinc-500/20', emoji: '📦' },
+  ]
+
+  return (
+    <div className="space-y-6">
+      {types.map((type) => {
+        const sectionItems = items.filter(i => i.itemType === type.id)
+        if (sectionItems.length === 0) return null
 
         return (
-          <ItemCard
-            key={key}
-            id={key}
-            name={item.name}
-            statsLine={statsLine}
-            description={item.description}
-            expandedKey={expandedKey}
-            onToggle={onToggle}
-            onAdd={() => onAdd(item.id)}
-            expandedContent={
-              <>
-                <StatChip label="Categoria" value={item.category} />
-                <StatChip label="Espaços" value={item.spaces} />
-                {item.duration && (
-                  <StatChip label="Duração" value={item.duration} />
-                )}
-                {item.weaponTypeRestriction && (
-                  <StatChip 
-                    label="Armas compatíveis" 
-                    value={Array.isArray(item.weaponTypeRestriction) 
-                      ? item.weaponTypeRestriction.join(', ')
-                      : item.weaponTypeRestriction} 
+          <div key={type.id} className="space-y-3">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${type.bg} ${type.border}`}>
+              <span>{type.emoji}</span>
+              <span className={`text-xs font-black uppercase tracking-widest ${type.color}`}>{type.label}</span>
+            </div>
+            
+            <AnimatePresence mode="popLayout">
+              {sectionItems.map((item) => {
+                const key = `homebrew-catalog-${item.id}`
+                const alreadyHas = characterHomebrewIds.includes(item.id)
+                
+                let statsLine = `CAT ${CAT_LABELS[item.category ?? 0] ?? item.category} · ${item.weight ?? 0} espaço(s)`
+                if (item.itemType === 'weapon') statsLine = `${item.damage || '—'} · ${statsLine}`
+                if (item.itemType === 'protection') statsLine = `+${item.defenseBonus || 0} Defesa · ${statsLine}`
+
+                return (
+                  <ItemCard
+                    key={key}
+                    id={key}
+                    name={item.name}
+                    statsLine={statsLine}
+                    description={item.description}
+                    expandedKey={expandedKey}
+                    onToggle={onToggle}
+                    onAdd={() => onAddHomebrew(item.id)}
+                    addDisabled={false}
+                    badge={null}
+                    expandedContent={
+                      <>
+                        <StatChip label="Categoria" value={CAT_LABELS[item.category ?? 0] ?? item.category} />
+                        <StatChip label="Espaços" value={item.weight ?? 0} />
+                        {item.damage && <StatChip label="Dano" value={item.damage} />}
+                        {item.damageType && <StatChip label="Tipo de Dano" value={item.damageType} />}
+                        {item.defenseBonus != null && <StatChip label="Bônus Defesa" value={`+${item.defenseBonus}`} />}
+                        {item.penalty != null && <StatChip label="Penalidade" value={item.penalty} />}
+                        {item.range && <StatChip label="Alcance" value={item.range} />}
+                        {item.skillBonusName && (
+                          <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 col-span-2">
+                             <p className="text-[9px] uppercase tracking-wider text-amber-400 font-bold">Bônus de Perícia</p>
+                             <p className="text-xs text-amber-100 font-bold mt-0.5">+{item.skillBonusValue} em {item.skillBonusName}</p>
+                          </div>
+                        )}
+                      </>
+                    }
                   />
-                )}
-              </>
-            }
-          />
+                )
+              })}
+            </AnimatePresence>
+          </div>
         )
       })}
-    </AnimatePresence>
+    </div>
   )
 }
 
@@ -694,18 +980,20 @@ function buildSearchEntries(
   generalItems: CatalogGeneralItem[],
   cursedItems: CatalogCursedItem[],
   ammunitions: CatalogAmmunition[],
+  homebrews: CatalogHomebrewItem[],
+  characterHomebrewIds: number[],
   explosiveDt: number,
-  onAdd: AddItemModalProps['onAdd']
+  onAdd: AddItemModalProps['onAdd'],
+  onAddHomebrew: AddItemModalProps['onAddHomebrew']
 ): SearchEntry[] {
   const entries: SearchEntry[] = []
 
   weapons.forEach((item) => {
+    const catLabel = CAT_LABELS[item.category] ?? String(item.category)
     entries.push({
       key: `weapon-${item.id}`,
       name: item.name,
-      statsLine: [item.type, item.weaponType, item.range, `Dano ${item.damage}${item.damageType ? ` (${item.damageType})` : ''}`]
-        .filter(Boolean)
-        .join(' · '),
+      statsLine: `${item.damage} · CAT ${catLabel} · ${item.type}`,
       description: item.description,
       categoryLabel: 'Armas',
       CategoryIcon: Sword,
@@ -717,9 +1005,7 @@ function buildSearchEntries(
     entries.push({
       key: `protection-${item.id}`,
       name: item.name,
-      statsLine: [item.type, `Def +${item.defenseBonus}`, item.dodgePenalty !== 0 ? `Esquiva ${item.dodgePenalty}` : null]
-        .filter(Boolean)
-        .join(' · '),
+      statsLine: `+${item.defenseBonus} Defesa · CAT ${CAT_LABELS[item.category] ?? item.category} · ${item.type}`,
       description: item.description,
       categoryLabel: 'Proteções',
       CategoryIcon: Shield,
@@ -764,6 +1050,22 @@ function buildSearchEntries(
       categoryLabel: 'Munições',
       CategoryIcon: Crosshair,
       onAdd: () => onAdd('ammunition', item.id),
+    })
+  })
+
+  homebrews.forEach((item) => {
+    let statsLine = `CAT ${CAT_LABELS[item.category ?? 0] ?? item.category} · ${item.weight ?? 0} espaço(s)`
+    if (item.itemType === 'weapon') statsLine = `${item.damage || '—'} · ${statsLine}`
+    if (item.itemType === 'protection') statsLine = `+${item.defenseBonus || 0} Defesa · ${statsLine}`
+
+    entries.push({
+      key: `homebrew-catalog-${item.id}`,
+      name: `${item.name} 🧪`,
+      statsLine,
+      description: item.description,
+      categoryLabel: 'Homebrew',
+      CategoryIcon: Sparkles,
+      onAdd: () => onAddHomebrew(item.id),
     })
   })
 
@@ -863,8 +1165,13 @@ export default function AddItemModal({
   catalogGeneralItems,
   catalogCursedItems,
   catalogAmmunitions,
+  catalogHomebrewItems,
+  inventory,
+  characterHomebrewIds,
+  onRemoveItem,
   explosiveDt,
   onAdd,
+  onAddHomebrew,
 }: AddItemModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>('weapons')
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
@@ -878,11 +1185,14 @@ export default function AddItemModal({
         catalogGeneralItems,
         catalogCursedItems,
         catalogAmmunitions,
+        catalogHomebrewItems,
+        characterHomebrewIds,
         explosiveDt,
-        onAdd
+        onAdd,
+        onAddHomebrew
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [catalogWeapons, catalogProtections, catalogGeneralItems, catalogCursedItems, catalogAmmunitions, explosiveDt]
+    [catalogWeapons, catalogProtections, catalogGeneralItems, catalogCursedItems, catalogAmmunitions, catalogHomebrewItems, characterHomebrewIds, explosiveDt]
   )
 
   const isSearching = search.trim().length > 0
@@ -1000,9 +1310,11 @@ export default function AddItemModal({
                   />
                 ) : (
                   <>
-                {activeTab === 'weapons' && (
+                 {activeTab === 'weapons' && (
                   <WeaponsTab
                     items={catalogWeapons}
+                    inventory={inventory}
+                    onRemoveItem={onRemoveItem}
                     expandedKey={expandedKey}
                     onToggle={toggleExpanded}
                     onAdd={(id) => onAdd('weapon', id)}
@@ -1011,6 +1323,8 @@ export default function AddItemModal({
                 {activeTab === 'protections' && (
                   <ProtectionsTab
                     items={catalogProtections}
+                    inventory={inventory}
+                    onRemoveItem={onRemoveItem}
                     expandedKey={expandedKey}
                     onToggle={toggleExpanded}
                     onAdd={(id) => onAdd('protection', id)}
@@ -1019,6 +1333,8 @@ export default function AddItemModal({
                 {activeTab === 'general' && (
                   <GeneralItemsTab
                     items={catalogGeneralItems}
+                    inventory={inventory}
+                    onRemoveItem={onRemoveItem}
                     expandedKey={expandedKey}
                     onToggle={toggleExpanded}
                     onAdd={(id, qty, skill) => onAdd('general', id, qty, skill)}
@@ -1037,9 +1353,20 @@ export default function AddItemModal({
                     items={catalogAmmunitions.filter((item: any) => 
                       item.type !== 'Melhoria' && item.type !== 'Maldição'
                     )}
+                    inventory={inventory}
+                    onRemoveItem={onRemoveItem}
                     expandedKey={expandedKey}
                     onToggle={toggleExpanded}
                     onAdd={(id) => onAdd('ammunition', id)}
+                  />
+                )}
+                {activeTab === 'homebrew' && (
+                  <HomebrewTab
+                    items={catalogHomebrewItems}
+                    characterHomebrewIds={characterHomebrewIds}
+                    onAddHomebrew={onAddHomebrew}
+                    expandedKey={expandedKey}
+                    onToggle={toggleExpanded}
                   />
                 )}
                   </>

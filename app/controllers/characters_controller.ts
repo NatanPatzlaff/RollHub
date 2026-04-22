@@ -19,6 +19,8 @@ import CharacterParanormalPower from '#models/character_paranormal_power'
 import OriginAbility from '#models/origin_ability'
 import CampaignRoll from '#models/campaign_roll'
 import Ammunition from '#models/ammunition'
+import CharacterActiveBuff from '#models/character_active_buff'
+import HomebrewItem from '#models/homebrew_item'
 import {
   storeCharacterValidator,
   updateCharacterValidator,
@@ -352,6 +354,7 @@ export default class CharactersController {
         characterProtectionModificationsRows,
         characterAmmunitionModificationsRows,
         characterGeneralItemModificationsRows,
+        homebrewItemsRows,
       ] = await Promise.all([
         db.from('weapons').select('*').orderBy('name', 'asc'),
         db.from('protections').select('*').orderBy('name', 'asc'),
@@ -505,6 +508,7 @@ export default class CharactersController {
             'protection_modifications.element as mod_element',
             'protection_modifications.category as mod_category'
           ),
+        HomebrewItem.query().orderBy('name', 'asc'),
       ])
       const catalogWeapons = weaponsRows.map((r: any) => ({
         id: r.id,
@@ -603,6 +607,26 @@ export default class CharactersController {
         spaces: a.spaces,
         duration: a.duration,
         weaponTypeRestriction: a.weaponTypeRestriction,
+      }))
+
+      const catalogHomebrewItems = homebrewItemsRows.map((hi: HomebrewItem) => ({
+        id: hi.id,
+        name: hi.name,
+        description: hi.description,
+        itemType: hi.itemType,
+        damage: hi.damage,
+        damageType: hi.damageType,
+        range: hi.range,
+        defenseBonus: hi.defenseBonus,
+        penalty: hi.penalty,
+        caliber: hi.caliber,
+        quantityPerBox: hi.quantityPerBox,
+        weight: hi.weight,
+        price: hi.price,
+        category: hi.category,
+        skillBonusName: hi.skillBonusName,
+        skillBonusValue: hi.skillBonusValue,
+        createdByUserId: hi.createdByUserId,
       }))
 
       // Itens do inventário do personagem (armas)
@@ -830,6 +854,7 @@ export default class CharactersController {
         catalogGeneralItems,
         catalogCursedItems,
         catalogAmmunitions,
+        catalogHomebrewItems,
         catalogProtectionModifications,
         catalogWeaponModifications,
         inventoryWeapons,
@@ -2101,6 +2126,29 @@ export default class CharactersController {
       }
     }
 
+    // Verifica em character_homebrew_items
+    if (!removed) {
+      try {
+        const homebrewItem = await db
+          .from('character_homebrew_items')
+          .where('homebrew_item_id', itemId)
+          .where('character_id', character.id)
+          .first()
+        console.log('[removeItem] homebrewItem:', homebrewItem)
+        if (homebrewItem) {
+          await db
+            .from('character_homebrew_items')
+            .where('homebrew_item_id', itemId)
+            .where('character_id', character.id)
+            .delete()
+          console.log('[removeItem] Item homebrew removido com sucesso')
+          removed = true
+        }
+      } catch (error: any) {
+        console.error('[removeItem] Erro ao verificar character_homebrew_items:', error.message)
+      }
+    }
+
     if (!removed) {
       console.error('[removeItem] Item não encontrado em nenhuma tabela')
       return response.notFound({ error: 'Item não encontrado' })
@@ -2835,6 +2883,46 @@ export default class CharactersController {
 
     await roll.delete()
 
+    return response.ok({ success: true })
+  }
+
+  async getActiveBuffs({ params, response }: HttpContext) {
+    const buffs = await CharacterActiveBuff.query()
+      .where('characterId', params.id)
+    return response.ok(buffs)
+  }
+
+  async syncActiveBuffs({ params, request, response }: HttpContext) {
+    const { ritualBuffs, abilityBuffs } = request.only([
+      'ritualBuffs', 'abilityBuffs'
+    ])
+    
+    // Remove buffs antigos e insere os novos
+    await CharacterActiveBuff.query()
+      .where('characterId', params.id)
+      .delete()
+    
+    const toInsert = [
+      ...(ritualBuffs || []).map((b: any) => ({
+        characterId: params.id,
+        buffType: 'ritual',
+        buffId: b.id,
+        label: b.label,
+        data: b,
+      })),
+      ...(abilityBuffs || []).map((b: any) => ({
+        characterId: params.id,
+        buffType: 'ability',
+        buffId: b.id,
+        label: b.abilityName,
+        data: b,
+      })),
+    ]
+    
+    if (toInsert.length > 0) {
+      await CharacterActiveBuff.createMany(toInsert)
+    }
+    
     return response.ok({ success: true })
   }
 }

@@ -1,4 +1,4 @@
-import { Map, Users } from 'lucide-react'
+import { Map, Users, Trash2 } from 'lucide-react'
 import EntityCard from './EntityCard'
 
 interface Campaign {
@@ -26,9 +26,10 @@ interface CampaignCardProps {
   campaign: Campaign
   index: number
   onClick?: () => void
+  onDelete?: (e: React.MouseEvent) => void
 }
 
-const CampaignCard = ({ campaign, index, onClick }: CampaignCardProps) => {
+const CampaignCard = ({ campaign, index, onClick, onDelete }: CampaignCardProps) => {
   const status = campaign.status ?? 'active'
   return (
     <EntityCard index={index} onClick={onClick}>
@@ -37,9 +38,20 @@ const CampaignCard = ({ campaign, index, onClick }: CampaignCardProps) => {
           <Map className="h-7 w-7 text-accent" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-semibold text-foreground">
-            {campaign.name}
-          </h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="truncate text-base font-semibold text-foreground">
+              {campaign.name}
+            </h3>
+            {onDelete && campaign.isOwner && (
+              <button
+                onClick={onDelete}
+                className="shrink-0 p-1.5 rounded bg-red-500/10 text-red-600 hover:bg-red-500/20 hover:text-red-500 transition-colors"
+                title="Excluir campanha"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
           <p className="truncate text-sm text-muted-foreground">
             {campaign.description}
           </p>

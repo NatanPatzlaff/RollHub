@@ -102,6 +102,15 @@ interface CharacterClass {
   description: string
 }
 
+/** Helper de debounce customizado para evitar dependência de lodash */
+function debounce<T extends (...args: any[]) => any>(func: T, wait: number) {
+  let timeout: NodeJS.Timeout | null = null
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => func(...args), wait)
+  }
+}
+
 interface Trail {
   id: number
   name: string
@@ -210,6 +219,26 @@ interface CatalogAmmunition {
   spaces: number
   duration: string | null
   weaponTypeRestriction: any | null
+}
+
+interface CatalogHomebrewItem {
+  id: number
+  name: string
+  description: string | null
+  itemType: 'weapon' | 'protection' | 'ammunition' | 'general'
+  damage: string | null
+  damageType: string | null
+  range: string | null
+  defenseBonus: number | null
+  penalty: number | null
+  caliber: string | null
+  quantityPerBox: number | null
+  weight: number | null
+  price: number | null
+  category: number | null
+  skillBonusName: string | null
+  skillBonusValue: number | null
+  createdByUserId: number | null
 }
 
 interface InventoryAmmunitionModification {
@@ -359,6 +388,7 @@ interface CharacterProps {
   inventoryGeneralItems?: any[]
   inventoryAmmunitions?: InventoryAmmunition[]
   catalogAmmunitions?: CatalogAmmunition[]
+  catalogHomebrewItems?: CatalogHomebrewItem[]
   catalogWeaponModifications?: any[]
   originAbilities?: OriginAbilityData[]
   campaignId: number | null
@@ -384,6 +414,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     inventoryGeneralItems = [],
     inventoryAmmunitions = [],
     catalogAmmunitions = [],
+    catalogHomebrewItems = [],
     catalogWeaponModifications = [],
     trailProgressions = [],
     catalogRituals = [],
@@ -465,6 +496,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }
 
+  const [isMyTurn, setIsMyTurn] = useState(false)
+
   // SSE para receber solicitações de reações
   useEffect(() => {
     console.log('[SSE] useEffect rodou, campaignId:', campaignId, 'character.id:', character.id)
@@ -501,6 +534,35 @@ export default function CharacterShow(initialProps: CharacterProps) {
         clearAllRitualBuffs()
         console.log('[SCENE] Fim de cena aplicado — buffs limpos')
       }
+      if (data.type === 'TURN_START') {
+        const isMe = data.characterId === character.id
+        setIsMyTurn(isMe)
+        // Auto-dismiss após 8 segundos
+        if (isMe) setTimeout(() => setIsMyTurn(false), 8000)
+      }
+      
+      if (data.characterId === character.id) {
+        if (data.type === 'ITEM_COLLECTED') {
+          addToast({ title: 'Item Coletado', description: 'Você coletou um item da cena.', color: 'success' })
+          router.reload({ only: ['character'] })
+        }
+        if (data.type === 'CUSTOM_ITEM_PENDING') {
+          addToast({ title: 'Item Solicitado', description: 'O item aguarda a aprovação do mestre.', color: 'warning' })
+          router.reload({ only: ['character'] })
+        }
+        if (data.type === 'CUSTOM_ITEM_ADDED') {
+          addToast({ title: 'Item Criado', description: 'Você adicionou o item ao inventário.', color: 'success' })
+          router.reload({ only: ['character'] })
+        }
+        if (data.type === 'CUSTOM_ITEM_APPROVED') {
+          addToast({ title: 'Item Aprovado', description: 'O mestre aprovou a criação do seu item.', color: 'success' })
+          router.reload({ only: ['character'] })
+        }
+        if (data.type === 'CUSTOM_ITEM_REJECTED') {
+          addToast({ title: 'Item Rejeitado', description: 'O mestre rejeitou a criação do item.', color: 'danger' })
+          router.reload({ only: ['character'] })
+        }
+      }
     })
 
     return () => {
@@ -529,8 +591,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
     weaponExtraDamageDice?: string
     weaponDamageElement?: string
     weaponType?: 'melee' | 'all'
-    weaponDuration?: 'scene' | 'sustained' | 'next_attack'
+    buffDuration?: 'scene' | 'sustained' | 'next_attack'
     targetWeaponId?: string
+    skillAdvantage?: string[]
   }
   const [activeRitualBuffs, setActiveRitualBuffs] = useState<ActiveRitualBuff[]>([])
   const activeRitualBuffsRef = useRef<ActiveRitualBuff[]>(activeRitualBuffs)
@@ -586,6 +649,39 @@ export default function CharacterShow(initialProps: CharacterProps) {
       axios.put(`/characters/${characterId}/stats`, { permanentSanityLoss: permSanLoss })
     }
   }, [permSanLoss])
+
+  // Busca inicial de buffs persistidos
+  useEffect(() => {
+    if (!characterId) return
+    axios.get(`/api/characters/${characterId}/active-buffs`)
+      .then(({ data }) => {
+        const ritualBuffs = data
+          .filter((b: any) => b.buffType === 'ritual')
+          .map((b: any) => b.data)
+        const abilityBuffs = data
+          .filter((b: any) => b.buffType === 'ability')
+          .map((b: any) => b.data)
+        setActiveRitualBuffs(ritualBuffs)
+        setActiveAbilityBuffs(abilityBuffs)
+      })
+      .catch(() => {})
+  }, [characterId])
+
+  // Função de sincronização com debounce
+  const syncBuffsToServer = useMemo(() => 
+    debounce((rituals: any[], abilities: any[]) => {
+      if (!characterId) return
+      axios.post(`/api/characters/${characterId}/active-buffs/sync`, {
+        ritualBuffs: rituals,
+        abilityBuffs: abilities,
+      }).catch(() => {})
+    }, 1000)
+  , [characterId])
+
+  // Sincroniza sempre que os buffs mudarem
+  useEffect(() => {
+    syncBuffsToServer(activeRitualBuffs, activeAbilityBuffs)
+  }, [activeRitualBuffs, activeAbilityBuffs, syncBuffsToServer])
 
   // Damage taken inputs
   const [damageToHp, setDamageToHp] = useState('')
@@ -1685,8 +1781,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
       weaponExtraDamageDice: buff.weaponExtraDamageDice,
       weaponDamageElement: buff.weaponDamageElement,
       weaponType: buff.weaponType,
-      weaponDuration: buff.weaponDuration,
+      buffDuration: buff.buffDuration,
       targetWeaponId: chosenWeapon,
+      skillAdvantage: buff.skillAdvantage,
     }
 
     // Cura de PV
@@ -1807,7 +1904,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   /** Callback para resultado de dano de arma (Hemofagia Discente etc) */
   const handleWeaponDamageResult = useCallback((dmg: number) => {
     // Verifica se há buff de healByDamageFactor ativo que seja next_attack (Hemofagia)
-    const healBuff = activeRitualBuffs.find(b => b.healByDamageFactor && b.weaponDuration === 'next_attack')
+    const healBuff = activeRitualBuffs.find(b => b.healByDamageFactor && b.buffDuration === 'next_attack')
     if (healBuff) {
       handleHealByDamage(Math.floor(dmg * healBuff.healByDamageFactor!), healBuff.label)
     }
@@ -1839,6 +1936,15 @@ export default function CharacterShow(initialProps: CharacterProps) {
       if (totAgi) setAgility((p) => p - totAgi)
       if (totInt) setIntellect((p) => p - totInt)
       if (totPre) setPresence((p) => p - totPre)
+
+      // Força sincronização imediata após limpar todos os buffs
+      if (characterId) {
+        axios.post(`/api/characters/${characterId}/active-buffs/sync`, {
+          ritualBuffs: [],
+          abilityBuffs: [],
+        }).catch(() => {})
+      }
+
       return []
     })
     setTempHp(0)
@@ -1857,15 +1963,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
       buff.weaponDamageBonus ||
       buff.weaponExtraDamageDice ||
       buff.weaponThreatRangeBonus ||
-      buff.weaponCritMultiplierBonus
+      buff.weaponCritMultiplierBonus ||
+      buff.skillAdvantage?.length
     )
 
     const hasEffect =
-      buff.defenseBonus || buff.dodgeBonus || buff.tempHp ||
-      buff.tempHpFlat || buff.healDice || buff.healByDamageFactor ||
-      buff.weaponExtraDamageDice || buff.weaponAttackBonus ||
-      buff.weaponDamageBonus || buff.weaponThreatRangeBonus ||
+      buff.defenseBonus ||
+      buff.dodgeBonus ||
+      buff.tempHp ||
+      buff.tempHpFlat ||
+      buff.healDice ||
+      buff.healByDamageFactor ||
+      buff.weaponExtraDamageDice ||
+      buff.weaponAttackBonus ||
+      buff.weaponDamageBonus ||
+      buff.weaponThreatRangeBonus ||
       buff.weaponCritMultiplierBonus ||
+      buff.skillAdvantage?.length ||
       (buff.attributeChoice?.length ?? 0) > 0
 
     if (!hasEffect) return
@@ -2523,10 +2637,54 @@ export default function CharacterShow(initialProps: CharacterProps) {
       }
     })
 
-    const allItems = [...weapons, ...protections, ...generalItems, ...ammunitions]
+    const homebrew = (character.homebrewItems ?? []).map((h: any, index) => {
+      const pivot = h.$extras || h
+      const itemKind = h.itemType as 'weapon' | 'protection' | 'general' | 'ammunition'
+      const typeLabel =
+        itemKind === 'weapon'
+          ? 'Arma'
+          : itemKind === 'protection'
+            ? 'Armadura'
+            : itemKind === 'ammunition'
+              ? 'Munição'
+              : 'Consumível'
+
+      return {
+        id: h.id, // Usando o ID do item original para remoção via character_id + homebrew_item_id
+        homebrewId: h.id,
+        name: h.name,
+        desc: h.description || '',
+        qty: pivot.pivot_quantity ?? 1,
+        weight: `${h.spaces} Espaços`,
+        spaces: h.spaces || 0,
+        type: typeLabel,
+        itemKind,
+        isHomebrew: true,
+        status: pivot.pivot_status,
+        rejectionReason: pivot.pivot_rejection_reason,
+        uniqueId: `homebrew-${h.id}-${index}`,
+        damage: h.damage,
+        damageType: h.damageType,
+        critical: h.critical,
+        criticalMultiplier: h.criticalMultiplier,
+        range: h.range,
+        weaponType: h.weaponType,
+        equipped: false,
+      }
+    })
+
+    const allItems = [...weapons, ...protections, ...generalItems, ...ammunitions, ...homebrew]
 
     return allItems
-  }, [inventoryWeapons, inventoryProtections, inventoryGeneralItems, inventoryAmmunitions, favoriteWeaponName, favoriteWeaponCategoryReduction])
+  }, [
+    inventoryWeapons,
+    inventoryProtections,
+    inventoryGeneralItems,
+    inventoryAmmunitions,
+    character.homebrewItems,
+    favoriteWeaponName,
+    favoriteWeaponCategoryReduction,
+  ])
 
   const skillItemBonuses = useMemo(() => {
     const bonuses: Record<string, { total: number; sources: { name: string; value: number }[] }> = {}
@@ -2851,6 +3009,22 @@ export default function CharacterShow(initialProps: CharacterProps) {
         </div>
       )}
 
+      {/* Banner: É o seu turno! */}
+      {isMyTurn && (
+        <div
+          className="sticky top-16 z-40 animate-pulse cursor-pointer"
+          onClick={() => setIsMyTurn(false)}
+        >
+          <div className="bg-red-600 border-b-2 border-red-400 px-4 py-2.5 flex items-center justify-center gap-3">
+            <span className="text-2xl">⚔️</span>
+            <p className="text-white font-black text-sm uppercase tracking-widest">
+              É o seu turno!
+            </p>
+            <span className="text-2xl">⚔️</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-row gap-6 max-w-7xl mx-auto p-4 md:p-8">
         {/* COLUNA ESQUERDA (Skills & Inventory) */}
         <div className="flex-1 min-w-0 flex flex-col gap-6">
@@ -2935,18 +3109,54 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 extraAttackPeCost?: number;
                 modifications?: any[]
               }) => {
-                console.log('[ON-ROLL-WEAPON] w recebido:', JSON.stringify({
-                  name: w.name,
-                  isExtraAttack: w.isExtraAttack,
-                  extraAttackPeCost: w.extraAttackPeCost
-                }))
+
               const isMelee = w.range === 'Corpo a corpo'
               const wType = isMelee ? 'melee' : 'ranged'
 
               // --- BÔNUS DE MODIFICAÇÕES PERMANENTES ---
               const modAttackBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.attackBonus ?? 0), 0)
-              const modDamageBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.damageBonus ?? 0), 0)
-              const modCritBonus = ((w as any).modifications || []).reduce((s: number, m: any) => s + (m.criticalBonus ?? 0), 0)
+              const modDamageBonus = ((w as any).modifications || []).reduce((s: number, m: any) => {
+                const val = m.damageBonus ?? m.damage_bonus
+                if (!val) return s
+                const str = String(val).trim()
+                // Ignora se contiver 'd' (é dado, não flat)
+                if (str.toLowerCase().includes('d')) return s
+                return s + (parseInt(str.replace('+', '')) || 0)
+              }, 0)
+              const modCritBonus = (w.modifications || []).reduce((s: number, m: any) => {
+                const legacyBonus = m.criticalBonus ?? m.critical_bonus ?? 0
+                const spBonus = m.specialProperties?.threatMarginBonus 
+                  ?? m.special_properties?.threatMarginBonus 
+                  ?? 0
+                return s + legacyBonus + spBonus
+              }, 0)
+
+              const modExtraDice = ((w as any).modifications || [])
+                .map((m: any) => {
+                  // Tenta special_properties primeiro
+                  const spDamage = m.specialProperties?.extraDamage ?? m.special_properties?.extraDamage
+                  if (spDamage) return spDamage
+
+                  // Fallback legado
+                  const val = String(m.damageBonus ?? m.damage_bonus ?? '').trim()
+                  if (val.toLowerCase().includes('d')) return val.replace('+', '')
+                  return null
+                })
+                .filter(Boolean) as string[]
+
+              const modCritMultiplierBonus = (w.modifications || []).reduce((s: number, m: any) => {
+                // Tenta camelCase, snake_case e dentro de specialProperties
+                const val = m.criticalMultiplierBonus 
+                  ?? m.critical_multiplier_bonus
+                  ?? m.specialProperties?.criticalMultiplierBonus
+                  ?? m.special_properties?.critical_multiplier_bonus
+                  ?? ''
+                const str = String(val).trim()
+                if (!str) return s
+                return s + (parseInt(str.replace(/[^0-9-]/g, '')) || 0)
+              }, 0)
+
+
 
               const hasCalibreGrosso = ((w as any).modifications || []).some(
                 (m: any) => m.name === 'Calibre Grosso'
@@ -2987,7 +3197,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
               // --- BÔNUS DE RITUAIS (usando ref para evitar stale closure) ---
               const ritualBuffs = activeRitualBuffsRef.current.filter((b) => {
-                if (!b.weaponDuration) return false
+                if (!b.buffDuration) return false
                 const wType = w.range === 'Corpo a corpo' ? 'melee' : 'ranged'
                 if (b.weaponType && b.weaponType !== 'all' && b.weaponType !== wType) return false
                 const weaponId = (w as any).id?.toString() || w.name
@@ -3016,7 +3226,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
 
               // Consome buffs de duração 'next_attack' após a rolagem (Habilidades e Rituais)
-              if (combatBuffs.length > 0 || ritualBuffs.some(b => b.weaponDuration === 'next_attack')) {
+              if (combatBuffs.length > 0 || ritualBuffs.some(b => b.buffDuration === 'next_attack')) {
                 setActiveAbilityBuffs((prev) =>
                   prev.filter(
                     (b) =>
@@ -3028,7 +3238,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   prev.filter(
                     (b) => 
                       !ritualBuffs.find(rb => rb.id === b.id) ||
-                      b.weaponDuration !== 'next_attack'
+                      b.buffDuration !== 'next_attack'
                   )
                 )
               }
@@ -3036,17 +3246,35 @@ export default function CharacterShow(initialProps: CharacterProps) {
               // --- TOTAIS ---
               diceTrayRef.current?.openDiceTray()
 
+              const baseCritMultiplier = parseInt(
+                (w.criticalMultiplier || 'x2').replace(/[^0-9]/g, '') || '2'
+              )
+
+
+
+              const modIgnoresRD = (w.modifications || []).some((m: any) => 
+                m.specialProperties?.ignoresRD === true ||
+                m.special_properties?.ignoresRD === true
+              )
+
+              const modConvertsDamageType = (w.modifications || [])
+                .map((m: any) => m.specialProperties?.convertsDamageType ?? m.special_properties?.convertsDamageType)
+                .find(Boolean) ?? null
+
               diceTrayRef.current?.rollWeapon(
                 {
                   name: w.name,
                   range: w.range,
                   damage: finalDamage,
                   critical: w.critical || '20',
-                  criticalMultiplier: w.criticalMultiplier || 'x2',
+                  criticalMultiplier: `x${baseCritMultiplier + modCritMultiplierBonus}`,
                   extraAttackBonus: extraAttackBonus + modAttackBonus + ritualAttackBonus,
                   extraDamageBonus: extraDamageBonus + modDamageBonus + ritualDamageBonus,
                   extraCritBonus: extraCritBonus + modCritBonus + ritualCritBonus,
-                  extraDamageDice: [...ritualExtraDice, ...throwExtraDice],
+                  extraDamageDice: [...ritualExtraDice, ...throwExtraDice, ...modExtraDice],
+                  ignoresRD: modIgnoresRD,
+                  convertsDamageType: modConvertsDamageType,
+                  isExtraAttack: w.isExtraAttack
                 },
                 strength,
                 agility,
@@ -3122,7 +3350,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
               
               // Se for buff de próximo ataque ou de cena, rola só o teste de Ocultismo (sem dados de dano)
               // O buff só é aplicado se o teste for bem-sucedido (via onRitualBuffSuccess)
-              if (buff?.weaponDuration === 'next_attack' || buff?.weaponDuration === 'scene') {
+              if (buff?.buffDuration === 'next_attack' || buff?.buffDuration === 'scene') {
                 diceTrayRef.current?.openDiceTray()
                 diceTrayRef.current?.rollRitual({ 
                   ...params, 
@@ -3932,8 +4160,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
         catalogGeneralItems={catalogGeneralItems}
         catalogCursedItems={catalogCursedItems}
         catalogAmmunitions={catalogAmmunitions}
+        catalogHomebrewItems={catalogHomebrewItems}
+        inventory={inventory}
+        characterHomebrewIds={character.homebrewItems?.map(h => h.id) ?? []}
+        onRemoveItem={removeItem}
         explosiveDt={10 + Math.floor(character.nex / 5) + agility}
         onAdd={addItemToCharacter}
+        onAddHomebrew={(homebrewItemId) =>
+          router.post(
+            `/characters/${character.id}/homebrew-items/add-existing`,
+            { homebrewItemId },
+            { preserveScroll: true }
+          )
+        }
       />
 
       {/* Transcend Choice Modal */}

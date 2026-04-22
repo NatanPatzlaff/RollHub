@@ -40,10 +40,15 @@ export default function Home({
   // modal de criação
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-  // modal de delete
+  // modal de delete (personagem)
   const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onOpenChange: onDeleteOpenChange, onClose: onDeleteClose } = useDisclosure()
   const [characterToDelete, setCharacterToDelete] = useState<any | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // modal de delete (campanha)
+  const { isOpen: isCampDeleteOpen, onOpen: onCampDeleteOpen, onOpenChange: onCampDeleteOpenChange, onClose: onCampDeleteClose } = useDisclosure()
+  const [campaignToDelete, setCampaignToDelete] = useState<any | null>(null)
+  const [isDeletingCampaign, setIsDeletingCampaign] = useState(false)
 
   // paginação
   const [charPage, setCharPage] = useState(1)
@@ -79,6 +84,27 @@ export default function Home({
       onError: () => {
         setIsDeleting(false)
         console.error('Character deletion failed')
+      },
+    })
+  }
+
+  const handleOpenDeleteCampaignModal = (campaign: any) => {
+    setCampaignToDelete(campaign)
+    onCampDeleteOpen()
+  }
+
+  const handleDeleteCampaign = () => {
+    if (!campaignToDelete) return
+    setIsDeletingCampaign(true)
+    router.delete(`/campaigns/${campaignToDelete.id}`, {
+      onSuccess: () => {
+        onCampDeleteClose()
+        setCampaignToDelete(null)
+        setIsDeletingCampaign(false)
+      },
+      onError: () => {
+        setIsDeletingCampaign(false)
+        console.error('Campaign deletion failed')
       },
     })
   }
@@ -197,6 +223,10 @@ export default function Home({
                         ? `/campaigns/${campaign.id}/shield`
                         : `/campaigns/${campaign.id}`
                     )}
+                    onDelete={(e) => {
+                      e.stopPropagation()
+                      handleOpenDeleteCampaignModal(campaign)
+                    }}
                   />
                 ))
               )}
@@ -252,6 +282,48 @@ export default function Home({
                   className="font-bold text-red-600"
                 >
                   DELETAR
+                </Button>
+              </ModalFooter>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+      {/* ── Modal: Confirmar Delete Campanha ─────────────────────────────── */}
+      <Modal
+        isOpen={isCampDeleteOpen}
+        onOpenChange={onCampDeleteOpenChange}
+        backdrop="blur"
+        classNames={{
+          base: 'bg-zinc-950 border border-zinc-800',
+          header: 'border-b border-zinc-800',
+          footer: 'border-t border-zinc-800',
+          closeButton: 'hover:bg-white/5',
+        }}
+      >
+        <ModalContent>
+          {(onClose) => (
+            <>
+              <ModalHeader className="flex flex-col gap-1">
+                <span className="text-xl font-bold text-white">Excluir Campanha</span>
+              </ModalHeader>
+              <ModalBody>
+                <p className="text-gray-300">
+                  Tem certeza que deseja excluir a campanha{' '}
+                  <span className="font-bold text-white">"{campaignToDelete?.name}"</span>?
+                </p>
+                <p className="text-sm text-gray-500">Esta ação é irreversível e todos os dados da campanha serão perdidos.</p>
+              </ModalBody>
+              <ModalFooter>
+                <Button variant="light" onPress={onClose} className="text-zinc-400 hover:text-white">
+                  Cancelar
+                </Button>
+                <Button
+                  color="danger"
+                  onPress={handleDeleteCampaign}
+                  isLoading={isDeletingCampaign}
+                  className="font-bold"
+                >
+                  EXCLUIR
                 </Button>
               </ModalFooter>
             </>

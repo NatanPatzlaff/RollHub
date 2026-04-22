@@ -115,7 +115,8 @@ export interface ActiveRitualBuff {
   weaponExtraDamageDice?: string
   weaponDamageElement?: string
   weaponType?: 'melee' | 'all'
-  weaponDuration?: 'scene' | 'sustained' | 'next_attack'
+  buffDuration?: 'scene' | 'sustained' | 'next_attack'
+  skillAdvantage?: string[]
 }
 
 /** Métodos expostos ao componente pai via ref */
@@ -131,7 +132,20 @@ export interface AttributesDiceTrayCardHandle {
   ) => void
   /** Rola ataque + dano de uma arma e exibe na bandeja */
   rollWeapon: (
-    weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number; extraDamageDice?: string[] },
+    weapon: { 
+      name: string; 
+      range: string; 
+      damage: string; 
+      critical?: string; 
+      criticalMultiplier?: string; 
+      extraAttackBonus?: number; 
+      extraDamageBonus?: number; 
+      extraCritBonus?: number; 
+      extraDamageDice?: string[];
+      ignoresRD?: boolean;
+      convertsDamageType?: string | null;
+      isExtraAttack?: boolean;
+    },
     str: number,
     agi: number,
     characterSkills?: any[]
@@ -489,6 +503,16 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
     }
 
     return lines
+  }
+  
+  const getSkillAdvantageBonus = (skillLabel: string): number => {
+    // Remove o sufixo de dados ex: "Investigação (3d20)" → "Investigação"
+    const cleanLabel = skillLabel.split('(')[0].trim()
+    const hasAdvantage = activeRitualBuffsRef.current.some(
+      b => b.skillAdvantage?.includes(cleanLabel)
+    )
+    console.log('[ADVANTAGE] skill:', skillLabel, 'cleanLabel:', cleanLabel, 'buffs:', activeRitualBuffsRef.current.length, 'hasAdvantage:', hasAdvantage)
+    return hasAdvantage ? 1 : 0
   }
 
   // ── Listener do Pusher (Extraído para estabilidade) ──────────────────
@@ -875,8 +899,11 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       try {
         const themeSlug = diceThemeRef.current || 'dddice-standard'
 
+          const advantageBonus = getSkillAdvantageBonus(label || '')
+          const totalCount = count + advantageBonus
+
           const diceToRoll = [
-            ...Array.from({ length: count }, () => ({
+            ...Array.from({ length: totalCount }, () => ({
               type: `d${sides}`,
               theme: themeSlug,
               metadata: { group: 'main' },
@@ -917,11 +944,25 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
   // ── rollWeapon ─────────────────────────────────────────────────────────────
   const rollWeapon = useCallback(
     async (
-      weapon: { name: string; range: string; damage: string; critical?: string; criticalMultiplier?: string; extraAttackBonus?: number; extraDamageBonus?: number; extraCritBonus?: number; extraDamageDice?: string[]; isExtraAttack?: boolean },
+      weapon: { 
+        name: string; 
+        range: string; 
+        damage: string; 
+        critical?: string; 
+        criticalMultiplier?: string; 
+        extraAttackBonus?: number; 
+        extraDamageBonus?: number; 
+        extraCritBonus?: number; 
+        extraDamageDice?: string[]; 
+        isExtraAttack?: boolean;
+        ignoresRD?: boolean;
+        convertsDamageType?: string | null;
+      },
       str: number,
       agi: number,
       characterSkills: any[] = []
     ) => {
+      // TODO: implementar lógica de RD no DiceTray usando weapon.ignoresRD e weapon.convertsDamageType
       if (!dddiceRoomSlug) return
 
       setIsPreparing(true)
@@ -956,8 +997,12 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       try {
         const themeSlug = diceThemeRef.current || 'dddice-standard'
 
+          const skillLabel = isMelee ? 'Luta' : 'Pontaria'
+          const advantageBonus = getSkillAdvantageBonus(skillLabel)
+          const totalAttrVal = attrVal + advantageBonus
+
           const diceToRoll: any[] = [
-            ...Array.from({ length: attrVal }, () => ({
+            ...Array.from({ length: totalAttrVal }, () => ({
               type: 'd20', theme: themeSlug,
             })),
             // Sempre rola dmgCount * critMultiplier dados de dano

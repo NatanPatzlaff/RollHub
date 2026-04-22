@@ -243,11 +243,11 @@ export default class extends BaseSeeder {
       {
         name: 'Jornalista',
         description:
-          'Uma espécie ameaçada de extinção, você atuava investigando notícias para um jornal, rede de televisão, blog, canal do YouTube... Você se juntou à Ordem porque descobriu algo relacionado ao paranormal, ou foi recrutado para investigar um caso específico. Seja como for, continua buscando a verdade - não mais para informar as pessoas, mas sim para protegê-las.',
-        trainedSkills: ['Atualidades', 'Investigação'],
-        abilityName: 'Fontes Confiáveis',
+          'Em um mundo de fofocas, escândalos, rumores e furos de reportagem, você, como um bom jornalista, tem um talento nato: Saber de informações antes dos outros, ou ao menos sabe onde procurá-las. Em algum momento essa sua curiosidade faz com que você chegasse em buracos muito mais fundos do que você se quer poderia imaginar, um fundo do poço onde não pode mais sair.',
+        trainedSkills: ['Diplomacia', 'Enganação'],
+        abilityName: 'Fofoca',
         abilityDescription:
-          'Uma vez por sessão de jogo, você pode gastar 1 PE para contatar suas fontes - pessoas com acesso a informações nas quais você confia. Isso permite que você role novamente um teste já realizado para encontrar uma pista, com +5 de bônus, ou receba outra informação relevante (a critério do mestre).',
+          'Uma vez por sessão, quando você possui uma nova informação sobre o caso em que está investigando, pode gastar uma ação de interlúdio para procurar um algum caso reportado na mídia, alguma fofoca de um famoso ou algum boato que esteja circulando a respeito de algum assunto que auxilie a investigação. Antes de utilizar essa habilidade, fica a critério do mestre se essa habilidade é possível de quer utilizada ou não.',
       },
       {
         name: 'Lutador',
@@ -544,11 +544,11 @@ export default class extends BaseSeeder {
       {
         name: 'Psicólogo',
         description:
-          'Você se especializou no estudo e tratamento das questões mentais do ser humano. Em sua prática profissional, você teve contato com o paranormal e descobriu que algumas aflições mentais possuem origens sombrias e perigosas. Agora, você emprega seus conhecimentos para enfrentar o Outro Lado.',
-        trainedSkills: ['Intuição', 'Profissão'],
-        abilityName: 'Terapia',
+          'Lidar com o paranormal é extremamente desgastante e danoso para a mente, compreender os horrores do Outro Lado pode facilmente fazer um ser humano normal perder a cabeça. É por isso que, no limite do possível, você tenta ajudar seus aliados a lidar com as situações bizarras do dia-a-dia ao mesmo tempo que mantém sua sanidade no lugar.',
+        trainedSkills: ['Diplomacia', 'Intuição'],
+        abilityName: 'Sessão de terapia',
         abilityDescription:
-          'Você pode usar Profissão (psicólogo) como Diplomacia. Além disso, uma vez por rodada, quando você ou um aliado em alcance curto falha em um teste de resistência contra um efeito que causa dano mental, você pode gastar 2 PE para fazer um teste de Profissão (psicólogo) e usar o resultado desse teste no lugar do teste de resistência falho.',
+          'Durante uma cena de interlúdio, você pode gastar uma de suas ações para ter uma sessão de terapia com até uma pessoa por ponto de Intelecto, fazendo elas recuperam o dobro de sanidade pela ação relaxar neste interlúdio.',
       },
       {
         name: 'Profetizado',
@@ -567,6 +567,123 @@ export default class extends BaseSeeder {
         abilityName: 'Encontrar a Verdade',
         abilityDescription:
           'Você pode usar Investigação no lugar de Diplomacia ao fazer testes para persuadir e mudar atitude e, quando faz um teste de Investigação, pode gastar 2 PE para receber +5 nesse teste.',
+      },
+      {
+        name: 'Adepto ao Paranormal',
+        description:
+          'O Outro Lado constantemente te chama, te seduz, te oferece o acesso a insanidade do paranormal em troca de poderes inigualáveis e você sem pensar duas vezes aceita. E se for para entrar nisso, você vai entrar de cabeça. De alguma forma você criou uma facilidade para acessar o Outro Lado sem que ele te consuma de volta tão facilmente, talvez isso venha dos seus anos de estudo ou até alguma predisposição esquisita, mas aconteceu.',
+        trainedSkills: ['Ocultismo', 'Vontade'],
+        abilityName: 'Mente preparada',
+        abilityDescription:
+          'Você recebe +5 no teste de Ocultismo para o “Custo do Paranormal”.',
+      },
+      {
+        name: 'Adestrador',
+        description:
+          'Às vezes animais são melhores que pessoas, talvez por isso que você tenha dedicado sua vida a eles. A certeza é que você sabe como essas criaturas pensam e agem, e com elas, você se fortalece e têm aliados formidáveis, agindo e protegendo por instinto. Desde um adestrador de cachorros até alguém com um amigo inusitado. O seu caminho em algum momento cruzou com feras totalmente diferentes de tudo o que você já viu naz vida.',
+        trainedSkills: ['Adestramento', 'Diplomacia'],
+        abilityName: 'Um amigo',
+        abilityDescription:
+          'Você tem um animal que é considerado um aliado de um tipo a sua escolha.',
+      },
+      {
+        name: 'Apostador',
+        description:
+          'Às cartas estão na mesa, afinal isso tudo sempre foi um grande jogo pra você. Talvez essa adrenalina, incerteza ou até a emoção dos resultados à medida que as cartas são viradas te faça o que tu é nos dias de hoje. As inúmeras mesas de cassinos clandestinos ou bares te fizeram aprender uma coisa, enganar ou ser enganado. As pessoas são bem previsíveis se você souber ler elas. Mas talvez a sua maior aposta tenha sido entrar no mundo do paranormal, será que essa foi a melhor decisão, será que a sorte vai estar ao seu favor?',
+        trainedSkills: ['Intuição', 'Enganação'],
+        abilityName: 'Tiro de sorte',
+        abilityDescription:
+          'Com o gasto de 2 PE você pode obter +5 em uma rolagem a sua escolha, exceto rolagens com base de Presença e Intelecto, porém, essa rolagem tem 50% de chance de falhar (Role 1d20, se tirar 10 para baixo é uma falha automática).',
+      },
+      {
+        name: 'Escritor Paranormal',
+        description:
+          'Histórias devem ser contadas. Você sempre contou elas, afinal são só histórias. Mas e quando elas podem voltar contra você? Se as histórias escritas por você se tornam realidade e começam a trazer mortes, sofrimento e medo nas pessoas. O que fazer? Acabar com a história. Mas resta ao autor finalizar esse livro com um fim trágico ou não',
+        trainedSkills: ['Atualidades', 'Ocultismo'],
+        abilityName: 'Nas entrelinhas',
+        abilityDescription:
+          'Ao ser bem-sucedido ao realizar um teste de “Identificar Criatura”, você pode gastar 2 PE para fazer uma anotação sobre ela, para cada anotação, você pode escolher um número de alvos que possam te ouvir (incluindo você) igual seu valor de Intelecto para ganhar um bônus de +2 em testes de resistência contra essa criatura, esse valor é acumulável e permanente.',
+      },
+      {
+        name: 'Faz-tudo',
+        description:
+          'É tudo você nesse mundo, as tarefas difíceis sempre acabam caindo sob você, mas fazer o que, você sempre está ali para ajudar. Seja gerenciando um estoque da sua loja ou o armamento de uma organização, é com seu esforço que o seu local de trabalho continua em pé, seja onde for.',
+        trainedSkills: ['Profissão', 'Tecnologia'],
+        abilityName: 'Pau pra toda obra',
+        abilityDescription:
+          'Você tem +5 espaços de inventário.',
+      },
+      {
+        name: 'Influenciador',
+        description:
+          'Ser influenciador não é fácil, você tem que manter seu público engajado para que alguma plataforma virtual não te jogue em um limbo muito pior que o Outro Lado. Você dificilmente vai conseguir usar suas habilidades profissionais contra os terrores do paranormal, mas talvez consiga uma satisfação de ver que seu trabalho está andando ainda.',
+        trainedSkills: ['Atualidades', 'Diplomacia'],
+        abilityName: 'Algoritmo',
+        abilityDescription:
+          'Você agora tem a ação “Criar Conteúdo” em um interlúdio quando tiver acesso a internet, você deve rolar d20, se você tirar de 1 a 5, você não recupera sanidade, de 6 a 10 você recupera seu Limite de PE em sanidade, de 11 a 15 você recupera seu Limite de PE + 5 em sanidade e de 16 a 20 você recupera seu Limite de PE + 10 em sanidade. Ao atingir o NEX de 30%, você ganha +5 no teste desta ação.',
+      },
+      {
+        name: 'Médico 24 horas',
+        description:
+          'O que é uma hora de sono a menos e uma a mais no trabalho? Enfim, você está salvando vidas. Após o seu contato com o paranormal, você não deixou de perder seu descanso para auxiliar seus aliados a se recuperarem de seus danos de batalha. Quase nada mudou, você ainda está salvando vidas.',
+        trainedSkills: ['Medicina', 'Percepção'],
+        abilityName: 'Plantão',
+        abilityDescription:
+          'Você pode realizar “Cuidados Prolongados” da perícia Medicina, a partir do Grau de Treinamento Treinado, além disso, “Cuidados Prolongados” agora também dobram a recuperação de PE pela ação de dormir de aliados afetados. Adicionalmente, ao chegar a NEX 35%, aliados afetados por “Cuidados Prolongados” recuperam uma quantidade de Sanidade igual o seu Intelecto ao usarem a ação dormir.',
+      },
+      {
+        name: 'Palestrinha',
+        description:
+          'O paranormal não existe, quer dizer, ele existe, mas isso não tem que afetar sua cabeça, você só precisa preparar sua mente, de alguma forma, para que ele se torne algo secundário comparado aos objetivos da sua vida, que possivelmente é se manter vivo no seu estado atual. Você pode não ter a mente mais estável e muito menos pautar suas falas em fontes confiáveis mas ao menos você vai tentar manter o ânimo e foco de seus colegas como sempre fez, só que dessa vez não vai ganhar tanto dinheiro com isso.',
+        trainedSkills: ['Diplomacia', 'Enganação'],
+        abilityName: 'Mudança de mindset',
+        abilityDescription:
+          'Todos os aliados que em uma cena de interlúdio gastarem uma ação para “Ler” junto a você, recebem 2d6 ao invés de 1d6 em uma rolagem de Intelecto ou Presença.',
+      },
+      {
+        name: 'Pesquisador Paranormal',
+        description:
+          'O mundo e seus aspectos às vezes parecem se tornar entediantes comparados ao inexplicável e o assombrado, entender o incompreensível se tornou uma atividade muito interessante para você. No final do dia, ver uma criatura não será um motivo de pavor, mas sim de curiosidade e entusiasmo, ou não.',
+        trainedSkills: ['Ocultismo', 'Ciências'],
+        abilityName: 'Já vi pior',
+        abilityDescription:
+          'Você recebe +5 em testes de Presença Perturbadora, caso posteriormente você consiga afinidade com um elemento, esse bônus aumenta para +10 com criaturas desse elemento.',
+      },
+      {
+        name: 'Piloto',
+        description:
+          'Você é a velocidade. A prática o levou a perfeição quando o assunto é domar o volante. A adrenalina das manobras e a satisfação ao ver o medidor de velocidade subindo é o que move você para frente, um motor imparável. Agora você utiliza das suas habilidades para o benefícios das organizações que sempre vão precisar de um bom piloto, tanto para uma viagem longa ou uma fuga desesperada',
+        trainedSkills: ['Pilotagem', 'Iniciativa'],
+        abilityName: 'Rápido e furioso',
+        abilityDescription:
+          'Escolha uma opção entre veículos de grande porte (como caminhões e vans), veículos de médio porte (como carros e motos) e veículos de pequeno porte (como skates, patins, patinetes, etc.), você tem +5 em testes de pilotagem com esses veículos.',
+      },
+      {
+        name: 'Químico',
+        description:
+          'Saber muito é poder fazer um monte de coisa, perigosa ou não. Seus estudos agora te dão possibilidade de fazer muitos experimentos que você foi ensinado a fazer mas não recomendado, até porque não é legal.',
+        trainedSkills: ['Ciências', 'Tecnologia'],
+        abilityName: 'Você sabe demais',
+        abilityDescription:
+          'Você pode gastar uma ação em um Interlúdio para fazer um veneno que tenha sua DT de resistência de até 15. em 30% você pode fazer até dois venenos que tenham sua DT de resistência até 20 e em 50% você pode fazer até três venenos que tenham sua DT de resistência até 25.',
+      },
+      {
+        name: 'Treinador',
+        description:
+          'Segunda-feira: Treino. Terça-feira: Treino. Quarta-feira: Treino. Quinta-feira: Treino. Sexta-feira… Treino. Você achou mesmo que o paranormal ia te parar? Ia acabar com seu estilo de vida? Não, muito pelo contrário, ele só o fez... treinar mais forte? O que importa é que seu físico não vai ficar para trás, e você vai fazer seu esforço para colocar todos os seus aliados no mesmo ritmo.',
+        trainedSkills: ['Atletismo', 'Luta'],
+        abilityName: 'Malhe enquanto eles dormem',
+        abilityDescription:
+          'Todos os aliados que em uma cena de interlúdio gastarem uma ação para “Exercitar” junto a você, recebem 2d6 ao invés de 1d6 em uma rolagem de Agilidade, Força ou Vigor.',
+      },
+      {
+        name: 'Zelador',
+        description:
+          'Ser um zelador não é fácil, você possivelmente já presenciou todos os terrores da nossa realidade, mas mesmo assim não larga o posto, sempre fazendo seu trabalho com perfeição. Seu olhar atento e perfeccionismo te perseguem e incrivelmente podem ser úteis para investigar as mais sinistras bagunças que possa imaginar. É fato: Toda organização ou culto precisa de um zelador',
+        trainedSkills: ['Atletismo', 'Percepção'],
+        abilityName: 'Casa suja chão sujo..',
+        abilityDescription:
+          'Você pode gastar 1 PE para ter +5 em investigação para achar resíduos em cenas de investigação. Além disso, caso limpe uma cena de investigação, a critério do mestre, você recebe 3 de PE temporários até o seu próximo descanso.',
       },
     ])
   }

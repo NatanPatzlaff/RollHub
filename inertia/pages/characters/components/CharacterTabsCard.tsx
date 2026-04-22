@@ -23,9 +23,11 @@ import {
   Swords,
   LucideIcon,
   Edit3,
+  AlertTriangle,
 } from 'lucide-react'
 import { RollEntry, ActiveAbilityBuff } from './AttributesDiceTrayCard'
 import BaseModal from './BaseModal'
+import CreateHomebrewItemModal from './CreateHomebrewItemModal'
 
 const displayDamage = (w: any): string => {
   const hasCalibreGrosso = (w.modifications || []).some((m: any) => m.name === 'Calibre Grosso')
@@ -190,7 +192,7 @@ export interface CharacterTabsCardProps {
   activeRitualWeaponBuffs?: Array<{
     id: string
     label: string
-    weaponDuration?: string
+    buffDuration?: string
   }>
   // Buffs ativos de habilidades (trilha / origem)
   activeAbilityBuffs?: Array<{
@@ -309,6 +311,7 @@ export default function CharacterTabsCard({
   attrMap = { FOR: 0, AGI: 0, INT: 0, VIG: 0, PRE: 0 },
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<string>('inventario')
+  const [isCreateItemOpen, setIsCreateItemOpen] = useState(false)
 
   // Estados para filtro e ordenação do inventário
 
@@ -522,13 +525,22 @@ export default function CharacterTabsCard({
               <Square className="w-5 h-5 text-orange-600" />
               <h3 className="text-xl font-bold text-white font-serif tracking-wide">Inventário</h3>
             </div>
-            <button
-              onClick={onAddItem}
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-md text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Adicionar Item
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsCreateItemOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-md text-sm font-bold transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                Criar Item
+              </button>
+              <button
+                onClick={onAddItem}
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-md text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Catálogo
+              </button>
+            </div>
           </div>
 
           {/* Peso + Patente */}
@@ -701,8 +713,29 @@ export default function CharacterTabsCard({
                         {getIconForItem()}
                       </div>
                       <div>
-                        <div className="font-semibold text-zinc-200 text-sm">{item.name}</div>
+                        <div className="font-semibold text-zinc-200 text-sm flex items-center gap-2">
+                          {item.name}
+                          {item.status === 'pending' && (
+                            <span className="px-1.5 py-0.5 rounded border bg-amber-500/10 border-amber-500/30 text-[9px] text-amber-500 font-bold uppercase tracking-tight">
+                              Aguardando Aprovação
+                            </span>
+                          )}
+                          {item.status === 'rejected' && (
+                            <span className="px-1.5 py-0.5 rounded border bg-red-500/10 border-red-500/30 text-[9px] text-red-500 font-bold uppercase tracking-tight">
+                              Rejeitado
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-zinc-500">{item.desc}</div>
+                        {item.status === 'rejected' && item.rejectionReason && (
+                          <div className="mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 flex gap-2">
+                             <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                             <div>
+                               <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Motivo da Rejeição</p>
+                               <p className="text-[11px] text-red-200/70 italic mt-0.5">"{item.rejectionReason}"</p>
+                             </div>
+                          </div>
+                        )}
                         {(item.type === 'Arma' || item.type === 'Munição') && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {/* Badge de categoria com redução da arma favorita */}
@@ -782,14 +815,20 @@ export default function CharacterTabsCard({
                       <div className="flex items-center gap-1 border-l border-zinc-800 pl-3 ml-1">
                         {(item.itemKind === 'weapon' || item.itemKind === 'protection') && (
                           <m.button
-                            whileTap={{ scale: 0.95 }}
+                            whileTap={item.status === 'pending' || item.status === 'rejected' ? {} : { scale: 0.95 }}
+                            disabled={item.status === 'pending' || item.status === 'rejected'}
                             onClick={(e) => {
                               e.stopPropagation()
-                              onEquipItem(item.id, item.equipped)
+                              if (item.status !== 'pending' && item.status !== 'rejected') {
+                                onEquipItem(item.id, item.equipped)
+                              }
                             }}
-                            className={`relative px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all duration-300 border focus:outline-none min-w-[90px] ${item.equipped
-                              ? 'bg-amber-500 border-amber-500 text-amber-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                              : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/60'
+                            className={`relative px-4 py-2 rounded-lg text-[10px] font-bold tracking-wider transition-all duration-300 border focus:outline-none min-w-[90px] ${
+                              item.status === 'pending' || item.status === 'rejected'
+                                ? 'bg-zinc-800/20 border-zinc-700/20 text-zinc-600 cursor-not-allowed'
+                                : item.equipped
+                                  ? 'bg-amber-500 border-amber-500 text-amber-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                                  : 'bg-zinc-800/40 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/60'
                               }`}
                           >
                             {item.equipped ? 'EQUIPADO' : 'EQUIPAR'}
@@ -797,7 +836,12 @@ export default function CharacterTabsCard({
                         )}
                         {(item.type === 'Arma' || item.type === 'Munição') && (
                           <button
-                            className="p-1 rounded text-zinc-500 hover:text-blue-400 transition-colors"
+                            disabled={item.status === 'pending' || item.status === 'rejected'}
+                            className={`p-1 rounded transition-colors ${
+                               item.status === 'pending' || item.status === 'rejected'
+                                ? 'text-zinc-700 cursor-not-allowed'
+                                : 'text-zinc-500 hover:text-blue-400 opacity-100 visible'
+                            } ${item.status === 'rejected' ? 'invisible pointer-events-none' : ''}`}
                             onClick={(e) => {
                               e.stopPropagation()
                               if (item.type === 'Arma') {
@@ -1316,9 +1360,11 @@ export default function CharacterTabsCard({
                             const hasExtraAttack = (classAbilities || []).some(
                               (a: any) => (a.classAbility?.name === 'Ataque Extra' || a.title === 'Ataque Extra')
                             )
-                            const hasVibrante = (w.modifications || []).some(
-                              (m: any) => m.name === 'Vibrante'
-                            )
+                             const hasVibrante = (w.modifications || []).some((m: any) => 
+                               m.name === 'Vibrante' || 
+                               m.specialProperties?.grantsBonusAttack === true ||
+                               m.special_properties?.grantsBonusAttack === true
+                             )
                             const showExtraAttackButton = hasExtraAttack || hasVibrante
                             const extraAttackPeCost = (hasVibrante && hasExtraAttack) ? 1 : 2
                             const canAffordExtraAttack = (pe ?? 0) >= extraAttackPeCost
@@ -2904,6 +2950,12 @@ export default function CharacterTabsCard({
           })()}
         </BaseModal>
       )}
+
+      <CreateHomebrewItemModal
+        isOpen={isCreateItemOpen}
+        onClose={() => setIsCreateItemOpen(false)}
+        characterId={characterId}
+      />
     </section>
   )
 }

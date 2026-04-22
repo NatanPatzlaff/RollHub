@@ -69,7 +69,7 @@ export default class HomebrewItem extends BaseModel {
 
   @manyToMany(() => Character, {
     pivotTable: 'character_homebrew_items',
-    pivotColumns: ['quantity', 'notes'],
+    pivotColumns: ['quantity', 'notes', 'status', 'rejection_reason'],
     pivotTimestamps: true,
   })
   declare characters: ManyToMany<typeof Character>
