@@ -8,68 +8,83 @@ import RoomMonster from '#models/room_monster'
 
 export default class CombatsController {
   async store({ params, request, response }: HttpContext) {
-    const campaignId = params.campaignId
     const { roomId, monsterParticipantIds } = request.only(['roomId', 'monsterParticipantIds'])
 
     const combat = await Combat.create({
-      campaignId: campaignId,
+      campaignId: params.campaignId,
       roomId: roomId || null,
       round: 1,
       active: true,
-      startedAt: DateTime.now(),
+      startedAt: DateTime.now()
     })
 
-    // 1. Adicionar Jogadores Automaticamente
-    const campaign = await Campaign.findOrFail(campaignId)
+    // Adiciona todos os jogadores da campanha com initiativePending: true
+    const Campaign = (await import('#models/campaign')).default
+    const campaign = await Campaign.findOrFail(params.campaignId)
     const characters = await campaign.related('characters').query().preload('stats')
-    
+
     for (const char of characters) {
-      await CombatParticipant.create({
+      await combat.related('participants').create({
         combatId: combat.id,
         characterId: char.id,
         name: char.name,
-        initiative: 0,
-        hpMax: char.stats?.maxHp || 0,
+        hpMax: char.stats?.maxHp || char.stats?.currentHp || 0,
         hpCurrent: char.stats?.currentHp || 0,
+        initiative: 0,
+        initiativePending: true
       })
     }
 
-    // 2. Adicionar Monstros Selecionados
+    // Adiciona monstros com iniciativa rolada automaticamente
     if (monsterParticipantIds && Array.isArray(monsterParticipantIds)) {
-      for (const entry of monsterParticipantIds) {
-        const roomMonster = await RoomMonster.query()
-          .where('id', entry.roomMonsterId)
-          .preload('monster')
-          .first()
-        
-        if (roomMonster) {
-          const monster = roomMonster.monster
-          for (let i = 1; i <= roomMonster.quantity; i++) {
-            const displayName = roomMonster.quantity > 1 
-              ? `${monster.name} #${i}` 
-              : monster.name
-
-            await CombatParticipant.create({
-              combatId: combat.id,
-              monsterId: monster.id,
-              name: displayName,
-              initiative: entry.initiative || 0,
-              hpMax: monster.hpMax,
-              hpCurrent: monster.hpMax,
-            })
-          }
+      for (const item of monsterParticipantIds) {
+        const rm = await RoomMonster.findOrFail(item.roomMonsterId)
+        const dice = rm.initiativeDice ?? 1
+        const bonus = rm.initiativeBonus ?? 0
+        let roll = 0
+        for (let i = 0; i < dice; i++) {
+          roll += Math.floor(Math.random() * 20) + 1
         }
+        const initiative = roll + bonus
+
+        await combat.related('participants').create({
+          monsterId: rm.monsterId,
+          roomMonsterId: rm.id,
+          name: rm.name,
+          hpMax: rm.hpMax,
+          hpCurrent: rm.hpCurrent,
+          initiative,
+          initiativePending: false
+        })
       }
     }
 
-    await transmit.broadcast(`campaign/${campaignId}/events`, {
+    await transmit.broadcast(`campaign/${params.campaignId}/events`, {
       type: 'COMBAT_STARTED',
-      combatId: combat.id,
-      timestamp: DateTime.now().toISO(),
+      combatId: combat.id
+    })
+
+    // Após adicionar todos os participantes, pede iniciativa automaticamente
+    await transmit.broadcast(`campaign/${params.campaignId}/events`, {
+      type: 'REACTION_REQUEST',
+      rollType: 'Iniciativa',
+      attribute: 'agi',
+      skill: 'iniciativa',
     })
 
     return response.redirect().back()
   }
+
+  async requestInitiative({ params, response }: HttpContext) {
+    await transmit.broadcast(`campaign/${params.campaignId}/events`, {
+      type: 'REACTION_REQUEST',
+      rollType: 'Iniciativa',
+      attribute: 'agi',
+      skill: 'iniciativa',
+    })
+    return response.redirect().back()
+  }
+
 
   async addParticipant({ params, request, response }: HttpContext) {
     const { combatId } = params
@@ -135,22 +150,17 @@ export default class CombatsController {
   }
 
   async applyDamage({ params, request, response }: HttpContext) {
-    const { participantId } = params
-    const { rawDamage, damageType } = request.all()
+    const { damage, damageType } = request.only(['damage', 'damageType'])
+    const participant = await CombatParticipant.findOrFail(params.participantId)
 
-    const participant = await CombatParticipant.query()
-      .where('id', participantId)
-      .preload('monster')
-      .firstOrFail()
-
-    let finalDamage = rawDamage
-
-    if (participant.monster) {
-      const resistances = participant.monster.resistances || { flatRD: 0, byType: {} }
-      const resistanceValue = (resistances.byType as any)?.[damageType] ?? 0
-      
-      const afterResistance = Math.max(0, rawDamage - resistanceValue)
-      finalDamage = Math.max(0, afterResistance - (resistances.flatRD || 0))
+    let finalDamage = damage
+    if (participant.roomMonsterId) {
+      const rm = await RoomMonster.findOrFail(participant.roomMonsterId)
+      if (rm.resistances) {
+        const typeResistance = rm.resistances.byType?.[damageType] ?? 0
+        const afterType = Math.max(0, damage - typeResistance)
+        finalDamage = Math.max(0, afterType - (rm.resistances.flatRD ?? 0))
+      }
     }
 
     participant.hpCurrent = Math.max(0, (participant.hpCurrent || 0) - finalDamage)
@@ -161,11 +171,11 @@ export default class CombatsController {
     await transmit.broadcast(`campaign/${combat.campaignId}/events`, {
       type: 'DAMAGE_APPLIED',
       participantId: participant.id,
-      rawDamage,
+      rawDamage: damage,
       finalDamage,
       damageType,
       hpCurrent: participant.hpCurrent,
-      isDead: participant.hpCurrent === 0,
+      isDead: participant.hpCurrent === 0
     })
 
     return response.redirect().back()

@@ -39,6 +39,8 @@ import {
   RotateCcw,
   Check,
   Edit3,
+  Swords,
+  X,
 } from 'lucide-react'
 import TrailSelectModal from './components/TrailSelectModal'
 import RitualSelectModal from './components/RitualSelectModal'
@@ -482,9 +484,11 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [permSanLoss, setPermSanLoss] = useState(calculatedStats?.permanentSanityLoss || 0)
 
   const [pendingReaction, setPendingReaction] = useState<any>(null)
+  const pendingReactionRef = useRef<any>(null)
 
   const handleReaction = async (reactionType: string) => {
     setPendingReaction(null)
+    pendingReactionRef.current = null
     try {
       await axios.post(`/api/campaigns/${campaignId}/reaction-response`, {
         reactionType,
@@ -516,6 +520,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
       console.log('[SSE] mensagem recebida:', data)
       if (data.type === 'REACTION_REQUEST') {
         setPendingReaction(data)
+        pendingReactionRef.current = data
       }
     })
 
@@ -529,6 +534,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     campaignSub.onMessage<any>((data) => {
       console.log('[SSE] evento de campanha:', data)
+      if (data.type === 'REACTION_REQUEST') {
+        setPendingReaction(data)
+        pendingReactionRef.current = data
+      }
       if (data.type === 'SCENE_END') {
         resetSceneUses()
         clearAllRitualBuffs()
@@ -1580,6 +1589,31 @@ export default function CharacterShow(initialProps: CharacterProps) {
     (roll: any) => {
       // Adicionar localmente para feedback imediato
       setCampaignRolls((prev: any) => [roll, ...prev])
+
+      // Interceptar rolagem de iniciativa se solicitada
+      console.log('[INICIATIVA-DEBUG] handleNewRoll chamado:', {
+        action: roll.action,
+        result: roll.result,
+        pendingReaction: pendingReactionRef.current,
+        rollType: pendingReactionRef.current?.rollType,
+        includes: roll.action?.includes('Iniciativa')
+      })
+      if (
+        pendingReactionRef.current?.rollType === 'Iniciativa' &&
+        roll.action && roll.action.includes('Iniciativa')
+      ) {
+        axios
+          .post(`/api/campaigns/${campaignId}/reaction-response`, {
+            characterId: character.id,
+            type: 'initiative',
+            value: roll.result,
+          })
+          .then(() => {
+            setPendingReaction(null)
+            pendingReactionRef.current = null
+          })
+          .catch((err) => console.error('Erro ao responder iniciativa:', err))
+      }
 
       // Persistir no banco de dados
       axios
@@ -3006,6 +3040,33 @@ export default function CharacterShow(initialProps: CharacterProps) {
               Escolher
             </span>
           </button>
+        </div>
+      {/* Banner de Pedido de Iniciativa */}
+      {pendingReaction && pendingReaction.rollType === 'Iniciativa' && (
+        <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">
+          <div
+            className="w-full flex items-center justify-between gap-4 rounded-xl border border-orange-500/40 bg-orange-500/5 px-5 py-4 text-left transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-500/20 rounded-lg text-orange-400">
+                <Swords size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-orange-400 uppercase tracking-wider">
+                  ⚔️ Combate iniciado — Role sua Iniciativa
+                </p>
+                <p className="mt-0.5 text-xs text-orange-400/60">
+                  Clique na perícia Iniciativa para rolar e entrar na ordem de turno
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setPendingReaction(null)}
+              className="shrink-0 rounded-lg bg-orange-500 px-4 py-2 text-xs font-bold text-black hover:bg-orange-400 transition-colors"
+            >
+              Dispensar
+            </button>
+          </div>
         </div>
       )}
 
@@ -4699,7 +4760,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
       {/* Modal de Reação de Combate */}
       <BaseModal
-        isOpen={Boolean(pendingReaction)}
+        isOpen={Boolean(pendingReaction && pendingReaction.rollType !== 'Iniciativa')}
         onClose={() => setPendingReaction(null)}
         title={
           <div className="flex items-center gap-2">

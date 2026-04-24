@@ -1,8 +1,10 @@
 import { Users, Heart, Zap, Brain, Sparkles, Check, X, Send } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
+import { router } from '@inertiajs/react'
 
 interface PlayersSidebarProps {
+  activeCombat?: any
   characters: any[]
   localInitiatives?: Record<number, number>
   requestingInitiative?: boolean
@@ -79,6 +81,7 @@ function InitiativeInput({
 }
 
 export default function PlayersSidebar({
+  activeCombat,
   characters,
   localInitiatives = {},
   requestingInitiative = false,
@@ -92,13 +95,24 @@ export default function PlayersSidebar({
 }: PlayersSidebarProps) {
   const [currentTurnIndex, setCurrentTurnIndex] = useState(0)
 
-  const sortedEntities = [...characters].sort((a, b) => {
-    const aVal = localInitiatives[a.id] ?? a.initiative ?? 0
-    const bVal = localInitiatives[b.id] ?? b.initiative ?? 0
-    return bVal - aVal
-  })
+  const sortedEntities = useMemo(() => {
+    if (activeCombat?.participants?.length > 0) {
+      return [...activeCombat.participants].sort((a: any, b: any) =>
+        (b.initiative ?? 0) - (a.initiative ?? 0)
+      )
+    }
+    return [...characters].sort((a: any, b: any) => {
+      const aVal = localInitiatives?.[a.id] ?? a.initiative ?? 0
+      const bVal = localInitiatives?.[b.id] ?? b.initiative ?? 0
+      return bVal - aVal
+    })
+  }, [activeCombat, characters, localInitiatives])
 
   const handleNextTurn = () => {
+    if (activeCombat) {
+      router.patch(`/combats/${activeCombat.id}/next-turn`)
+      return
+    }
     if (sortedEntities.length === 0) return
     const nextIndex = (currentTurnIndex + 1) % sortedEntities.length
     setCurrentTurnIndex(nextIndex)
@@ -182,7 +196,7 @@ export default function PlayersSidebar({
               </button>
               <button
                 onClick={handleNextTurn}
-                disabled={sortedEntities.length === 0}
+                disabled={activeCombat ? activeCombat.participants.length === 0 : sortedEntities.length === 0}
                 className="bg-[#F97316] hover:bg-[#EA580C] disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] px-3 py-1.5 rounded font-bold transition-colors shadow-lg shadow-[#F97316]/20"
               >
                 Próximo Turno
@@ -200,8 +214,12 @@ export default function PlayersSidebar({
         )}
 
         {sortedEntities.map((entity, index) => {
-          const stats = entity.stats || {}
-          const isTurn = index === currentTurnIndex && sortedEntities.length > 0
+          const stats = entity.stats || { currentHp: entity.hpCurrent, maxHp: entity.hpMax }
+          const isTurn = activeCombat 
+            ? activeCombat.currentParticipantId === entity.id 
+            : index === currentTurnIndex && sortedEntities.length > 0
+
+          const isMonster = !!entity.roomMonsterId
 
           return (
             <div
@@ -212,20 +230,34 @@ export default function PlayersSidebar({
                 {/* Header: nome + coluna direita (status + badge) */}
                 <div className="flex justify-between items-start mb-2 gap-2">
                   <div className="min-w-0">
-                    <p className="text-white font-bold text-sm truncate">{entity.name}</p>
-                    <p className="text-[#A1A1AA] text-[10px]">{entity.class?.name || 'Sem Classe'}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`font-bold text-sm truncate ${isMonster ? 'text-red-400' : 'text-white'}`}>{entity.name}</p>
+                      {entity.initiativePending ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#F97316]/20 text-[#F97316]">⏳</span>
+                      ) : ((activeCombat ? (entity.initiative ?? 0) : (localInitiatives[entity.id] ?? entity.initiative ?? 0)) > 0) ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-200 border border-zinc-700">
+                          {activeCombat ? (entity.initiative ?? 0) : (localInitiatives[entity.id] ?? entity.initiative ?? 0)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {entity.characterId && <p className="text-[#A1A1AA] text-[10px]">{entity.character?.class?.name || entity.class?.name || 'Sem Classe'}</p>}
+                    {isMonster && <p className="text-[#EF4444] text-[10px] uppercase font-bold tracking-wider">Ameaça</p>}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    {showStats && (
+                    {showStats && !isMonster && (
                       <span className={`text-[10px] font-bold uppercase ${getStatusColor(stats.currentHp, stats.maxHp)}`}>
                         {getStatusLabel(stats.currentHp, stats.maxHp)}
                       </span>
                     )}
-                    <InitiativeInput
-                      externalValue={localInitiatives[entity.id] ?? entity.initiative ?? 0}
-                      isTurn={isTurn}
-                      onChange={(val) => onInitiativeChange?.(entity.id, val)}
-                    />
+                    {entity.initiativePending ? (
+                      <span className="text-[10px] bg-[#F97316]/20 text-[#F97316] px-2 py-0.5 rounded font-bold animate-pulse">Aguardando...</span>
+                    ) : (
+                      <InitiativeInput
+                        externalValue={activeCombat ? (entity.initiative ?? 0) : (localInitiatives[entity.id] ?? entity.initiative ?? 0)}
+                        isTurn={isTurn}
+                        onChange={(val) => onInitiativeChange?.(entity.id, val)}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -234,30 +266,34 @@ export default function PlayersSidebar({
                     <div className="flex items-center gap-2">
                       <Heart size={10} className="text-[#EF4444] shrink-0" />
                       <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
-                        <div className="h-full bg-[#EF4444]" style={{ width: `${(stats.currentHp / stats.maxHp) * 100}%` }} />
+                        <div className="h-full bg-[#EF4444]" style={{ width: `${(stats.currentHp / (stats.maxHp || 1)) * 100}%` }} />
                       </div>
                       <span className="text-[10px] text-white font-medium w-8 text-right">
                         {stats.currentHp || 0}/{stats.maxHp || 0}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Zap size={10} className="text-[#EAB308] shrink-0" />
-                      <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
-                        <div className="h-full bg-[#EAB308]" style={{ width: `${(stats.currentPe / stats.maxPe) * 100}%` }} />
+                    {!isMonster && (
+                      <div className="flex items-center gap-2">
+                        <Zap size={10} className="text-[#EAB308] shrink-0" />
+                        <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
+                          <div className="h-full bg-[#EAB308]" style={{ width: `${(stats.currentPe / (stats.maxPe || 1)) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] text-white font-medium w-8 text-right">
+                          {stats.currentPe || 0}/{stats.maxPe || 0}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-white font-medium w-8 text-right">
-                        {stats.currentPe || 0}/{stats.maxPe || 0}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Brain size={10} className="text-[#06B6D4] shrink-0" />
-                      <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
-                        <div className="h-full bg-[#06B6D4]" style={{ width: `${(stats.currentSanity / stats.maxSanity) * 100}%` }} />
+                    )}
+                    {!isMonster && (
+                      <div className="flex items-center gap-2">
+                        <Brain size={10} className="text-[#06B6D4] shrink-0" />
+                        <div className="flex-1 h-1 bg-[#1C1C1E] rounded-full overflow-hidden">
+                          <div className="h-full bg-[#06B6D4]" style={{ width: `${(stats.currentSanity / (stats.maxSanity || 1)) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] text-white font-medium w-8 text-right">
+                          {stats.currentSanity || 0}/{stats.maxSanity || 0}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-white font-medium w-8 text-right">
-                        {stats.currentSanity || 0}/{stats.maxSanity || 0}
-                      </span>
-                    </div>
+                    )}
                   </div>
                 ) : (
                   <div className="h-[46px] bg-[#09090B]/50 rounded border border-dashed border-[#27272A] flex items-center justify-center">

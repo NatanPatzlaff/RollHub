@@ -152,6 +152,7 @@ router
 
     // Combates
     router.post('/campaigns/:campaignId/combats', [CombatsController, 'store'])
+    router.post('/campaigns/:campaignId/combats/request-initiative', [CombatsController, 'requestInitiative'])
     router.post('/combats/:combatId/participants', [CombatsController, 'addParticipant'])
     router.patch('/combats/:combatId/next-turn', [CombatsController, 'nextTurn'])
     router.patch('/combat-participants/:participantId/damage', [CombatsController, 'applyDamage'])

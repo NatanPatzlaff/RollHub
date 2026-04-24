@@ -274,8 +274,44 @@ export default class CampaignsController {
   }
 
   async sendReactionResponse({ params, request, response, auth }: HttpContext) {
-    const { reactionType, characterId } = request.all()
-    // reactionType: 'block' | 'dodge' | 'counter'
+    const { reactionType, type, value, characterId } = request.all()
+    
+    // Default flow for initiative type
+    if (type === 'initiative') {
+      const Combat = (await import('#models/combat')).default
+      const CombatParticipant = (await import('#models/combat_participant')).default
+
+      const combat = await Combat.query()
+        .where('campaign_id', params.id)
+        .where('active', true)
+        .first()
+
+      if (combat) {
+        await CombatParticipant.query()
+          .where('combat_id', combat.id)
+          .where('character_id', characterId)
+          .update({ initiative: value, initiative_pending: false })
+
+        await transmit.broadcast(`campaign/${params.id}/events`, {
+          type: 'INITIATIVE_UPDATED',
+          characterId,
+          initiative: value
+        })
+
+        // Verifica se todos responderam
+        const pending = await CombatParticipant.query()
+          .where('combat_id', combat.id)
+          .where('initiative_pending', true)
+          .count('* as total')
+
+        if (Number(pending[0].$extras.total) === 0) {
+          await transmit.broadcast(`campaign/${params.id}/events`, {
+            type: 'COMBAT_READY',
+            combatId: combat.id
+          })
+        }
+      }
+    }
 
     const campaignId = params.id
 
@@ -283,7 +319,7 @@ export default class CampaignsController {
     await transmit.broadcast(`campaign/${campaignId}/reaction-responses`, {
       type: 'REACTION_RESPONSE',
       characterId,
-      reactionType,
+      reactionType: reactionType || type,
       playerName: auth.user!.fullName || auth.user!.email,
       timestamp: new Date().toISOString()
     })

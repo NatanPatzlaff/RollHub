@@ -19,10 +19,16 @@ export default class CombatParticipant extends BaseModel {
     declare monsterId: number | null
 
     @column()
+    declare roomMonsterId: number | null
+
+    @column()
     declare name: string
 
     @column()
     declare initiative: number
+
+    @column()
+    declare initiativePending: boolean
 
     @column()
     declare hpCurrent: number | null

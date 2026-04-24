@@ -320,24 +320,32 @@ export default function MonsterList({ monsters, campaignId }: MonsterListProps) 
                               )}
 
                               {/* Action Bar */}
-                              <div className="flex gap-2 pt-2 mt-2 border-t border-[#27272A]">
+                              <div className="flex gap-3 pt-4 mt-2 border-t border-white/5 items-center">
+                                
+                                {/* Adicionar ao Combate */}
                                 <Button 
                                   variant="flat" 
-                                  color="success" 
+                                  color="primary" 
                                   startContent={<Swords size={16} />}
-                                  className="flex-1 font-bold"
+                                  className="flex-1 font-bold h-10"
                                   onPress={() => handleAddToCombat(monster)}
                                 >
-                                  Adicionar ao Combate
+                                  Add ao Combate
                                 </Button>
                                 
-                                <div className="flex gap-2">
+                                {/* Selecionar Sala + Adicionar */}
+                                <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 flex-1">
                                   <Select 
                                     placeholder="Sel. Sala" 
                                     size="sm"
-                                    className="max-w-[150px]"
+                                    className="flex-1 min-w-[120px]"
                                     selectedKeys={selectedRoomId ? [selectedRoomId] : []}
                                     onSelectionChange={(keys) => setSelectedRoomId(Array.from(keys)[0] as string)}
+                                    variant="flat"
+                                    aria-label="Selecionar sala"
+                                    classNames={{
+                                      trigger: "bg-transparent hover:bg-white/5 border-none shadow-none h-8",
+                                    }}
                                   >
                                     {missions.flatMap(m => m.rooms).map(r => (
                                       <SelectItem key={String(r.id)} textValue={r.name}>
@@ -346,30 +354,26 @@ export default function MonsterList({ monsters, campaignId }: MonsterListProps) 
                                     ))}
                                   </Select>
                                   <Button 
-                                    variant="flat" 
+                                    isIconOnly
                                     color="success" 
                                     size="sm"
                                     onPress={() => handleAddToRoom(monster.id)}
-                                    className="font-bold flex-1"
+                                    className="font-bold w-10 min-w-unit-10 h-8 rounded-lg"
+                                    title="Adicionar à Sala"
                                   >
-                                    + Sala
+                                    <Plus size={18} />
                                   </Button>
                                 </div>
+
+                                {/* Editar */}
                                 <Button 
                                   isIconOnly
                                   variant="flat" 
-                                  className="text-zinc-300 bg-zinc-800"
+                                  className="text-zinc-400 bg-zinc-900 hover:bg-zinc-800 h-10 w-10 border border-zinc-800"
                                   onPress={() => handleOpenEdit(monster)}
+                                  title="Editar Criatura Base"
                                 >
                                   <Edit3 size={18} />
-                                </Button>
-                                <Button 
-                                  isIconOnly
-                                  variant="flat" 
-                                  color="danger"
-                                  onPress={() => handleDelete(monster.id)}
-                                >
-                                  <Trash2 size={18} />
                                 </Button>
                               </div>
                             </div>

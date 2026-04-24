@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import axios from 'axios'
 import { router } from '@inertiajs/react'
 import { 
   Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, 
@@ -45,15 +46,64 @@ export default function MonsterFormModal({ isOpen, onClose, monster, campaignId,
     notes: ''
   })
 
+  // Controle de Missões/Salas para Adição Direta
+  const [missions, setMissions] = useState<any[]>([])
+  const [selectedRoomId, setSelectedRoomId] = useState<string>('')
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchMissions = async () => {
+        try {
+          const res = await axios.get(`/api/campaigns/${campaignId}/missions`)
+          setMissions(res.data.missions || [])
+        } catch (e) {
+          console.error('Erro ao buscar missões:', e)
+        }
+      }
+      fetchMissions()
+    }
+  }, [campaignId, isOpen])
+
   useEffect(() => {
     if (monster) {
       setFormData({
         ...monster,
-        alternativeMovements: monster.alternativeMovements || [],
-        additionalSkills: monster.additionalSkills || [],
-        attacks: monster.attacks || [],
-        abilities: monster.abilities || [],
-        resistances: monster.resistances || { flatRD: 0, byType: {} }
+        name: monster.name ?? '',
+        type: monster.type ?? '',
+        size: monster.size ?? 'Médio',
+        element: monster.element ?? '',
+        secondaryElements: monster.secondaryElements ?? '',
+        vd: monster.vd ?? 0,
+        defense: monster.defense ?? 0,
+        hpMax: monster.hpMax ?? 0,
+        hpCurrent: monster.hpCurrent ?? 0,
+        movement: monster.movement ?? 0,
+        nexImmune: monster.nexImmune ?? 0,
+        agi: monster.agi ?? 0,
+        str: monster.str ?? 0,
+        int: monster.int ?? 0,
+        pre: monster.pre ?? 0,
+        vig: monster.vig ?? 0,
+        perceptionDice: monster.perceptionDice ?? 1,
+        perceptionBonus: monster.perceptionBonus ?? 0,
+        initiativeDice: monster.initiativeDice ?? 1,
+        initiativeBonus: monster.initiativeBonus ?? 0,
+        fortitudeDice: monster.fortitudeDice ?? 1,
+        fortitudeBonus: monster.fortitudeBonus ?? 0,
+        reflexDice: monster.reflexDice ?? 1,
+        reflexBonus: monster.reflexBonus ?? 0,
+        willDice: monster.willDice ?? 1,
+        willBonus: monster.willBonus ?? 0,
+        disturbingPresenceDt: monster.disturbingPresenceDt ?? 0,
+        disturbingPresenceDamage: monster.disturbingPresenceDamage ?? '',
+        description: monster.description ?? '',
+        fearEnigma: monster.fearEnigma ?? '',
+        notes: monster.notes ?? '',
+        alternativeMovements: monster.alternativeMovements ?? [],
+        additionalSkills: monster.additionalSkills ?? [],
+        attacks: monster.attacks ?? [],
+        abilities: monster.abilities ?? [],
+        resistances: monster.resistances ?? { flatRD: 0, byType: {} }
       })
     } else {
       setFormData({
@@ -70,7 +120,7 @@ export default function MonsterFormModal({ isOpen, onClose, monster, campaignId,
         attacks: [],
         abilities: [],
         resistances: { flatRD: 0, byType: {} },
-        disturbingPresenceDt: null,
+        disturbingPresenceDt: 0,
         disturbingPresenceDamage: '',
         description: '',
         fearEnigma: '',
@@ -80,16 +130,22 @@ export default function MonsterFormModal({ isOpen, onClose, monster, campaignId,
   }, [monster, isOpen])
 
   const handleSubmit = () => {
-    if (monster) {
+    if (monster?.id) {
       const url = mode === 'room-instance' 
         ? `/room-monsters/${monster.id}` 
         : `/monsters/${monster.id}`
       
-      router.put(url, { ...formData, campaignId })
+      console.log('submit url:', url, 'monster id:', monster?.id)
+      router.put(url, { ...formData, campaignId }, {
+        preserveScroll: true,
+        onSuccess: () => onClose()
+      })
     } else {
-      router.post('/monsters', { ...formData, campaignId })
+      router.post('/monsters', { ...formData, campaignId }, {
+        preserveScroll: true,
+        onSuccess: () => onClose()
+      })
     }
-    onClose()
   }
 
   // Helpers de lista dinâmica
@@ -422,9 +478,61 @@ export default function MonsterFormModal({ isOpen, onClose, monster, campaignId,
           </section>
         </ModalBody>
 
-        <ModalFooter className="border-t border-zinc-800 bg-[#09090B] py-4">
-          <Button variant="light" onPress={onClose} className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Descartar</Button>
-          <Button color="primary" className="font-black uppercase tracking-widest text-[10px] px-8 shadow-lg shadow-primary/20" onPress={handleSubmit}>Salvar na Campanha</Button>
+        <ModalFooter className="border-t border-zinc-800 bg-[#09090B] py-4 gap-4 flex-wrap justify-between">
+          {mode !== 'room-instance' && (
+            <div className="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 flex-1 min-w-[280px]">
+              <Select 
+                placeholder="Sel. Sala para adicionar" 
+                size="sm"
+                className="flex-1"
+                selectedKeys={selectedRoomId ? [selectedRoomId] : []}
+                onSelectionChange={(keys) => setSelectedRoomId(Array.from(keys)[0] as string)}
+                variant="flat"
+                aria-label="Selecionar sala"
+                classNames={{
+                  trigger: "bg-transparent hover:bg-white/5 border-none shadow-none h-8",
+                }}
+              >
+                {missions.flatMap(m => m.rooms).map(r => (
+                  <SelectItem key={String(r.id)} textValue={r.name}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </Select>
+              <Button 
+                size="sm" 
+                color="success" 
+                variant="flat"
+                isDisabled={!selectedRoomId || !monster?.id}
+                className="font-bold px-4 h-8 rounded-lg"
+                onPress={() => {
+                  if (!monster?.id) return
+                  // Salvar template e depois adicionar à sala
+                  router.put(`/monsters/${monster.id}`, { ...formData, campaignId }, {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                      router.post(`/rooms/${selectedRoomId}/monsters`, {
+                        monsterId: monster.id,
+                        quantity: 1
+                      }, {
+                        preserveScroll: true,
+                        onSuccess: () => {
+                          onClose()
+                        }
+                      })
+                    }
+                  })
+                }}
+              >
+                Salvar e Add na Sala
+              </Button>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button variant="light" onPress={onClose} className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Descartar</Button>
+            <Button color="primary" className="font-black uppercase tracking-widest text-[10px] px-8 shadow-lg shadow-primary/20" onPress={handleSubmit}>Salvar na Campanha</Button>
+          </div>
         </ModalFooter>
       </ModalContent>
     </Modal>

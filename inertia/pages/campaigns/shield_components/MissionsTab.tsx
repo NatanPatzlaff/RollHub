@@ -747,10 +747,10 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
                           {(activeRoom.roomMonsters ?? []).map(rm => (
                             <div key={rm.id} className="group bg-[#18181B] border border-[#27272A] p-3 rounded-lg flex justify-between items-center hover:border-red-500/30 transition-all">
                               <div className="flex-1">
-                                <h5 className="text-xs font-bold text-white uppercase">{rm.monster?.name}</h5>
+                                <h5 className="text-xs font-bold text-white uppercase">{rm.name || rm.monster?.name}</h5>
                                 <p className="text-[9px] text-zinc-500 flex gap-2">
-                                  <span>🛡️ {rm.monster?.defense}</span>
-                                  <span>❤️ {rm.monster?.hpMax}</span>
+                                  <span>🛡️ {rm.defense ?? rm.monster?.defense}</span>
+                                  <span>❤️ {rm.hpMax ?? rm.monster?.hpMax}</span>
                                 </p>
                               </div>
                               <div className="flex items-center gap-3">
@@ -760,7 +760,15 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
                                   <button onClick={() => handleUpdateMonsterQuantity(rm.id, rm.quantity + 1)} className="text-zinc-500 hover:text-white transition-colors">＋</button>
                                 </div>
                                 <button 
-                                  onClick={() => { setEditingInstance(rm); setIsInstanceModalOpen(true) }}
+                                  onClick={() => { 
+                                    const instanceData = {
+                                      ...(rm.monster || {}),
+                                      ...rm,
+                                      id: rm.id,
+                                    }
+                                    setEditingInstance(instanceData)
+                                    setIsInstanceModalOpen(true) 
+                                  }}
                                   className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors px-1"
                                 >
                                   📝
@@ -861,7 +869,7 @@ export default function MissionsTab({ campaignId, campaignCharacters, onEndScene
 
             <MonsterFormModal
               isOpen={isInstanceModalOpen}
-              onClose={() => { setIsInstanceModalOpen(false); setEditingInstance(null) }}
+              onClose={() => { setIsInstanceModalOpen(false); setEditingInstance(null); fetchMissions() }}
               monster={editingInstance}
               campaignId={campaignId}
               mode="room-instance"

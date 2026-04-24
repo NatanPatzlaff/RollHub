@@ -386,7 +386,7 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         attacks: [
           { name: 'Tentáculo Espinhoso', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 20, damage: '2d8+10', damageType: 'perfuração' },
           { 
-            name: '喷射 (Movimento)', 
+            name: 'Jato (Movimento)', 
             description: 'Jato de sangue ácido. 6d6 químico alcance médio (Reflexos DT 25 metade).',
             range: 'Médio', damage: '6d6', damageType: 'químico' 
           },

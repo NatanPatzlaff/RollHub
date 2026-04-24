@@ -561,6 +561,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           setDiceHistory((prev) => [{ label: rollParams?.label || 'Atributo', total }, ...prev].slice(0, 8))
           scheduleClear()
         }, 0)
+        console.log('[PUSHER-DEBUG] chamando onNewRollRef, isWaiting:', isWaitingForRollRef.current, 'isOwnRoll:', isOwnRoll, 'action:', rollParams?.label)
         onNewRollRef.current?.({
           id: roll.uuid,
           player: playerNameRef.current,

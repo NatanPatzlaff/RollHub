@@ -86,7 +86,7 @@ export default function ShieldDashboard() {
         router.reload({ only: ['activeCombat'] })
       }
 
-      if (['COMBAT_STARTED', 'PARTICIPANT_ADDED', 'DAMAGE_APPLIED', 'TURN_START', 'SCENE_END', 'INITIATIVE_UPDATED'].includes(data.type)) {
+      if (['COMBAT_STARTED', 'PARTICIPANT_ADDED', 'DAMAGE_APPLIED', 'TURN_START', 'SCENE_END', 'INITIATIVE_UPDATED', 'COMBAT_READY'].includes(data.type)) {
         router.reload({ only: ['activeCombat', 'campaignMonsters'] })
       }
 
@@ -128,12 +128,7 @@ export default function ShieldDashboard() {
   }, [characters])
 
   const handleRequestInitiative = () => {
-    setLocalInitiatives({})
-    initiativeRequestedAtRef.current = new Date()
-    const characterIds = new Set<number>(characters.map((c: any) => c.id))
-    requestingInitiativeRef.current = true
-    setInitiativePending(characterIds)
-    setRequestingInitiative(true)
+    router.post(`/campaigns/${campaign.id}/combats/request-initiative`)
   }
 
   const loadRolls = useCallback(async () => {
@@ -248,6 +243,7 @@ export default function ShieldDashboard() {
           
           {/* Painel Esquerdo: Ordem de Turno / Personagens */}
             <PlayersSidebar 
+              activeCombat={activeCombat}
               characters={characters} 
               localInitiatives={localInitiatives}
               requestingInitiative={requestingInitiative}
@@ -282,13 +278,15 @@ export default function ShieldDashboard() {
             />
           
           {/* Registro do Sistema */}
-          <div className="lg:col-span-1 h-full">
-            <RollHistoryPanel 
-              rolls={campaignRolls} 
-              onClear={handleClearHistory}
-              onClearAll={handleClearAll}
-            />
-          </div>
+          {activeTab !== 'bestiario' && (
+            <div className="lg:col-span-1 h-full">
+              <RollHistoryPanel 
+                rolls={campaignRolls} 
+                onClear={handleClearHistory}
+                onClearAll={handleClearAll}
+              />
+            </div>
+          )}
         </div>
       </div>
     </>
