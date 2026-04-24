@@ -266,7 +266,9 @@ export default function MonsterList({ monsters, campaignId }: MonsterListProps) 
                               <div className="flex gap-2">
                                 {['agi', 'str', 'int', 'pre', 'vig'].map(attr => (
                                   <div key={attr} className="flex-1 bg-[#18181B] py-1.5 rounded-lg text-center border border-[#27272A]">
-                                    <span className="text-[9px] text-[#A1A1AA] font-bold block uppercase">{attr}</span>
+                                    <span className="text-[9px] text-[#A1A1AA] font-bold block uppercase">
+                                      {attr === 'str' ? 'FOR' : attr}
+                                    </span>
                                     <span className="text-sm font-black text-white">{monster[attr] || 0}</span>
                                   </div>
                                 ))}

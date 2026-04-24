@@ -15,6 +15,8 @@ interface PlayersSidebarProps {
   onToggleStats?: () => void
   switchValue?: boolean
   onAttackCharacter?: (id: number, name: string) => void
+  selectedParticipantId?: number | null
+  onSelectParticipant?: (id: number) => void
 }
 
 const getStatusColor = (current: number, max: number) => {
@@ -92,6 +94,8 @@ export default function PlayersSidebar({
   onToggleStats,
   switchValue,
   onAttackCharacter,
+  selectedParticipantId,
+  onSelectParticipant,
 }: PlayersSidebarProps) {
   const [currentTurnIndex, setCurrentTurnIndex] = useState(0)
 
@@ -219,12 +223,16 @@ export default function PlayersSidebar({
             ? activeCombat.currentParticipantId === entity.id 
             : index === currentTurnIndex && sortedEntities.length > 0
 
-          const isMonster = !!entity.roomMonsterId
+          const isMonster = !!entity.roomMonsterId || !!entity.monsterId
+          const isSelected = selectedParticipantId === entity.id
 
           return (
             <div
               key={entity.id}
-              className={`bg-[#101012] border ${isTurn ? 'border-[#F97316]' : 'border-[#27272A]'} rounded-lg p-3 hover:border-[#3F3F46] transition-colors`}
+              onClick={() => {
+                if (isMonster) onSelectParticipant?.(entity.id)
+              }}
+              className={`bg-[#101012] border ${isSelected ? 'border-orange-500 bg-orange-500/5' : isTurn ? 'border-[#F97316]' : 'border-[#27272A]'} rounded-lg p-3 hover:border-[#3F3F46] transition-colors ${isMonster ? 'cursor-pointer' : ''}`}
             >
               <div className="flex-1 min-w-0">
                 {/* Header: nome + coluna direita (status + badge) */}

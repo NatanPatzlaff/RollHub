@@ -1,19 +1,28 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Swords, Zap, ArrowRight, Shield, UserPlus, Ghost } from 'lucide-react'
+import { Swords, ArrowRight, UserPlus, Ghost } from 'lucide-react'
 import { router } from '@inertiajs/react'
-import { Button, Progress, Input, Select, SelectItem } from '@heroui/react'
+import { Button, Input, Select, SelectItem } from '@heroui/react'
+import MonsterCombatSheet from './MonsterCombatSheet'
 
 interface CombatTabProps {
   campaignId: number
   activeCombat: any
   monsters: any[]
   characters: any[]
+  selectedParticipantId: number | null
+  dddiceRef?: any
+  campaign?: any
 }
 
-export default function CombatTab({ campaignId, activeCombat, monsters, characters }: CombatTabProps) {
-  const [damageValues, setDamageValues] = useState<Record<number, number>>({})
-  const [damageTypes, setDamageTypes] = useState<Record<number, string>>({})
+export default function CombatTab({
+  campaignId,
+  activeCombat,
+  monsters,
+  characters,
+  selectedParticipantId,
+  dddiceRef,
+  campaign,
+}: CombatTabProps) {
   const [isAddingParticipant, setIsAddingParticipant] = useState(false)
   const [newParticipant, setNewParticipant] = useState({
     type: 'character',
@@ -21,11 +30,8 @@ export default function CombatTab({ campaignId, activeCombat, monsters, characte
     initiative: 0,
   })
 
-  const damageTypesList = [
-    'Físico', 'Corte', 'Impacto', 'Perfuração', 'Balístico',
-    'Sangue', 'Morte', 'Conhecimento', 'Energia', 'Medo',
-    'Fogo', 'Frio', 'Elétrico', 'Químico', 'Psíquico'
-  ]
+  // Encontra o participante selecionado nos dados do combate
+  const selectedParticipant = activeCombat?.participants?.find((p: any) => p.id === selectedParticipantId)
 
   const handleStartCombat = () => {
     router.post(`/campaigns/${campaignId}/combats`, {})
@@ -58,26 +64,6 @@ export default function CombatTab({ campaignId, activeCombat, monsters, characte
     }, {
       onSuccess: () => setIsAddingParticipant(false)
     })
-  }
-
-  const handleApplyDamage = (participantId: number) => {
-    const rawDamage = damageValues[participantId] || 0
-    const damageType = damageTypes[participantId] || 'Físico'
-    
-    if (rawDamage === 0) return
-
-    router.patch(`/combat-participants/${participantId}/damage`, {
-      rawDamage,
-      damageType
-    }, {
-      onSuccess: () => {
-        setDamageValues(prev => ({ ...prev, [participantId]: 0 }))
-      }
-    })
-  }
-
-  const handleUpdateInitiative = (participantId: number, initiative: number) => {
-    router.patch(`/combat-participants/${participantId}/initiative`, { initiative })
   }
 
   if (!activeCombat) {
@@ -143,103 +129,27 @@ export default function CombatTab({ campaignId, activeCombat, monsters, characte
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-        {activeCombat.participants?.sort((a: any, b: any) => b.initiative - a.initiative).map((participant: any) => {
-          const isTurn = activeCombat.currentParticipantId === participant.id
-          const isMonster = !!participant.monsterId
-          const hpPercent = (participant.hpCurrent / participant.hpMax) * 100
-
-          return (
-            <motion.div 
-              key={participant.id}
-              layout
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className={`bg-[#09090B] border-2 rounded-xl p-4 transition-all ${isTurn ? 'border-[#F97316] ring-1 ring-[#F97316]/30' : 'border-[#27272A]'}`}
-            >
-              <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${isMonster ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
-                  {isMonster ? <Ghost size={24} /> : <Shield size={24} />}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h4 className="font-bold text-white truncate text-lg">{participant.name}</h4>
-                      <p className="text-[10px] text-[#A1A1AA] uppercase font-bold tracking-wider">
-                        {isMonster ? 'Criatura' : 'Jogador'} • Iniciativa: 
-                        <input 
-                          type="number" 
-                          value={participant.initiative}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value) || 0
-                            handleUpdateInitiative(participant.id, val)
-                          }}
-                          className="bg-transparent border-0 w-10 px-1 text-[#F97316] font-black focus:outline-none focus:ring-0 text-left"
-                        />
-                      </p>
-                    </div>
-                    {isTurn && (
-                      <span className="bg-[#F97316]/10 text-[#F97316] text-[10px] font-black px-2 py-0.5 rounded uppercase flex items-center gap-1">
-                        <Zap size={10} /> Turno Atual
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-[11px] font-bold">
-                      <span className="text-[#A1A1AA]">PONTOS DE VIDA</span>
-                      <span className={hpPercent <= 25 ? 'text-red-500' : 'text-zinc-300'}>
-                        {participant.hpCurrent} / {participant.hpMax}
-                      </span>
-                    </div>
-                    <Progress 
-                      value={hpPercent} 
-                      color={isMonster ? "danger" : "primary"}
-                      size="sm"
-                      className="h-2"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 bg-[#18181B] p-3 rounded-lg border border-[#27272A]">
-                  <div className="flex gap-2">
-                    <Input 
-                      placeholder="Dano"
-                      type="number"
-                      size="sm"
-                      value={String(damageValues[participant.id] || '')}
-                      onChange={(e) => setDamageValues(prev => ({ ...prev, [participant.id]: parseInt(e.target.value) }))}
-                      className="w-20"
-                      classNames={{ input: "text-center font-mono font-bold" }}
-                    />
-                    <Select
-                      size="sm"
-                      className="w-32"
-                      selectedKeys={damageTypes[participant.id] ? [damageTypes[participant.id]] : ['Físico']}
-                      onSelectionChange={(keys) => setDamageTypes(prev => ({ ...prev, [participant.id]: Array.from(keys)[0] as string }))}
-                    >
-                      {damageTypesList.map(type => (
-                        <SelectItem key={type}>{type}</SelectItem>
-                      ))}
-                    </Select>
-                  </div>
-                  <Button 
-                    size="sm" 
-                    color="danger" 
-                    className="w-full font-bold"
-                    onPress={() => handleApplyDamage(participant.id)}
-                  >
-                    Aplicar
-                  </Button>
-                </div>
-              </div>
-            </motion.div>
-          )
-        })}
+      <div className="flex-1 overflow-hidden">
+        {selectedParticipant ? (
+          <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
+            <MonsterCombatSheet 
+              participant={selectedParticipant} 
+              dddiceRef={dddiceRef}
+              campaign={campaign}
+            />
+          </div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center opacity-40">
+            <div className="w-20 h-20 bg-[#18181B] border border-[#27272A] rounded-2xl flex items-center justify-center mb-4">
+              <Ghost size={40} className="text-zinc-600" />
+            </div>
+            <p className="text-zinc-500 font-bold uppercase tracking-wider text-sm">Selecione um monstro para ver sua ficha</p>
+          </div>
+        )}
       </div>
 
       {/* Modal fake de adicionar participante no topo */}
+
       {isAddingParticipant && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <div className="bg-[#18181B] border border-[#27272A] rounded-2xl p-6 w-full max-w-md shadow-2xl">
@@ -283,3 +193,4 @@ export default function CombatTab({ campaignId, activeCombat, monsters, characte
     </div>
   )
 }
+

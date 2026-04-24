@@ -23,7 +23,7 @@ export default class Campaign extends BaseModel {
   @column()
   declare inviteCode: string | null
 
-  @column()
+  @column({ columnName: 'dddice_room_slug' })
   declare dddiceRoomSlug: string | null
 
   @belongsTo(() => User, {

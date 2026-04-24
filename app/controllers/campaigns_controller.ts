@@ -4,8 +4,10 @@ import Combat from '#models/combat'
 import Monster from '#models/monster'
 import HomebrewItem from '#models/homebrew_item'
 import { createCampaignValidator, updateCampaignValidator } from '#validators/campaign'
-import db from '@adonisjs/lucid/services/db'
+import CampaignRoll from '#models/campaign_roll'
+import { DateTime } from 'luxon'
 import transmit from '@adonisjs/transmit/services/main'
+import db from '@adonisjs/lucid/services/db'
 
 export default class CampaignsController {
   async store({ request, auth, response, session }: HttpContext) {
@@ -95,6 +97,7 @@ export default class CampaignsController {
       .preload('participants', (query) => {
         query.preload('character', (q) => q.preload('stats').preload('class'))
         query.preload('monster')
+        query.preload('roomMonster')
       })
       .first()
 
@@ -181,6 +184,11 @@ export default class CampaignsController {
       .from('campaign_rolls')
       .where('campaign_id', campaign.id)
 
+    // Se não for o mestre, não ver rolagens secretas
+    if (!isGM) {
+      query = query.where('is_secret', false)
+    }
+
     if (clearRecord) {
       query = query.where('rolled_at', '>', clearRecord.cleared_at)
     }
@@ -200,6 +208,78 @@ export default class CampaignsController {
     }))
 
     return response.ok({ rolls: formattedRolls })
+  }
+
+  /**
+   * Salva uma nova rolagem na campanha (geralmente para monstros ou mestre)
+   */
+  async saveRoll({ params, request, response, auth }: HttpContext) {
+    const user = auth.user!
+    const campaignId = params.id
+    const campaign = await Campaign.findOrFail(campaignId)
+
+    // Verificar se o usuário é o mestre ou membro da campanha
+    const isGM = campaign.gameMasterId === user.id
+    const isMember = await db
+      .from('campaign_members')
+      .where('campaign_id', campaign.id)
+      .where('user_id', user.id)
+      .first()
+
+    if (!isGM && !isMember) {
+      return response.forbidden({ error: 'Acesso negado' })
+    }
+
+    const data = request.only([
+      'action',
+      'roll_expression',
+      'result',
+      'is_critical',
+      'is_fail',
+      'is_gm',
+      'is_secret',
+      'diceValues',
+      'playerName',
+      'characterId',
+    ])
+
+    const roll = await CampaignRoll.create({
+      campaignId: campaign.id,
+      characterId: data.characterId || null,
+      playerName: data.playerName || user.fullName || 'Mestre',
+      action: data.action,
+      rollExpression: data.roll_expression,
+      result: data.result,
+      isCritical: data.is_critical || false,
+      isFail: data.is_fail || false,
+      isGm: data.is_gm !== undefined ? data.is_gm : isGM,
+      isSecret: data.is_secret || false,
+      diceValues: data.diceValues
+        ? typeof data.diceValues === 'string'
+          ? data.diceValues
+          : JSON.stringify(data.diceValues)
+        : null,
+      rolledAt: DateTime.now(),
+    })
+
+    if (!roll.isSecret) {
+      await transmit.broadcast(`campaign/${campaign.id}/events`, {
+        type: 'MONSTER_ROLL',
+        roll: {
+          id: roll.id,
+          playerName: roll.playerName,
+          action: roll.action,
+          result: roll.result,
+          rollExpression: roll.rollExpression,
+          isCritical: roll.isCritical,
+          isFail: roll.isFail,
+          isGm: roll.isGm,
+          rolledAt: roll.rolledAt.toISO(),
+        }
+      })
+    }
+
+    return response.ok({ success: true, roll })
   }
 
   async updateSettings({ params, request, auth, response }: HttpContext) {

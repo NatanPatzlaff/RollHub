@@ -3041,6 +3041,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
             </span>
           </button>
         </div>
+      )}
+
       {/* Banner de Pedido de Iniciativa */}
       {pendingReaction && pendingReaction.rollType === 'Iniciativa' && (
         <div className="max-w-7xl mx-auto px-4 md:px-8 pt-4">

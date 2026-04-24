@@ -3,11 +3,13 @@ import { addToast } from "@heroui/react"
 import { Transmit } from '@adonisjs/transmit-client'
 import { Head, usePage, router } from '@inertiajs/react'
 import axios from 'axios'
+import { ThreeDDice } from 'dddice-js'
 
 import BrowserTabs from './shield_components/BrowserTabs'
 import PlayersSidebar from './components/vtt/PlayersSidebar'
 import MainContent from './shield_components/MainContent'
 import RollHistoryPanel from './shield_components/RollHistoryPanel'
+
 
 
 export default function ShieldDashboard() {
@@ -39,6 +41,47 @@ export default function ShieldDashboard() {
   const [requestingInitiative, setRequestingInitiative] = useState(false)
   const [initiativePending, setInitiativePending] = useState<Set<number>>(new Set())
   const [localInitiatives, setLocalInitiatives] = useState<Record<number, number>>({})
+  const [selectedParticipantId, setSelectedParticipantId] = useState<number | null>(null)
+  
+  const handleParticipantSelection = useCallback((id: number) => {
+    setSelectedParticipantId(id)
+    setActiveTab('combates')
+  }, [])
+
+  // dddice logic
+  const dddiceRef = useRef<any>(null)
+  const dddiceCanvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    console.log('[SHIELD DEBUG] Iniciando setup do dddice...', {
+      hasRef: !!dddiceRef.current,
+      roomSlug: campaign?.dddiceRoomSlug
+    })
+
+    if (!dddiceRef.current && campaign?.dddiceRoomSlug) {
+      try {
+        const dddice = new ThreeDDice()
+        
+        const token = import.meta.env.VITE_DDDICE_API_KEY as string | undefined
+
+        console.log('[SHIELD DEBUG] Token encontrado?', !!token)
+
+        if (token) {
+          const canvas = document.createElement('canvas')
+          dddice.initialize(canvas, token)
+          dddice.connect(campaign.dddiceRoomSlug)
+          dddiceRef.current = dddice
+          console.log('[SHIELD DEBUG] dddice instanciado e conectado com sucesso!')
+        } else {
+          console.error('[SHIELD DEBUG ERRO] API Key do dddice ausente no .env (VITE_DDDICE_API_KEY). A engine não foi iniciada.')
+        }
+      } catch (error) {
+        console.error('[SHIELD DEBUG ERRO FATAL] Falha ao instanciar ThreeDDice:', error)
+      }
+    } else if (!campaign?.dddiceRoomSlug) {
+      console.warn('[SHIELD DEBUG AVISO] Campanha não possui dddiceRoomSlug configurado.')
+    }
+  }, [campaign?.dddiceRoomSlug])
 
   const handleAttackCharacter = async (characterId: number, characterName: string) => {
     try {
@@ -242,7 +285,7 @@ export default function ShieldDashboard() {
         <div className="flex flex-1 overflow-hidden">
           
           {/* Painel Esquerdo: Ordem de Turno / Personagens */}
-            <PlayersSidebar 
+             <PlayersSidebar 
               activeCombat={activeCombat}
               characters={characters} 
               localInitiatives={localInitiatives}
@@ -262,10 +305,12 @@ export default function ShieldDashboard() {
               onToggleStats={handleToggleStats}
               switchValue={showStats}
               onAttackCharacter={handleAttackCharacter}
+              selectedParticipantId={selectedParticipantId}
+              onSelectParticipant={handleParticipantSelection}
             />
             
             {/* Área Central: Conteúdo das Abas */}
-            <MainContent 
+             <MainContent 
               activeTab={activeTab} 
               campaign={campaign} 
               showStats={true} 
@@ -275,6 +320,8 @@ export default function ShieldDashboard() {
               activeCombat={activeCombat}
               campaignMonsters={campaignMonsters}
               setActiveTab={setActiveTab}
+              selectedParticipantId={selectedParticipantId}
+              dddiceRef={dddiceRef}
             />
           
           {/* Registro do Sistema */}
@@ -289,6 +336,8 @@ export default function ShieldDashboard() {
           )}
         </div>
       </div>
+
+      <canvas ref={dddiceCanvasRef} style={{ display: 'none', position: 'fixed', pointerEvents: 'none' }} />
     </>
   )
 }

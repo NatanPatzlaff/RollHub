@@ -6,7 +6,6 @@ import {
   Button, Input, Textarea, Divider, Select, SelectItem
 } from '@heroui/react'
 import { Plus, Trash2, Ghost, Swords, Shield, Zap, UserPlus, Info, Activity, Brain, FileText, AlertCircle } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
 
 interface MonsterFormModalProps {
   isOpen: boolean
@@ -246,14 +245,17 @@ export default function MonsterFormModal({ isOpen, onClose, monster, campaignId,
               <h4 className="text-lg font-bold text-white uppercase tracking-tight">Atributos</h4>
             </div>
             <div className="grid grid-cols-5 gap-4">
-              {['AGI', 'FOR', 'INT', 'PRE', 'VIG'].map(attr => (
-                <Input 
-                  key={attr} label={attr} type="number" 
-                  value={String(formData[attr.toLowerCase()] || 0)} 
-                  onValueChange={(v) => setFormData((p:any)=>({...p, [attr.toLowerCase()]: parseInt(v)}))}
-                  classNames={{ input: "text-center font-black text-lg", label: "text-center w-full" }}
-                />
-              ))}
+              {['AGI', 'FOR', 'INT', 'PRE', 'VIG'].map(attr => {
+                const field = attr === 'FOR' ? 'str' : attr.toLowerCase()
+                return (
+                  <Input 
+                    key={attr} label={attr} type="number" 
+                    value={String(formData[field] || 0)} 
+                    onValueChange={(v) => setFormData((p:any)=>({...p, [field]: parseInt(v) || 0}))}
+                    classNames={{ input: "text-center font-black text-lg", label: "text-center w-full" }}
+                  />
+                )
+              })}
             </div>
           </section>
 

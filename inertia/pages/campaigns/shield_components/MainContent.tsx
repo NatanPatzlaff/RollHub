@@ -16,6 +16,8 @@ interface MainContentProps {
   activeCombat: any
   campaignMonsters: any[]
   setActiveTab: (tab: string) => void
+  selectedParticipantId: number | null
+  dddiceRef?: any
 }
 
 export default function MainContent({ 
@@ -27,7 +29,9 @@ export default function MainContent({
   homebrewItems,
   activeCombat,
   campaignMonsters,
-  setActiveTab
+  setActiveTab,
+  selectedParticipantId,
+  dddiceRef,
 }: MainContentProps) {
   return (
     <div className="flex-1 bg-[#09090B] p-6 overflow-y-auto relative custom-scrollbar">
@@ -53,6 +57,9 @@ export default function MainContent({
                   activeCombat={activeCombat}
                   monsters={campaignMonsters}
                   characters={campaign.characters || []}
+                  selectedParticipantId={selectedParticipantId}
+                  dddiceRef={dddiceRef}
+                  campaign={campaign}
                 />
               </div>
             </div>

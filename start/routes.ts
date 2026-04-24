@@ -100,6 +100,7 @@ router
     // Campaign Notes
     router.get('/api/campaigns/:id/notes', [CampaignNotesController, 'index'])
     router.get('/api/campaigns/:id/rolls', [CampaignsController, 'getRolls'])
+    router.post('/api/campaigns/:id/rolls', [CampaignsController, 'saveRoll'])
     router.delete('/api/campaigns/:id/rolls', [CampaignsController, 'clearAllRolls'])
     router.post('/api/campaigns/:id/reaction', [CampaignsController, 'sendReactionRequest'])
     router.post('/api/campaigns/:id/reaction-response', [CampaignsController, 'sendReactionResponse'])
