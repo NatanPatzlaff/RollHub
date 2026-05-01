@@ -133,6 +133,10 @@ export default function ShieldDashboard() {
         router.reload({ only: ['activeCombat', 'campaignMonsters'] })
       }
 
+      if (data.type === 'MONSTER_ROLL') {
+        loadRollsRef.current()
+      }
+
       if (data.type === 'REACTION_RESPONSE') {
         const reactionLabels: Record<string, string> = {
           block: '🛡️ Bloquear',
@@ -267,7 +271,17 @@ export default function ShieldDashboard() {
   useEffect(() => {
     loadRollsRef.current()
     const interval = setInterval(() => loadRollsRef.current(), 10000)
-    return () => clearInterval(interval)
+
+    // Escuta rolagens de monstros feitas pelo próprio mestre (via MonsterCombatSheet)
+    const handleSecretRoll = () => {
+      loadRollsRef.current()
+    }
+    window.addEventListener('secret-roll-added', handleSecretRoll)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('secret-roll-added', handleSecretRoll)
+    }
   }, [campaign?.id])
 
     

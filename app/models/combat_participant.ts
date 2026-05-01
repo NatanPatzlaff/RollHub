@@ -4,6 +4,7 @@ import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 import Combat from '#models/combat'
 import Character from '#models/character'
 import Monster from '#models/monster'
+import RoomMonster from '#models/room_monster'
 
 export default class CombatParticipant extends BaseModel {
     @column({ isPrimary: true })
@@ -53,4 +54,7 @@ export default class CombatParticipant extends BaseModel {
 
     @belongsTo(() => Monster)
     declare monster: BelongsTo<typeof Monster>
+
+    @belongsTo(() => RoomMonster)
+    declare roomMonster: BelongsTo<typeof RoomMonster>
 }

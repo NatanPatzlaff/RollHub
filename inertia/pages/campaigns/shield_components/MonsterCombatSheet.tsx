@@ -28,10 +28,12 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
   const hpPercent = (participant.hpCurrent / participant.hpMax) * 100
 
   // Controle de visibilidade
-  const [isPublicRoll, setIsPublicRoll] = useState(true)
+  const [isPublicRoll, setIsPublicRoll] = useState(false)
 
   // Estados para rolagens inline
   const [rollResults, setRollResults] = useState<Record<string, number>>({})
+  // Estado para resultados combinados de ataque+dano (ataques de arma)
+  const [weaponRollResults, setWeaponRollResults] = useState<Record<string, { attack: number; damage: number; atkDice: number[]; dmgDice: number[]; isCritical: boolean } | null>>({})
 
   const handleRoll = async (expression: string, key: string, label: string, attrVal?: number) => {
     const cleanExpression = expression.replace(/\s+/g, '').toLowerCase()
@@ -69,14 +71,18 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
 
         const values = result?.data?.values || result?.values || []
         diceValues = values.map((v: any) => v.value)
-        const dddiceTotal = result?.data?.total_value || result?.total_value || 0
 
-        // Aplicar regra de Atributo 0 no resultado do dddice
-        if (attrVal === 0 && sides === 20) {
+        if (sides === 20) {
+          // Perícias/testes de d20: pega o MAIOR (ou MENOR se attrVal === 0)
           const d20s = values.filter((v: any) => v.type === 'd20' || v.type === 'vtt_d20').map((v: any) => v.value)
-          rawTotal = d20s.length >= 2 ? Math.min(...d20s) : dddiceTotal
+          if (attrVal === 0) {
+            rawTotal = d20s.length >= 2 ? Math.min(...d20s) : (d20s[0] || 0)
+          } else {
+            rawTotal = d20s.length > 0 ? Math.max(...d20s) : 0
+          }
         } else {
-          rawTotal = dddiceTotal
+          // Dados de dano: soma todos
+          rawTotal = result?.data?.total_value || result?.total_value || 0
         }
       } catch (error) {
         console.error('[ERRO] Falha no dddice, usando fallback...', error)
@@ -85,16 +91,22 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
 
     // Fallback: Math.random() se dddice falhar ou não estiver disponível
     if (rawTotal === 0) {
-      let rollResults = []
+      let rollResultsArr = []
       for (let i = 0; i < count; i++) {
-        rollResults.push(Math.floor(Math.random() * sides) + 1)
+        rollResultsArr.push(Math.floor(Math.random() * sides) + 1)
       }
-      diceValues = rollResults
+      diceValues = rollResultsArr
       
-      if (attrVal === 0 && sides === 20) {
-        rawTotal = Math.min(...rollResults)
+      if (sides === 20) {
+        // Perícias/testes de d20: pega o MAIOR (ou MENOR se attrVal === 0)
+        if (attrVal === 0) {
+          rawTotal = Math.min(...rollResultsArr)
+        } else {
+          rawTotal = Math.max(...rollResultsArr)
+        }
       } else {
-        rawTotal = rollResults.reduce((a, b) => a + b, 0)
+        // Dados de dano: soma todos
+        rawTotal = rollResultsArr.reduce((a, b) => a + b, 0)
       }
     }
 
@@ -121,6 +133,77 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
       window.dispatchEvent(new CustomEvent('secret-roll-added', { detail: apiResponse.data }))
     } catch (error) {
       console.error('[ERRO] Falha ao salvar a rolagem na API', error)
+    }
+  }
+
+  /** Rola ataque + dano juntos (como os players) e salva ambas as rolagens consecutivamente */
+  const handleWeaponRoll = async (action: any, key: string) => {
+    const atkDice = action.dice || 1
+    const atkBonus = action.bonus || 0
+
+    // Parse dano
+    const dmgMatch = (action.damage || '').replace(/\s+/g, '').match(/(\d+)d(\d+)([+-]\d+)?/i)
+    const dmgCount = dmgMatch ? parseInt(dmgMatch[1]) : 1
+    const dmgSides = dmgMatch ? parseInt(dmgMatch[2]) : 6
+    const dmgMod = dmgMatch && dmgMatch[3] ? parseInt(dmgMatch[3]) : 0
+
+    let atkValues: number[] = []
+    let dmgValues: number[] = []
+
+    // Rolar dados
+    for (let i = 0; i < atkDice; i++) {
+      atkValues.push(Math.floor(Math.random() * 20) + 1)
+    }
+    for (let i = 0; i < dmgCount; i++) {
+      dmgValues.push(Math.floor(Math.random() * dmgSides) + 1)
+    }
+
+    const bestAtk = Math.max(...atkValues)
+    const atkTotal = bestAtk + atkBonus
+    const dmgTotal = dmgValues.reduce((a, b) => a + b, 0) + dmgMod
+
+    // Detectar crítico (natural 20 no melhor dado)
+    const isCritical = bestAtk >= (action.critical || 20)
+
+    // Atualiza estado para feedback visual imediato
+    setWeaponRollResults(prev => ({
+      ...prev,
+      [key]: { attack: atkTotal, damage: dmgTotal, atkDice: atkValues, dmgDice: dmgValues, isCritical }
+    }))
+
+    const monsterName = monsterData.name || participant.name
+    const atkExpr = `${atkDice}d20${atkBonus > 0 ? `+${atkBonus}` : (atkBonus < 0 ? atkBonus : '')}`
+
+    try {
+      // Salvar ataque
+      await axios.post(`/api/campaigns/${campaign?.id}/rolls`, {
+        action: `${action.name} (Ataque)`,
+        playerName: monsterName,
+        roll_expression: atkExpr,
+        result: atkTotal,
+        is_gm: true,
+        is_secret: !isPublicRoll,
+        is_critical: isCritical,
+        diceValues: JSON.stringify(atkValues),
+        characterId: null
+      })
+
+      // Salvar dano (consecutivo — será agrupado no histórico)
+      await axios.post(`/api/campaigns/${campaign?.id}/rolls`, {
+        action: `${action.name} (Dano)`,
+        playerName: monsterName,
+        roll_expression: action.damage,
+        result: dmgTotal,
+        is_gm: true,
+        is_secret: !isPublicRoll,
+        is_critical: isCritical,
+        diceValues: JSON.stringify(dmgValues),
+        characterId: null
+      })
+
+      window.dispatchEvent(new CustomEvent('secret-roll-added'))
+    } catch (error) {
+      console.error('[ERRO] Falha ao salvar rolagem de arma na API', error)
     }
   }
 
@@ -247,10 +330,10 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
                   <Button 
                     size="sm" 
                     variant="flat" 
-                    className="h-7 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold"
+                    className={`h-7 text-[10px] font-bold ${rollResults[key] ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-500/10 text-emerald-400'}`}
                     onPress={() => handleRoll(rollExpr, key, skill.name, attrVal)}
                   >
-                    {rollResults[key] ? `Rolado` : 'Rolar'}
+                    {rollResults[key] ? `🎯 ${rollResults[key]}` : 'Rolar'}
                   </Button>
                 </div>
               )
@@ -304,6 +387,7 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
           <div className="space-y-4">
             {monsterData.attacks?.map((action: any, i: number) => {
               const testExpr = `${action.dice || 1}d20${action.bonus > 0 ? `+${action.bonus}` : (action.bonus < 0 ? action.bonus : '')}`
+              const weaponResult = weaponRollResults[`action-${i}`]
               
               return (
               <div key={i} className="p-3 bg-[#09090B] rounded-xl border border-[#27272A] space-y-3">
@@ -312,53 +396,255 @@ export default function MonsterCombatSheet({ participant, dddiceRef, campaign }:
                     <h4 className="font-bold text-zinc-100">{action.name}</h4>
                     <span className="text-[10px] text-zinc-500 font-bold uppercase">{action.damageType || 'Ataque'}</span>
                   </div>
-                  {action.attackCount && action.attackCount > 1 && (
-                    <Chip size="sm" variant="flat" className="bg-red-500/10 text-red-500 font-black">X{action.attackCount}</Chip>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {action.attackCount && action.attackCount > 1 && (
+                      <Chip size="sm" variant="flat" className="bg-red-500/10 text-red-500 font-black">X{action.attackCount}</Chip>
+                    )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className="text-[9px] text-zinc-500 font-black uppercase">Teste: {testExpr}</span>
-                    <Button 
-                      size="sm" 
-                      variant="flat" 
-                      fullWidth
-                      className="h-8 bg-blue-500/10 text-blue-400 text-[10px] font-bold"
-                      onPress={() => handleRoll(testExpr, `action-test-${i}`, `${action.name} (Ataque)`)}
-                    >
-                      {rollResults[`action-test-${i}`] ? `🎯 Rolado` : 'Rolar Teste'}
-                    </Button>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[9px] text-zinc-500 font-black uppercase">Dano: {action.damage}</span>
-                    <Button 
-                      size="sm" 
-                      variant="flat" 
-                      fullWidth
-                      className="h-8 bg-red-500/10 text-red-400 text-[10px] font-bold"
-                      onPress={() => handleRoll(action.damage, `action-dmg-${i}`, `${action.name} (Dano)`)}
-                    >
-                      {rollResults[`action-dmg-${i}`] ? `💥 Rolado` : 'Rolar Dano'}
-                    </Button>
-                  </div>
+                <div className="flex items-center gap-3 text-[9px] text-zinc-500 font-black uppercase">
+                  <span>Teste: {testExpr}</span>
+                  <span>•</span>
+                  <span>Dano: {action.damage}</span>
                 </div>
+
+                <Button 
+                  size="sm" 
+                  variant="flat" 
+                  fullWidth
+                  className={`h-9 text-[11px] font-bold ${
+                    weaponResult
+                      ? weaponResult.isCritical 
+                        ? 'bg-yellow-500/20 text-yellow-400' 
+                        : 'bg-emerald-500/10 text-emerald-400'
+                      : 'bg-amber-500/10 text-amber-400'
+                  }`}
+                  onPress={() => handleWeaponRoll(action, `action-${i}`)}
+                >
+                  {weaponResult ? '⚔ Rolar Novamente' : '⚔ Rolar Ataque'}
+                </Button>
+
+                {/* Resultado combinado inline */}
+                {weaponResult && (
+                  <div className="space-y-1.5">
+                    {weaponResult.isCritical && (
+                      <div className="text-center text-yellow-400 text-[10px] font-black uppercase animate-pulse tracking-wider">
+                        💥 CRÍTICO!
+                      </div>
+                    )}
+                    <div className="flex items-stretch gap-2">
+                      <div className={`flex-1 rounded-lg px-2.5 py-2 ${
+                        weaponResult.isCritical
+                          ? 'bg-yellow-950/40 border border-yellow-500/40'
+                          : 'bg-[#18181B] border border-[#27272A]'
+                      }`}>
+                        <div className="text-[9px] uppercase font-bold text-zinc-600 tracking-wider mb-0.5">
+                          Ataque · {testExpr}
+                        </div>
+                        <div className={`text-2xl font-black leading-none ${
+                          weaponResult.isCritical ? 'text-yellow-400' : 'text-amber-400'
+                        }`}>
+                          {weaponResult.attack}
+                        </div>
+                        <div className="text-[10px] text-zinc-600 mt-0.5">
+                          ({weaponResult.atkDice.join(', ')})
+                        </div>
+                      </div>
+                      <div className={`flex-1 rounded-lg px-2.5 py-2 ${
+                        weaponResult.isCritical
+                          ? 'bg-red-950/50 border border-red-500/40'
+                          : 'bg-[#18181B] border border-red-900/30'
+                      }`}>
+                        <div className="text-[9px] uppercase font-bold text-red-900/80 tracking-wider mb-0.5">
+                          Dano · {action.damage}
+                        </div>
+                        <div className={`text-2xl font-black leading-none ${
+                          weaponResult.isCritical ? 'text-red-300' : 'text-red-400'
+                        }`}>
+                          {weaponResult.damage}
+                        </div>
+                        <div className="text-[10px] text-zinc-600 mt-0.5">
+                          [{weaponResult.dmgDice.join(', ')}]
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )})}
 
-            {(monsterData.abilities?.length > 0) && (
-              <div className="pt-2 space-y-3">
-                 <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-                    <Zap size={14} className="text-yellow-500" /> Habilidades
-                  </h3>
-                  {monsterData.abilities.map((ability: any, i: number) => (
-                    <div key={i} className="text-xs">
-                      <strong className="text-zinc-100 block mb-1">{ability.name}</strong>
-                      <p className="text-zinc-400 leading-relaxed">{ability.description}</p>
+            {(() => {
+              // Separar habilidades que possuem expressões de rolagem (ação) das passivas
+              const diceRegex = /(\d+)d(\d+)([+-]\d+)?/gi
+              const rollableAbilities: any[] = []
+              const passiveAbilities: any[] = []
+
+              ;(monsterData.abilities || []).forEach((ability: any) => {
+                if (!ability.description) {
+                  passiveAbilities.push(ability)
+                  return
+                }
+
+                // Procura por expressões de dados na descrição
+                const matches = [...ability.description.matchAll(diceRegex)]
+                if (matches.length > 0) {
+                  // Extrai expressões de teste (d20) e dano (outros dados)
+                  const testMatch = matches.find((m: any) => m[2] === '20')
+                  const damageMatch = matches.find((m: any) => m[2] !== '20')
+                  rollableAbilities.push({
+                    ...ability,
+                    testExpr: testMatch ? testMatch[0] : null,
+                    damageExpr: damageMatch ? damageMatch[0] : null,
+                  })
+                } else {
+                  passiveAbilities.push(ability)
+                }
+              })
+
+              return (
+                <>
+                  {/* Habilidades com rolagem — renderizadas como ações */}
+                  {rollableAbilities.map((ability: any, i: number) => {
+                    const abilityIdx = (monsterData.attacks?.length || 0) + i
+                    const abilityKey = `ability-${abilityIdx}`
+                    const hasBoth = ability.testExpr && ability.damageExpr
+                    const weaponResult = hasBoth ? weaponRollResults[abilityKey] : null
+
+                    return (
+                      <div key={`rollable-${i}`} className="p-3 bg-[#09090B] rounded-xl border border-[#27272A] space-y-3">
+                        <div>
+                          <h4 className="font-bold text-zinc-100">{ability.name}</h4>
+                          <p className="text-[10px] text-zinc-500 leading-relaxed mt-1">{ability.description}</p>
+                        </div>
+
+                        {hasBoth ? (
+                          <>
+                            <div className="flex items-center gap-3 text-[9px] text-zinc-500 font-black uppercase">
+                              <span>Teste: {ability.testExpr}</span>
+                              <span>•</span>
+                              <span>Dano: {ability.damageExpr}</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              fullWidth
+                              className={`h-9 text-[11px] font-bold ${
+                                weaponResult
+                                  ? weaponResult.isCritical
+                                    ? 'bg-yellow-500/20 text-yellow-400'
+                                    : 'bg-emerald-500/10 text-emerald-400'
+                                  : 'bg-amber-500/10 text-amber-400'
+                              }`}
+                              onPress={() => {
+                                // Tratar como ataque de arma: construir objeto compatível
+                                const fakeAction = {
+                                  name: ability.name,
+                                  dice: parseInt(ability.testExpr.match(/(\d+)d20/)?.[1] || '1'),
+                                  bonus: parseInt(ability.testExpr.match(/d20([+-]\d+)/)?.[1] || '0'),
+                                  damage: ability.damageExpr,
+                                  critical: 20,
+                                }
+                                handleWeaponRoll(fakeAction, abilityKey)
+                              }}
+                            >
+                              {weaponResult ? '⚔ Rolar Novamente' : '⚔ Rolar Ataque'}
+                            </Button>
+
+                            {weaponResult && (
+                              <div className="space-y-1.5">
+                                {weaponResult.isCritical && (
+                                  <div className="text-center text-yellow-400 text-[10px] font-black uppercase animate-pulse tracking-wider">
+                                    💥 CRÍTICO!
+                                  </div>
+                                )}
+                                <div className="flex items-stretch gap-2">
+                                  <div className={`flex-1 rounded-lg px-2.5 py-2 ${
+                                    weaponResult.isCritical
+                                      ? 'bg-yellow-950/40 border border-yellow-500/40'
+                                      : 'bg-[#18181B] border border-[#27272A]'
+                                  }`}>
+                                    <div className="text-[9px] uppercase font-bold text-zinc-600 tracking-wider mb-0.5">
+                                      Teste · {ability.testExpr}
+                                    </div>
+                                    <div className={`text-2xl font-black leading-none ${
+                                      weaponResult.isCritical ? 'text-yellow-400' : 'text-amber-400'
+                                    }`}>
+                                      {weaponResult.attack}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-600 mt-0.5">
+                                      ({weaponResult.atkDice.join(', ')})
+                                    </div>
+                                  </div>
+                                  <div className={`flex-1 rounded-lg px-2.5 py-2 ${
+                                    weaponResult.isCritical
+                                      ? 'bg-red-950/50 border border-red-500/40'
+                                      : 'bg-[#18181B] border border-red-900/30'
+                                  }`}>
+                                    <div className="text-[9px] uppercase font-bold text-red-900/80 tracking-wider mb-0.5">
+                                      Dano · {ability.damageExpr}
+                                    </div>
+                                    <div className={`text-2xl font-black leading-none ${
+                                      weaponResult.isCritical ? 'text-red-300' : 'text-red-400'
+                                    }`}>
+                                      {weaponResult.damage}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-600 mt-0.5">
+                                      [{weaponResult.dmgDice.join(', ')}]
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          /* Apenas teste OU apenas dano — botão individual */
+                          <div>
+                            {ability.testExpr && (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                fullWidth
+                                className="h-8 bg-blue-500/10 text-blue-400 text-[10px] font-bold"
+                                onPress={() => handleRoll(ability.testExpr, `ability-test-${abilityIdx}`, `${ability.name} (Teste)`)}
+                              >
+                                {rollResults[`ability-test-${abilityIdx}`] ? `🎯 ${rollResults[`ability-test-${abilityIdx}`]}` : `Rolar Teste (${ability.testExpr})`}
+                              </Button>
+                            )}
+                            {ability.damageExpr && (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                fullWidth
+                                className="h-8 bg-red-500/10 text-red-400 text-[10px] font-bold mt-1"
+                                onPress={() => handleRoll(ability.damageExpr, `ability-dmg-${abilityIdx}`, `${ability.name} (Dano)`)}
+                              >
+                                {rollResults[`ability-dmg-${abilityIdx}`] ? `💥 ${rollResults[`ability-dmg-${abilityIdx}`]}` : `Rolar Dano (${ability.damageExpr})`}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* Habilidades passivas (sem rolagem) */}
+                  {passiveAbilities.length > 0 && (
+                    <div className="pt-2 space-y-3">
+                      <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+                        <Zap size={14} className="text-yellow-500" /> Habilidades
+                      </h3>
+                      {passiveAbilities.map((ability: any, i: number) => (
+                        <div key={i} className="text-xs">
+                          <strong className="text-zinc-100 block mb-1">{ability.name}</strong>
+                          <p className="text-zinc-400 leading-relaxed">{ability.description}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-              </div>
-            )}
+                  )}
+                </>
+              )
+            })()}
 
             {monsterData.disturbingPresenceDt > 0 && (
               <div className="p-3 bg-purple-500/5 border border-purple-500/20 rounded-xl">

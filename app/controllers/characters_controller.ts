@@ -2770,7 +2770,7 @@ export default class CharactersController {
       .where('character_id', character.id)
       .first()
 
-    // Buscar as rolagens da campanha
+    // Buscar as rolagens da campanha (excluir rolagens secretas do mestre)
     let query = db
       .from('campaign_rolls')
       .where((q) => {
@@ -2780,6 +2780,7 @@ export default class CharactersController {
           q.where('character_id', character.id)
         }
       })
+      .where('is_secret', false)
 
     if (clearRecord) {
       query = query.where('rolled_at', '>', clearRecord.cleared_at)
@@ -2830,7 +2831,7 @@ export default class CharactersController {
       .first()
 
     const roll = await CampaignRoll.create({
-      campaignId: campaignMember?.campaign_id,
+      campaignId: campaignMember?.campaign_id ?? null,
       characterId: character.id,
       playerName: character.name,
       action: data.action,

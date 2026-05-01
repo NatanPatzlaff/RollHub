@@ -43,7 +43,7 @@ export interface RitualBuffEffect {
   /** Elemento do dano extra: ex "Conhecimento", "Energia", "Morte", "Sangue" */
   weaponDamageElement?: string
   /** Tipo de arma afetada */
-  weaponType?: 'melee' | 'all'
+  weaponType?: 'melee' | 'ranged' | 'all'
   /** Duração do buff de arma */
   buffDuration?: 'scene' | 'sustained' | 'next_attack'
   /** Se true, cura PV igual a metade do dano total causado */
@@ -58,6 +58,8 @@ export interface RitualBuffEffect {
   immuneSurprised?: boolean
   /** Bônus de Reflexos */
   reflexBonus?: number
+  elementChoice?: boolean
+  tempModification?: boolean
 }
 
 export interface RitualBuffEntry {
@@ -262,7 +264,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponDamageBonus: 2,
       buffDuration: 'scene',
       weaponType: 'melee',
-      selfOnly: true,
+      selfOnly: false,
     },
     verdadeiro: {
       label: 'Ódio Incontrolável (V)',
@@ -270,31 +272,55 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponDamageBonus: 5,
       buffDuration: 'scene',
       weaponType: 'melee',
-      selfOnly: true,
+      selfOnly: false,
     },
   },
 
   'amaldiçoar arma': {
     base: {
       label: 'Amaldiçoar Arma',
-      weaponExtraDamageDice: '1d6',
+      elementChoice: true,
       buffDuration: 'scene',
       weaponType: 'all',
-      selfOnly: true,
+      selfOnly: false,
     },
     discente: {
       label: 'Amaldiçoar Arma (D)',
-      weaponExtraDamageDice: '2d6',
+      elementChoice: true,
       buffDuration: 'scene',
       weaponType: 'all',
-      selfOnly: true,
+      selfOnly: false,
     },
     verdadeiro: {
       label: 'Amaldiçoar Arma (V)',
-      weaponExtraDamageDice: '4d6',
+      elementChoice: true,
       buffDuration: 'scene',
       weaponType: 'all',
-      selfOnly: true,
+      selfOnly: false,
+    },
+  },
+
+  'amaldiçoar tecnologia': {
+    base: {
+      label: 'Amaldiçoar Tecnologia',
+      tempModification: true,
+      buffDuration: 'scene',
+      weaponType: 'ranged',
+      selfOnly: false,
+    },
+    discente: {
+      label: 'Amaldiçoar Tecnologia (D)',
+      tempModification: true,
+      buffDuration: 'scene',
+      weaponType: 'ranged',
+      selfOnly: false,
+    },
+    verdadeiro: {
+      label: 'Amaldiçoar Tecnologia (V)',
+      tempModification: true,
+      buffDuration: 'scene',
+      weaponType: 'ranged',
+      selfOnly: false,
     },
   },
 
@@ -305,14 +331,14 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponThreatRangeBonus: 1,
       buffDuration: 'scene',
       weaponType: 'all',
-      selfOnly: true,
+      selfOnly: false,
     },
     discente: {
       label: 'Arma Atroz (D)',
       weaponAttackBonus: 5,
       buffDuration: 'scene',
       weaponType: 'all',
-      selfOnly: true,
+      selfOnly: false,
     },
     verdadeiro: {
       label: 'Arma Atroz (V)',
@@ -321,7 +347,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponCritMultiplierBonus: 2,
       buffDuration: 'scene',
       weaponType: 'all',
-      selfOnly: true,
+      selfOnly: false,
     },
   },
 
@@ -353,7 +379,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponDamageElement: 'Fogo',
       buffDuration: 'scene',
       weaponType: 'melee',
-      selfOnly: true,
+      selfOnly: false,
     },
   },
 
@@ -365,7 +391,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponDamageElement: 'Morte',
       buffDuration: 'next_attack',
       weaponType: 'melee',
-      selfOnly: true,
+      selfOnly: false,
     },
   },
 
@@ -376,7 +402,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
       weaponDamageElement: 'Sangue',
       buffDuration: 'scene',
       weaponType: 'melee',
-      selfOnly: true,
+      selfOnly: false,
     },
   },
 
@@ -390,7 +416,7 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
     discente: {
       label: 'Hemofagia (D)',
       healByDamageFactor: 0.5,
-      selfOnly: true,
+      selfOnly: false,
       // Discente: buff de próximo ataque com dano extra de ritual
       weaponExtraDamageDice: '6d6',
       weaponDamageElement: 'Sangue',
@@ -400,10 +426,26 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
     verdadeiro: {
       label: 'Hemofagia (V)',
       healByDamageFactor: 0.5,
-      selfOnly: true,
+      selfOnly: false,
       // Verdadeiro: buff de cena sustentado
       buffDuration: 'scene',
       weaponType: 'all',
+    },
+  },
+
+  'velocidade mortal': {
+    base: {
+      label: 'Velocidade Mortal',
+      selfOnly: false,
+    },
+    discente: {
+      label: 'Velocidade Mortal (D)',
+      selfOnly: false,
+    },
+    verdadeiro: {
+      label: 'Velocidade Mortal (V)',
+      defenseBonus: 5,
+      selfOnly: false,
     },
   },
 }

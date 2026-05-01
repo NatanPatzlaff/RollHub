@@ -113,10 +113,13 @@ export interface ActiveRitualBuff {
   weaponThreatRangeBonus?: number
   weaponCritMultiplierBonus?: number
   weaponExtraDamageDice?: string
+  weaponExtraDamageElement?: string
   weaponDamageElement?: string
-  weaponType?: 'melee' | 'all'
+  weaponType?: 'melee' | 'ranged' | 'all'
   buffDuration?: 'scene' | 'sustained' | 'next_attack'
   skillAdvantage?: string[]
+  weaponCritMultiplierBonus?: number
+  weaponDamageStepBonus?: number
 }
 
 /** Métodos expostos ao componente pai via ref */

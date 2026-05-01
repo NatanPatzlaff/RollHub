@@ -106,6 +106,8 @@ export default class CampaignsController {
       .orWhereNull('campaign_id')
       .orderBy('name', 'asc')
 
+    console.log('MONSTER DEBUG:', JSON.stringify(activeCombat?.participants?.[0], null, 2))
+
     return inertia.render('campaigns/shield', {
       campaign: {
         ...campaign.serialize(),

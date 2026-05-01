@@ -57,6 +57,7 @@ import SkillsCard from './components/SkillsCard'
 import CharacterTabsCard from './components/CharacterTabsCard'
 import CreateCharacterModal from '../home/CreateCharacterModal'
 import RitualBuffModal from './components/RitualBuffModal'
+import { ModificationModal } from './components/ModificationModal'
 import RollHistorySidebar from './components/RollHistorySidebar'
 import {
   getRitualBuff,
@@ -580,6 +581,62 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }, [character.id, campaignId])
 
+  const handleTempModificationChosen = (mod: any) => {
+    if (!modifyingWeapon) return
+    const weaponId = modifyingWeapon.id.toString()
+    
+    // Converte modificação em buff de ritual seguindo o mapeamento do catálogo (camelCase)
+    const tempBuff: ActiveRitualBuff = {
+      id: `temp-mod-${mod.id}-${Date.now()}`,
+      label: `Amal. Tec.: ${mod.name}`,
+      weaponAttackBonus: mod.attackBonus ?? 0,
+      weaponDamageBonus: 0,
+      weaponExtraDamageDice: undefined,
+      weaponThreatRangeBonus: mod.criticalBonus ?? 0,
+      weaponCritMultiplierBonus: mod.criticalMultiplierBonus 
+        ? parseInt(String(mod.criticalMultiplierBonus).replace('+', '').replace('x', '')) 
+        : 0,
+      weaponDamageStepBonus: 0,
+      buffDuration: 'scene',
+      targetWeaponId: weaponId,
+      defenseBonus: 0,
+      dodgeBonus: 0,
+      tempHp: 0,
+      strBonus: 0,
+      agiBonus: 0,
+      intBonus: 0,
+      preBonus: 0,
+      weaponExtraDamageElement: mod.element,
+      weaponDamageElement: mod.element,
+    }
+
+    // Mapeamento de dano (fixo vs dados)
+    if (mod.damageBonus) {
+      const dbStr = String(mod.damageBonus)
+      if (dbStr.includes('d')) {
+        tempBuff.weaponExtraDamageDice = dbStr.replace('+', '')
+      } else {
+        tempBuff.weaponDamageBonus = parseInt(dbStr.replace('+', '')) || 0
+      }
+    }
+
+    // Mapeamento de propriedades especiais (ex: Calibre Grosso)
+    const specialProps = typeof mod.specialProperties === 'string'
+      ? JSON.parse(mod.specialProperties)
+      : (mod.specialProperties ?? {})
+    
+    if (specialProps.extra_die) tempBuff.weaponDamageStepBonus = specialProps.extra_die
+
+    console.log('[TEMP-MOD] mod recebido:', JSON.stringify(mod))
+    console.log('[TEMP-MOD] modifyingWeapon:', modifyingWeapon)
+    console.log('[TEMP-MOD] tempBuff criado:', JSON.stringify(tempBuff))
+
+    setActiveRitualBuffs(prev => [...prev, tempBuff])
+    setIsTempRitual(false)
+    onModifyWeaponModalOpenChange()
+    addToast({ title: 'Modificação temporária aplicada!', variant: 'success' })
+  }
+
   // ── Estado de buffs ativos de rituais ───────────────────────────────────────
   interface ActiveRitualBuff {
     id: string
@@ -598,11 +655,14 @@ export default function CharacterShow(initialProps: CharacterProps) {
     weaponThreatRangeBonus?: number
     weaponCritMultiplierBonus?: number
     weaponExtraDamageDice?: string
+    weaponExtraDamageElement?: string
     weaponDamageElement?: string
-    weaponType?: 'melee' | 'all'
+    weaponType?: 'melee' | 'ranged' | 'all'
     buffDuration?: 'scene' | 'sustained' | 'next_attack'
     targetWeaponId?: string
     skillAdvantage?: string[]
+    weaponCritMultiplierBonus?: number
+    weaponDamageStepBonus?: number
   }
   const [activeRitualBuffs, setActiveRitualBuffs] = useState<ActiveRitualBuff[]>([])
   const activeRitualBuffsRef = useRef<ActiveRitualBuff[]>(activeRitualBuffs)
@@ -982,6 +1042,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     onOpen: onModifyWeaponModalOpen,
     onOpenChange: onModifyWeaponModalOpenChange,
   } = useDisclosure()
+  const [isTempRitual, setIsTempRitual] = useState(false)
   const [modifyingWeapon, setModifyingWeapon] = useState<any>(null)
   const [modifyingAmmunition, setModifyingAmmunition] = useState<any>(null)
   const [isUpdatingModifications, setIsUpdatingModifications] = useState(false)
@@ -1796,7 +1857,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const ritualDodgeBonus = activeRitualBuffs.reduce((s, b) => s + b.dodgeBonus, 0)
 
   /** Aplica um buff de ritual em si mesmo */
-  const applyRitualBuffToSelf = (buff: RitualBuffEffect, chosenAttr?: string, chosenWeapon?: string) => {
+  const applyRitualBuffToSelf = (buff: RitualBuffEffect, chosenAttr?: string, chosenWeapon?: string, chosenElement?: string) => {
     const newBuff = {
       id: `${buff.label}-${Date.now()}`,
       label: buff.label,
@@ -1812,8 +1873,9 @@ export default function CharacterShow(initialProps: CharacterProps) {
       weaponDamageBonus: buff.weaponDamageBonus,
       weaponThreatRangeBonus: buff.weaponThreatRangeBonus,
       weaponCritMultiplierBonus: buff.weaponCritMultiplierBonus,
-      weaponExtraDamageDice: buff.weaponExtraDamageDice,
-      weaponDamageElement: buff.weaponDamageElement,
+      weaponExtraDamageDice: buff.elementChoice ? '1d6' : buff.weaponExtraDamageDice,
+      weaponExtraDamageElement: chosenElement || buff.weaponDamageElement,
+      weaponDamageElement: chosenElement || buff.weaponDamageElement,
       weaponType: buff.weaponType,
       buffDuration: buff.buffDuration,
       targetWeaponId: chosenWeapon,
@@ -1989,42 +2051,61 @@ export default function CharacterShow(initialProps: CharacterProps) {
     ritualName: string,
     version: 'base' | 'discente' | 'verdadeiro'
   ) => {
-    const buff = getRitualBuff(ritualName, version)
-    if (!buff) return
+    console.log('[DEBUG] handleRitualBuffSuccess chamado para:', ritualName, version)
+    try {
+      const buff = getRitualBuff(ritualName, version)
+      console.log('[DEBUG] buff retornado:', buff)
+      
+      if (!buff) {
+        console.warn('[DEBUG] Nenhum buff encontrado para:', ritualName, version)
+        return
+      }
 
-    const hasWeaponChoice = !!(
-      buff.weaponAttackBonus ||
-      buff.weaponDamageBonus ||
-      buff.weaponExtraDamageDice ||
-      buff.weaponThreatRangeBonus ||
-      buff.weaponCritMultiplierBonus ||
-      buff.skillAdvantage?.length
-    )
 
-    const hasEffect =
-      buff.defenseBonus ||
-      buff.dodgeBonus ||
-      buff.tempHp ||
-      buff.tempHpFlat ||
-      buff.healDice ||
-      buff.healByDamageFactor ||
-      buff.weaponExtraDamageDice ||
-      buff.weaponAttackBonus ||
-      buff.weaponDamageBonus ||
-      buff.weaponThreatRangeBonus ||
-      buff.weaponCritMultiplierBonus ||
-      buff.skillAdvantage?.length ||
-      (buff.attributeChoice?.length ?? 0) > 0
 
-    if (!hasEffect) return
+      const hasEffect =
+        buff.defenseBonus ||
+        buff.dodgeBonus ||
+        buff.tempHp ||
+        buff.tempHpFlat ||
+        buff.healDice ||
+        buff.healByDamageFactor ||
+        buff.weaponExtraDamageDice ||
+        buff.weaponAttackBonus ||
+        buff.weaponDamageBonus ||
+        buff.weaponThreatRangeBonus ||
+        buff.weaponCritMultiplierBonus ||
+        buff.skillAdvantage?.length ||
+        buff.elementChoice ||
+        buff.tempModification ||
+        (buff.attributeChoice?.length ?? 0) > 0
 
-    // Abre o modal se houver escolha de atributo OU escolha de arma (se tiver armas no inventário)
-    // Mesmo que seja 'selfOnly', precisamos do modal para as escolhas
-    if (buff.selfOnly && !buff.attributeChoice?.length && (!hasWeaponChoice || inventoryWeapons.length === 0)) {
-      applyRitualBuffToSelf(buff)
-    } else {
-      setPendingRitualBuff({ ritualName, version, buff })
-      setIsRitualBuffModalOpen(true)
+      if (!hasEffect) {
+        console.log('[DEBUG] Ritual sem efeitos de buff automáticos.')
+        return
+      }
+
+      const hasWeaponChoice = !!(buff.weaponExtraDamageDice || buff.weaponAttackBonus || buff.elementChoice)
+
+      if (buff.tempModification) {
+        // Para Amaldiçoar Tecnologia, precisamos primeiro escolher a arma no RitualBuffModal
+        // antes de abrir o ModificationModal.
+        console.log('[DEBUG] Abrindo RitualBuffModal para escolha de arma (tempModification)')
+        setPendingRitualBuff({ ritualName, version, buff })
+        setIsRitualBuffModalOpen(true)
+        return
+      }
+
+      if (!hasWeaponChoice && buff.selfOnly && !buff.attributeChoice?.length) {
+        console.log('[DEBUG] Aplicando buff diretamente no self')
+        applyRitualBuffToSelf(buff)
+      } else {
+        console.log('[DEBUG] Abrindo modal de buff de ritual')
+        setPendingRitualBuff({ ritualName, version, buff })
+        setIsRitualBuffModalOpen(true)
+      }
+    } catch (err) {
+      console.error('[DEBUG] ERRO em handleRitualBuffSuccess:', err)
     }
   }
 
@@ -3225,14 +3306,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 (m: any) => m.name === 'Calibre Grosso'
               )
 
-              const finalDamage = hasCalibreGrosso
-                ? applyStepIncrease(w.damage, 1)
-                : w.damage
-
-              if (w.isExtraAttack) {
-                handleDeductPe(w.extraAttackPeCost ?? 2)
-              }
-
               // --- BÔNUS DE HABILIDADES ATIVAS (já existente) ---
               const combatBuffs = activeAbilityBuffs.filter((b) => {
                 if (b.effects.duration !== 'next_attack' && b.effects.duration !== 'scene')
@@ -3264,13 +3337,26 @@ export default function CharacterShow(initialProps: CharacterProps) {
                 const wType = w.range === 'Corpo a corpo' ? 'melee' : 'ranged'
                 if (b.weaponType && b.weaponType !== 'all' && b.weaponType !== wType) return false
                 const weaponId = (w as any).id?.toString() || w.name
-                if (b.targetWeaponId && b.targetWeaponId !== weaponId) return false
+                if (b.targetWeaponId && b.targetWeaponId.toString() !== weaponId) return false
                 return true
               })
               const ritualAttackBonus = ritualBuffs.reduce((s, b) => s + (b.weaponAttackBonus ?? 0), 0)
               const ritualDamageBonus = ritualBuffs.reduce((s, b) => s + (b.weaponDamageBonus ?? 0), 0)
               const ritualCritBonus = ritualBuffs.reduce((s, b) => s + (b.weaponThreatRangeBonus ?? 0), 0)
-              const ritualExtraDice = ritualBuffs.map(b => b.weaponExtraDamageDice).filter(Boolean) as string[]
+              const ritualCritMultiplier = ritualBuffs.reduce((s, b) => s + (b.weaponCritMultiplierBonus ?? 0), 0)
+              const ritualDamageStep = ritualBuffs.reduce((s, b) => s + (b.weaponDamageStepBonus ?? 0), 0)
+
+              console.log('[ROLL-WEAPON] activeRitualBuffs:', JSON.stringify(activeRitualBuffsRef.current))
+              console.log('[ROLL-WEAPON] weaponId:', (w as any).id?.toString() || w.name)
+              console.log('[ROLL-WEAPON] ritualBuffs filtrados:', JSON.stringify(ritualBuffs))
+              console.log('[ROLL-WEAPON] ritualAttackBonus:', ritualAttackBonus)
+              const ritualExtraDice = ritualBuffs.map(b => 
+                b.weaponExtraDamageDice 
+                  ? `${b.weaponExtraDamageDice}${b.weaponExtraDamageElement ? ' ' + b.weaponExtraDamageElement : ''}`
+                  : null
+              ).filter(Boolean) as string[]
+
+              const finalDamage = applyStepIncrease(w.damage, (hasCalibreGrosso ? 1 : 0) + ritualDamageStep)
 
               // --- LÓGICA DE ARREMESSO (EMPUXO) ---
               const NATURALLY_THROWABLE = ['Faca', 'Machadinha', 'Lança']
@@ -3330,7 +3416,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   range: w.range,
                   damage: finalDamage,
                   critical: w.critical || '20',
-                  criticalMultiplier: `x${baseCritMultiplier + modCritMultiplierBonus}`,
+                  criticalMultiplier: `x${baseCritMultiplier + modCritMultiplierBonus + ritualCritMultiplier}`,
                   extraAttackBonus: extraAttackBonus + modAttackBonus + ritualAttackBonus,
                   extraDamageBonus: extraDamageBonus + modDamageBonus + ritualDamageBonus,
                   extraCritBonus: extraCritBonus + modCritBonus + ritualCritBonus,
@@ -3402,6 +3488,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onDeductPe={handleDeductPe}
             onDeductSan={handleDeductSan}
             onDeductPermSan={handleDeductPermSan}
+            activeRitualBuffs={activeRitualBuffs}
             activeAbilityBuffs={activeAbilityBuffs}
             abilityUsesThisScene={abilityUsesThisScene}
             onActivateAbility={handleActivateAbility}
@@ -3409,12 +3496,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
             onResetSceneUses={resetSceneUses}
             onRollSkill={handleRollSkill}
             onRollRitual={(params) => {
+              diceTrayRef.current?.openDiceTray()
               const buff = getRitualBuff(params.name, params.version ?? 'base')
               
               // Se for buff de próximo ataque ou de cena, rola só o teste de Ocultismo (sem dados de dano)
               // O buff só é aplicado se o teste for bem-sucedido (via onRitualBuffSuccess)
               if (buff?.buffDuration === 'next_attack' || buff?.buffDuration === 'scene') {
-                diceTrayRef.current?.openDiceTray()
                 diceTrayRef.current?.rollRitual({ 
                   ...params, 
                   damageDice: undefined, // Remove os dados de dano da rolagem
@@ -3889,7 +3976,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           <div className="space-y-4">
             <p className="text-sm text-zinc-400">
               Escolha um ritual que você conhece. O custo desse ritual será reduzido em{' '}
-              <span className="text-emerald-400 font-bold">1 PE</span>.
+              <span className="text-emerald-400 font-bold">–1 PE</span>.
             </p>
             {character.rituals && character.rituals.length > 0 ? (
               <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
@@ -3944,7 +4031,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           <div className="space-y-4">
             <p className="text-sm text-zinc-400">
               {configuringAbility?.classAbility?.name === 'Mestre em Elemento'
-                ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em 1 PE.'
+                ? 'Escolha um elemento. O custo dos seus rituais desse elemento será reduzido em –1 PE.'
                 : 'Escolha um elemento. A DT para resistir aos seus rituais desse elemento aumenta em +2.'}
             </p>
             <div className="grid grid-cols-2 gap-3">
@@ -4141,7 +4228,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
                   if (eff.action) costParts.push(eff.action)
                   if (eff.pe_cost) costParts.push(`${eff.pe_cost} PE`)
                   if (!costParts.length) costParts.push('Passiva')
-                  const costLabel = costParts.join('  ')
+                  const costLabel = costParts.join(' • ')
 
                   return (
                     <div
@@ -4300,6 +4387,22 @@ export default function CharacterShow(initialProps: CharacterProps) {
         onConfirm={(id) => addRitual(id)}
       />
 
+      <ModificationModal
+        isOpen={isModifyWeaponModalOpen}
+        onOpenChange={(open) => {
+          if (!open) setIsTempRitual(false)
+          onModifyWeaponModalOpenChange()
+        }}
+        item={modifyingWeapon}
+        itemType="Weapon"
+        catalog={catalogWeaponModifications}
+        isUpdating={isUpdatingModifications}
+        onToggle={toggleModification}
+        canApplyModification={canApplyModification}
+        isTempRitual={isTempRitual}
+        onTempModificationChosen={handleTempModificationChosen}
+      />
+
       {/* Modal de Modificação de Munição */}
       <BaseModal
         isOpen={isModifyAmmunitionModalOpen}
@@ -4437,269 +4540,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
         </div>
       </BaseModal>
 
-      {/* Modal de Modificação de Arma */}
-      <BaseModal
-        isOpen={isModifyWeaponModalOpen}
-        onClose={onModifyWeaponModalOpenChange}
-        maxWidth="max-w-xl"
-        height="h-[90vh]"
-        title={
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-              <Edit3 size={20} />
-            </div>
-            <div>
-              <div className="text-xl font-bold text-white">Modificar {modifyingWeapon?.name}</div>
-              <div className="text-xs text-zinc-500">Melhorias e Maldiçöes</div>
-            </div>
-          </div>
-        }
-        footer={
-          <button
-            onClick={onModifyWeaponModalOpenChange}
-            className="ml-auto px-5 py-2 rounded-md font-medium text-red-400 hover:bg-red-500/10 transition-colors text-sm"
-          >
-            Fechar
-          </button>
-        }
-      >
-        <div className="space-y-5">
-          {/* Modificações Atuais */}
-          <div>
-            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
-              Modificações Atuais
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {modifyingWeapon?.modifications && modifyingWeapon.modifications.length > 0 ? (
-                modifyingWeapon.modifications.map((mod: any) => {
-                  const isCurse = mod.type === 'Maldição'
-                  const elemClasses: Record<string, string> = {
-                    Sangue: 'bg-red-500/10 text-red-300 border-red-500/30',
-                    Morte: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/30',
-                    Energia: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
-                    Conhecimento: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-                  }
-                  const cls = isCurse
-                    ? elemClasses[mod.element] || 'bg-red-500/10 text-red-300 border-red-500/30'
-                    : 'bg-blue-500/10 text-blue-300 border-blue-500/20'
-                  return (
-                    <button
-                      key={mod.id}
-                      onClick={() =>
-                        toggleModification(modifyingWeapon.id, mod.modificationId, 'remove')
-                      }
-                      title="Clique para remover"
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all hover:opacity-70 ${cls}`}
-                    >
-                      {mod.name}
-                      <span className="text-[10px] opacity-60">&times;</span>
-                    </button>
-                  )
-                })
-              ) : (
-                <span className="text-sm text-zinc-600 italic">Nenhuma modificação aplicada.</span>
-              )}
-            </div>
-          </div>
-
-          <div className="h-px bg-zinc-800" />
-
-          {/* Filtros */}
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Catálogo</p>
-            <div className="flex bg-zinc-800/50 p-1 rounded-xl border border-zinc-800">
-              {(['Melhoria', 'Maldição'] as const).map((type) => {
-                const isActive = modTypeFilter === type
-                return (
-                  <button
-                    key={type}
-                    onClick={() => setModTypeFilter(type)}
-                    className={`px-4 h-7 rounded-lg transition-all text-[11px] font-bold tracking-tight uppercase ${
-                      isActive
-                        ? type === 'Melhoria'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-red-600 text-white'
-                        : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Grade de modificações */}
-          <div className="space-y-5">
-            {modTypeFilter === 'Maldição' ? (
-              (['Sangue', 'Morte', 'Energia', 'Conhecimento'] as const).map((element) => {
-                const elemMods = (catalogWeaponModifications || []).filter(
-                  (m: any) => m.type === 'Maldição' && m.element === element
-                )
-                if (elemMods.length === 0) return null
-
-                const elemColor = {
-                  Sangue: 'text-red-400',
-                  Morte: 'text-zinc-400',
-                  Energia: 'text-purple-400',
-                  Conhecimento: 'text-amber-400',
-                }[element]
-                const activeBg = {
-                  Sangue: 'bg-red-500/20',
-                  Morte: 'bg-zinc-500/20',
-                  Energia: 'bg-purple-500/20',
-                  Conhecimento: 'bg-amber-500/20',
-                }[element]
-                const activeBorder = {
-                  Sangue: 'border-red-500',
-                  Morte: 'border-zinc-500',
-                  Energia: 'border-purple-500',
-                  Conhecimento: 'border-amber-500',
-                }[element]
-                const activeRing = {
-                  Sangue: 'ring-red-500/40',
-                  Morte: 'ring-zinc-500/40',
-                  Energia: 'ring-purple-500/40',
-                  Conhecimento: 'ring-amber-500/40',
-                }[element]
-
-                return (
-                  <div key={element}>
-                    <p
-                      className={`text-[10px] font-black uppercase tracking-[0.18em] flex items-center gap-1.5 mb-2 ${elemColor}`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
-                      {element}
-                    </p>
-                    <div className="space-y-2">
-                      {elemMods.map((mod) => {
-                        const isActive = modifyingWeapon?.modifications?.some(
-                          (m: any) => m.modificationId === mod.id
-                        )
-                        const validation = !isActive
-                          ? canApplyModification(modifyingWeapon, mod.category)
-                          : { allowed: true }
-                        const isBlocked = !isActive && !validation.allowed
-                        return (
-                          <button
-                            key={mod.id}
-                            disabled={isBlocked}
-                            onClick={
-                              isBlocked
-                                ? undefined
-                                : () =>
-                                    toggleModification(
-                                      modifyingWeapon!.id,
-                                      mod.id,
-                                      isActive ? 'remove' : 'add'
-                                    )
-                            }
-                            title={isBlocked ? validation.reason : undefined}
-                            className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
-                              isBlocked
-                                ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                                : isActive
-                                  ? `${activeBg} ${activeBorder} ring-1 ${activeRing}`
-                                  : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <span
-                                className={`font-semibold text-sm ${isActive ? elemColor : 'text-zinc-200'}`}
-                              >
-                                {mod.name}
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">
-                                +{mod.category} CAT
-                              </span>
-                            </div>
-                            {mod.description && (
-                              <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">
-                                {mod.description}
-                              </p>
-                            )}
-                            <div className="mt-1.5 flex items-center justify-between">
-                              <span
-                                className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-500' : isActive ? elemColor : 'text-zinc-600'}`}
-                              >
-                                {isBlocked ? validation.reason : 'MALDIÇÃO'}
-                              </span>
-                              {isActive && <Check size={11} className={elemColor} />}
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })
-            ) : (
-              <div className="space-y-2">
-                {(catalogWeaponModifications || [])
-                  .filter((m: any) => m.type === 'Melhoria')
-                  .map((mod) => {
-                    const isActive = modifyingWeapon?.modifications?.some(
-                      (m: any) => m.modificationId === mod.id
-                    )
-                    const validation = !isActive
-                      ? canApplyModification(modifyingWeapon, mod.category)
-                      : { allowed: true }
-                    const isBlocked = !isActive && !validation.allowed
-                    return (
-                      <button
-                        key={mod.id}
-                        disabled={isBlocked}
-                        onClick={
-                          isBlocked
-                            ? undefined
-                            : () =>
-                                toggleModification(
-                                  modifyingWeapon!.id,
-                                  mod.id,
-                                  isActive ? 'remove' : 'add'
-                                )
-                        }
-                        title={isBlocked ? validation.reason : undefined}
-                        className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
-                          isBlocked
-                            ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
-                            : isActive
-                              ? 'bg-blue-500/20 border-blue-500 ring-1 ring-blue-500/40'
-                              : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span
-                            className={`font-semibold text-sm ${isActive ? 'text-blue-300' : 'text-zinc-200'}`}
-                          >
-                            {mod.name}
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800/80 border border-zinc-700 text-zinc-400 shrink-0">
-                            +{mod.category} CAT
-                          </span>
-                        </div>
-                        {mod.description && (
-                          <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed line-clamp-2">
-                            {mod.description}
-                          </p>
-                        )}
-                        <div className="mt-1.5 flex items-center justify-between">
-                          <span
-                            className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-500' : isActive ? 'text-blue-400' : 'text-zinc-600'}`}
-                          >
-                            {isBlocked ? validation.reason : 'MELHORIA'}
-                          </span>
-                          {isActive && <Check size={11} className="text-blue-400" />}
-                        </div>
-                      </button>
-                    )
-                  })}
-              </div>
-            )}
-          </div>
-        </div>
-      </BaseModal>
-
       {/* Modal de Buff de Ritual */}
       {pendingRitualBuff && (
         <RitualBuffModal
@@ -4712,8 +4552,17 @@ export default function CharacterShow(initialProps: CharacterProps) {
           version={pendingRitualBuff.version}
           buff={pendingRitualBuff.buff}
           weapons={inventoryWeapons?.map(w => ({ id: w.id.toString(), name: w.name, range: w.range }))}
-          onApplyToSelf={(buff, chosenAttr, chosenWeapon) => {
-            applyRitualBuffToSelf(buff, chosenAttr, chosenWeapon)
+          onApplyToSelf={(buff, chosenAttr, chosenWeapon, chosenElement) => {
+            if (buff.tempModification) {
+              const weapon = inventoryWeapons.find(w => w.id.toString() === chosenWeapon)
+              if (weapon) {
+                setModifyingWeapon(weapon)
+                setIsTempRitual(true)
+                onModifyWeaponModalOpen()
+              }
+            } else {
+              applyRitualBuffToSelf(buff, chosenAttr, chosenWeapon, chosenElement)
+            }
             setIsRitualBuffModalOpen(false)
             setPendingRitualBuff(null)
           }}

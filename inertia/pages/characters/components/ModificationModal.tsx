@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
     Modal,
     ModalContent,
@@ -49,6 +49,8 @@ interface ModificationModalProps {
     isUpdating: boolean
     onToggle: (itemId: number, modId: number, action: 'add' | 'remove') => void
     canApplyModification: (item: any, modCategory: number) => { allowed: boolean; reason?: string }
+    isTempRitual?: boolean
+    onTempModificationChosen?: (mod: Modification) => void
 }
 
 const elementColors: Record<string, string> = {
@@ -84,9 +86,18 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
     isUpdating,
     onToggle,
     canApplyModification,
+    isTempRitual = false,
+    onTempModificationChosen,
 }) => {
-    const [modTypeFilter, setModTypeFilter] = useState<'Melhoria' | 'Maldição'>('Melhoria')
+    const [modTypeFilter, setModTypeFilter] = useState<'Melhoria' | 'Maldição'>(isTempRitual ? 'Melhoria' : 'Melhoria')
     const [modElementFilter, setModElementFilter] = useState<string>('Todos')
+
+    useEffect(() => {
+        if (isTempRitual) {
+            setModTypeFilter('Melhoria')
+            setModElementFilter('Todos')
+        }
+    }, [isTempRitual])
 
     const title = itemType === 'Weapon' ? 'Modificar Arma' :
         itemType === 'Protection' ? 'Modificar Proteção' : 'Modificar Acessório'
@@ -129,67 +140,77 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                             <p className="text-sm text-zinc-500 font-normal">
                                 Gerencie modificações de{' '}
                                 <span className="text-zinc-300 font-semibold">{item.name}</span>
+                                {isTempRitual && (
+                                    <span className="ml-2 text-purple-400 font-bold uppercase text-[10px]">
+                                        · Amaldiçoar Tecnologia (Temp)
+                                    </span>
+                                )}
                             </p>
                         </ModalHeader>
                         <ModalBody>
                             <div className="space-y-6">
-                                {/* Modificações Atuais */}
-                                <div>
-                                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">
-                                        Modificações Atuais
-                                    </h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {item.modifications && item.modifications.length > 0 ? (
-                                            item.modifications.map((mod: any) => {
-                                                const isCurse = mod.type === 'Maldição'
-                                                const element = mod.element || 'Varia'
-                                                return (
-                                                    <Chip
-                                                        key={mod.id}
-                                                        variant="flat"
-                                                        isDisabled={isUpdating}
-                                                        onClose={() => onToggle(item.id, mod.modificationId, 'remove')}
-                                                        className={isCurse
-                                                            ? `${elementBgs[element] || elementBgs.Varia} ${elementColors[element] || elementColors.Varia}`
-                                                            : "bg-sky-500/10 text-sky-300 border border-sky-500/20"}
-                                                    >
-                                                        {mod.name}
-                                                    </Chip>
-                                                )
-                                            })
-                                        ) : (
-                                            <span className="text-xs text-zinc-600 italic">
-                                                Nenhuma modificação aplicada.
-                                            </span>
-                                        )}
+                                {/* Modificações Atuais - Ocultas em rituais temporários */}
+                                {!isTempRitual && (
+                                    <>
+                                        <div>
+                                            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">
+                                                Modificações Atuais
+                                            </h3>
+                                            <div className="flex flex-wrap gap-2">
+                                                {item.modifications && item.modifications.length > 0 ? (
+                                                    item.modifications.map((mod: any) => {
+                                                        const isCurse = mod.type === 'Maldição'
+                                                        const element = mod.element || 'Varia'
+                                                        return (
+                                                            <Chip
+                                                                key={mod.id}
+                                                                variant="flat"
+                                                                isDisabled={isUpdating}
+                                                                onClose={() => onToggle(item.id, mod.modificationId, 'remove')}
+                                                                className={isCurse
+                                                                    ? `${elementBgs[element] || elementBgs.Varia} ${elementColors[element] || elementColors.Varia}`
+                                                                    : "bg-sky-500/10 text-sky-300 border border-sky-500/20"}
+                                                            >
+                                                                {mod.name}
+                                                            </Chip>
+                                                        )
+                                                    })
+                                                ) : (
+                                                    <span className="text-xs text-zinc-600 italic">
+                                                        Nenhuma modificação aplicada.
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <Divider className="bg-zinc-800/50" />
+                                    </>
+                                )}
+
+                                {/* Filtros de Tipos - Ocultos em rituais temporários (força Melhoria) */}
+                                {!isTempRitual && (
+                                    <div className="flex gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant={modTypeFilter === 'Melhoria' ? 'solid' : 'bordered'}
+                                            onPress={() => { setModTypeFilter('Melhoria'); setModElementFilter('Todos') }}
+                                            className={modTypeFilter === 'Melhoria'
+                                                ? `${itemType === 'Weapon' ? 'bg-blue-900/50 text-blue-400 border-blue-500/50' : itemType === 'Protection' ? 'bg-sky-900/50 text-sky-400 border-sky-500/50' : 'bg-orange-900/50 text-orange-400 border-orange-500/50'} border`
+                                                : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}
+                                        >
+                                            Melhorias
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant={modTypeFilter === 'Maldição' ? 'solid' : 'bordered'}
+                                            onPress={() => setModTypeFilter('Maldição')}
+                                            className={modTypeFilter === 'Maldição'
+                                                ? 'bg-red-900/50 text-red-400 border border-red-500/50'
+                                                : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}
+                                        >
+                                            Maldições
+                                        </Button>
                                     </div>
-                                </div>
-
-                                <Divider className="bg-zinc-800/50" />
-
-                                {/* Filtros de Tipos */}
-                                <div className="flex gap-2">
-                                    <Button
-                                        size="sm"
-                                        variant={modTypeFilter === 'Melhoria' ? 'solid' : 'bordered'}
-                                        onPress={() => { setModTypeFilter('Melhoria'); setModElementFilter('Todos') }}
-                                        className={modTypeFilter === 'Melhoria'
-                                            ? `${itemType === 'Weapon' ? 'bg-blue-900/50 text-blue-400 border-blue-500/50' : itemType === 'Protection' ? 'bg-sky-900/50 text-sky-400 border-sky-500/50' : 'bg-orange-900/50 text-orange-400 border-orange-500/50'} border`
-                                            : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}
-                                    >
-                                        Melhorias
-                                    </Button>
-                                    <Button
-                                        size="sm"
-                                        variant={modTypeFilter === 'Maldição' ? 'solid' : 'bordered'}
-                                        onPress={() => setModTypeFilter('Maldição')}
-                                        className={modTypeFilter === 'Maldição'
-                                            ? 'bg-red-900/50 text-red-400 border border-red-500/50'
-                                            : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}
-                                    >
-                                        Maldições
-                                    </Button>
-                                </div>
+                                )}
 
                                 {modTypeFilter === 'Maldição' && (
                                     <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
@@ -250,9 +271,15 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                                             return (
                                                                 <Card
                                                                     key={mod.id}
-                                                                    isPressable={!isBlocked && !isUpdating}
-                                                                    onPress={isBlocked || isUpdating ? undefined : () => onToggle(item.id, mod.id, isActive ? 'remove' : 'add')}
-                                                                    className={`border transition-all ${isBlocked
+                                                                    isPressable={(!isBlocked || isTempRitual) && !isUpdating}
+                                                                    onPress={(isBlocked && !isTempRitual) || isUpdating ? undefined : () => {
+                                                                        if (isTempRitual && onTempModificationChosen) {
+                                                                            onTempModificationChosen(mod)
+                                                                        } else {
+                                                                            onToggle(item.id, mod.id, isActive ? 'remove' : 'add')
+                                                                        }
+                                                                    }}
+                                                                    className={`border transition-all ${(isBlocked && !isTempRitual)
                                                                         ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
                                                                         : isActive
                                                                             ? `${elementBgs[elemento] || elementBgs.Varia} border-${(elementColors[elemento] || 'text-zinc-400').replace('text-', '')}/50`
@@ -313,9 +340,15 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                                     return (
                                                         <Card
                                                             key={mod.id}
-                                                            isPressable={!isBlocked && !isUpdating}
-                                                            onPress={isBlocked || isUpdating ? undefined : () => onToggle(item.id, mod.id, isActive ? 'remove' : 'add')}
-                                                            className={`border transition-all ${isBlocked
+                                                            isPressable={(!isBlocked || isTempRitual) && !isUpdating}
+                                                            onPress={(isBlocked && !isTempRitual) || isUpdating ? undefined : () => {
+                                                                if (isTempRitual && onTempModificationChosen) {
+                                                                    onTempModificationChosen(mod)
+                                                                } else {
+                                                                    onToggle(item.id, mod.id, isActive ? 'remove' : 'add')
+                                                                }
+                                                            }}
+                                                            className={`border transition-all ${(isBlocked && !isTempRitual)
                                                                 ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
                                                                 : isActive
                                                                     ? `bg-${highlightColor}-500/10 border-${highlightColor}-500/50`

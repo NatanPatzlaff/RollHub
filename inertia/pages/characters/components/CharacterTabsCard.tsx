@@ -214,6 +214,7 @@ export interface CharacterTabsCardProps {
   onResetSceneUses?: () => void
   characterSkills?: any[]
   attrMap?: Record<string, number>
+  activeRitualBuffs?: any[]
 }
 
 import { canUseRitualUpgrade, circuloMaximoFromNex } from '../../../utils/ritualReqs'
@@ -309,6 +310,7 @@ export default function CharacterTabsCard({
   onResetSceneUses,
   characterSkills = [],
   attrMap = { FOR: 0, AGI: 0, INT: 0, VIG: 0, PRE: 0 },
+  activeRitualBuffs = [],
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<string>('inventario')
   const [isCreateItemOpen, setIsCreateItemOpen] = useState(false)
@@ -1325,8 +1327,27 @@ export default function CharacterTabsCard({
                           className="flex items-center justify-between px-4 py-3 rounded-lg bg-zinc-950/60 border border-zinc-800 hover:border-orange-500/30 transition-all"
                         >
                           <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-zinc-200 text-sm truncate">
+                            <div className="font-semibold text-zinc-200 text-sm truncate flex items-center gap-2">
                               {w.name}
+                              {(() => {
+                                const weaponBuffs = (activeRitualBuffs || []).filter(
+                                  (b: any) => b.targetWeaponId?.toString() === w.id?.toString()
+                                )
+                                if (weaponBuffs.length === 0) return null
+                                return weaponBuffs.map((b: any, idx: number) => {
+                                  const label = b.weaponExtraDamageDice 
+                                    ? `+${b.weaponExtraDamageDice}` 
+                                    : b.weaponAttackBonus 
+                                      ? `+${b.weaponAttackBonus} Atk` 
+                                      : ''
+                                  if (!label) return null
+                                  return (
+                                    <span key={idx} className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-purple-500/20 text-purple-400 border border-purple-500/30 animate-pulse">
+                                      {label}
+                                    </span>
+                                  )
+                                })
+                              })()}
                             </div>
                             <div className="text-[11px] text-zinc-500 mt-0.5">
                               <span className="text-orange-400/80 font-bold">{displayDamage(w)}</span>

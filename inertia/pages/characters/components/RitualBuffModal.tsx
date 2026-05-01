@@ -30,6 +30,15 @@ const ATTR_MAP: Record<string, { label: string; color: string; icon: LucideIcon 
   },
 }
 
+const ELEMENT_STYLES: Record<string, { color: string; bg: string }> = {
+  Sangue: { color: 'text-red-400', bg: 'bg-red-500/20 border-red-500' },
+  Morte: { color: 'text-zinc-400', bg: 'bg-zinc-500/20 border-zinc-500' },
+  Energia: { color: 'text-purple-400', bg: 'bg-purple-500/20 border-purple-500' },
+  Conhecimento: { color: 'text-amber-400', bg: 'bg-amber-500/20 border-amber-500' },
+}
+
+const ELEMENTS = ['Sangue', 'Morte', 'Energia', 'Conhecimento']
+
 export interface RitualBuffModalProps {
   isOpen: boolean
   onClose: () => void
@@ -40,7 +49,7 @@ export interface RitualBuffModalProps {
   /** Efeito do buff */
   buff: RitualBuffEffect
   /** Callback quando o jogador confirma a aplicação em si mesmo */
-  onApplyToSelf: (buff: RitualBuffEffect, chosenAttr?: string, chosenWeapon?: string) => void
+  onApplyToSelf: (buff: RitualBuffEffect, chosenAttr?: string, chosenWeapon?: string, chosenElement?: string) => void
   /** Callback quando o jogador escolhe aplicar em aliado (efeito não aplicado automaticamente) */
   onApplyToAlly: () => void
   /** Lista de armas do personagem para escolha de alvo */
@@ -64,6 +73,7 @@ export default function RitualBuffModal({
 }: RitualBuffModalProps) {
   const [chosenAttr, setChosenAttr] = useState<string | null>(null)
   const [chosenWeapon, setChosenWeapon] = useState<string | null>(null)
+  const [chosenElement, setChosenElement] = useState<string | null>(null)
 
   const hasAttrChoice = buff.attributeChoice && buff.attributeChoice.length > 0
   const hasWeaponChoice = !!(
@@ -71,7 +81,9 @@ export default function RitualBuffModal({
     buff.weaponDamageBonus ||
     buff.weaponExtraDamageDice ||
     buff.weaponThreatRangeBonus ||
-    buff.weaponCritMultiplierBonus
+    buff.weaponCritMultiplierBonus ||
+    buff.elementChoice ||
+    buff.tempModification
   )
 
   const attrBonus = getAttributeBonus(version)
@@ -94,9 +106,11 @@ export default function RitualBuffModal({
   const handleApplyToSelf = () => {
     if (hasAttrChoice && !chosenAttr) return // precisa escolher atributo
     if (hasWeaponChoice && weapons.length > 0 && !chosenWeapon) return // precisa escolher arma
-    onApplyToSelf(buff, chosenAttr ?? undefined, chosenWeapon ?? undefined)
+    if (buff.elementChoice && !chosenElement) return // precisa escolher elemento
+    onApplyToSelf(buff, chosenAttr ?? undefined, chosenWeapon?.toString() ?? undefined, chosenElement ?? undefined)
     setChosenAttr(null)
     setChosenWeapon(null)
+    setChosenElement(null)
     onClose()
   }
 
@@ -104,6 +118,7 @@ export default function RitualBuffModal({
     onApplyToAlly()
     setChosenAttr(null)
     setChosenWeapon(null)
+    setChosenElement(null)
     onClose()
   }
 
@@ -112,6 +127,8 @@ export default function RitualBuffModal({
       isOpen={isOpen}
       onClose={() => {
         setChosenAttr(null)
+        setChosenWeapon(null)
+        setChosenElement(null)
         onClose()
       }}
       maxWidth="max-w-md"
@@ -188,11 +205,39 @@ export default function RitualBuffModal({
           </div>
         )}
 
+        {/* Escolha de elemento (Amaldiçoar Arma) */}
+        {buff.elementChoice && chosenWeapon && (
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-300 font-bold">
+              Escolha o elemento do dano extra:
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {ELEMENTS.map((el) => {
+                const style = ELEMENT_STYLES[el] || { color: 'text-zinc-400', bg: 'bg-zinc-800' }
+                const isSelected = chosenElement === el
+                return (
+                  <button
+                    key={el}
+                    onClick={() => setChosenElement(el)}
+                    className={`px-3 py-2 rounded-lg border text-xs font-bold transition-all ${
+                      isSelected
+                        ? `${style.bg} ${style.color} border-${style.color.replace('text-', '')}/50 ring-2 ring-offset-1 ring-offset-zinc-900`
+                        : `${style.bg} ${style.color} opacity-50 hover:opacity-100`
+                    }`}
+                  >
+                    {el}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Botões de escolha de alvo */}
         {buff.selfOnly ? (
           <button
             onClick={handleApplyToSelf}
-            disabled={(hasAttrChoice && !chosenAttr) || (hasWeaponChoice && weapons.length > 0 && !chosenWeapon)}
+            disabled={(hasAttrChoice && !chosenAttr) || (hasWeaponChoice && weapons.length > 0 && !chosenWeapon) || (buff.elementChoice && !chosenElement)}
             className="h-16 text-lg font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <User size={20} />
@@ -202,7 +247,7 @@ export default function RitualBuffModal({
           <div className="grid grid-cols-1 gap-3">
             <button
               onClick={handleApplyToSelf}
-              disabled={(hasAttrChoice && !chosenAttr) || (hasWeaponChoice && weapons.length > 0 && !chosenWeapon)}
+              disabled={(hasAttrChoice && !chosenAttr) || (hasWeaponChoice && weapons.length > 0 && !chosenWeapon) || (buff.elementChoice && !chosenElement)}
               className="h-16 text-lg font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl transition-all flex items-center justify-center gap-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <User size={20} />

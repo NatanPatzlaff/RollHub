@@ -9,7 +9,7 @@ export default class CampaignRoll extends BaseModel {
   declare id: number
 
   @column()
-  declare campaignId: number
+  declare campaignId: number | null
 
   @column()
   declare characterId: number | null
