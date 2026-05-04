@@ -19,7 +19,6 @@ export default class CombatsController {
     })
 
     // Adiciona todos os jogadores da campanha com initiativePending: true
-    const Campaign = (await import('#models/campaign')).default
     const campaign = await Campaign.findOrFail(params.campaignId)
     const characters = await campaign.related('characters').query().preload('stats')
 

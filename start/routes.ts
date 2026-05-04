@@ -54,6 +54,7 @@ router
     router.delete('/api/characters/:id/rolls/:rollId', [CharactersController, 'deleteRoll'])
     router.get('/api/characters/:id/active-buffs', [CharactersController, 'getActiveBuffs'])
     router.post('/api/characters/:id/active-buffs/sync', [CharactersController, 'syncActiveBuffs'])
+    router.post('/api/characters/:id/buffs/consume-copy', [CharactersController, 'consumeBuffCopy'])
     router.put('/characters/:id', [CharactersController, 'update'])
     router.put('/characters/:id/attributes', [CharactersController, 'updateAttributes'])
     router.post('/characters/:id/abilities', [CharactersController, 'addAbility'])

@@ -129,8 +129,8 @@ export default function ShieldDashboard() {
         router.reload({ only: ['activeCombat'] })
       }
 
-      if (['COMBAT_STARTED', 'PARTICIPANT_ADDED', 'DAMAGE_APPLIED', 'TURN_START', 'SCENE_END', 'INITIATIVE_UPDATED', 'COMBAT_READY'].includes(data.type)) {
-        router.reload({ only: ['activeCombat', 'campaignMonsters'] })
+      if (['COMBAT_STARTED', 'PARTICIPANT_ADDED', 'DAMAGE_APPLIED', 'TURN_START', 'SCENE_END', 'INITIATIVE_UPDATED', 'COMBAT_READY', 'BUFFS_UPDATED', 'BUFF_COPY_CONSUMED'].includes(data.type)) {
+        router.reload({ only: ['activeCombat', 'campaignMonsters', 'campaign'] })
       }
 
       if (data.type === 'MONSTER_ROLL') {
@@ -175,6 +175,10 @@ export default function ShieldDashboard() {
   }, [characters])
 
   const handleRequestInitiative = () => {
+    setRequestingInitiative(true)
+    requestingInitiativeRef.current = true
+    initiativeRequestedAtRef.current = new Date()
+    setInitiativePending(new Set(characters.map((c: any) => c.id)))
     router.post(`/campaigns/${campaign.id}/combats/request-initiative`)
   }
 

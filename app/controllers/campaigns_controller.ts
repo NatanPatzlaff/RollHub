@@ -42,6 +42,7 @@ export default class CampaignsController {
         query.preload('user')
         query.preload('stats')
         query.preload('class')
+        query.preload('activeBuffs')
       })
       .first()
 
@@ -76,6 +77,7 @@ export default class CampaignsController {
         query.preload('user')
         query.preload('stats')
         query.preload('class')
+        query.preload('activeBuffs')
       })
       .first()
 
@@ -95,7 +97,7 @@ export default class CampaignsController {
       .where('campaign_id', params.id)
       .where('active', true)
       .preload('participants', (query) => {
-        query.preload('character', (q) => q.preload('stats').preload('class'))
+        query.preload('character', (q) => q.preload('stats').preload('class').preload('activeBuffs'))
         query.preload('monster')
         query.preload('roomMonster')
       })

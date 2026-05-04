@@ -120,6 +120,7 @@ export interface ActiveRitualBuff {
   skillAdvantage?: string[]
   weaponCritMultiplierBonus?: number
   weaponDamageStepBonus?: number
+  skillBonus?: number
 }
 
 /** Métodos expostos ao componente pai via ref */
@@ -267,6 +268,16 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       // Bônus direto em perícia (ex: flatSkillBonuses: { Percepção: 5 })
       if (targetSkill && passiveEffects.flatSkillBonuses[targetSkill]) {
         total += passiveEffects.flatSkillBonuses[targetSkill]
+      }
+    }
+
+    // Somar skillBonus de rituais ativos (ex: Coincidência Forçada)
+    const ritualBuffs = activeRitualBuffsRef.current
+    if (ritualBuffs && ritualBuffs.length > 0) {
+      const ritualTotal = ritualBuffs.reduce((sum, buff) => sum + (buff.skillBonus || 0), 0)
+      if (ritualTotal !== 0) {
+        console.log(`[BUFF DEBUG] Somando +${ritualTotal} de rituais ativos. Total antes: ${total}`)
+        total += ritualTotal
       }
     }
 
@@ -504,6 +515,13 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
         lines.push(`+${effects.flatSkillBonuses[rollSkill]} (bônus passivo)`)
       }
     }
+
+    // Rituais ativos
+    activeRitualBuffsRef.current.forEach(buff => {
+      if (buff.skillBonus) {
+        lines.push(`+${buff.skillBonus} (${buff.label})`)
+      }
+    })
 
     return lines
   }

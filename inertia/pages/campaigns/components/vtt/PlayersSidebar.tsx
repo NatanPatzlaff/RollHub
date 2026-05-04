@@ -159,6 +159,14 @@ export default function PlayersSidebar({
     setIsApproving(null)
   }
 
+  const handleConsumeRemoteBuff = async (characterId: number, buffId: string) => {
+    try {
+      await axios.post(`/api/characters/${characterId}/buffs/consume-copy`, { buffId })
+    } catch (e) {
+      console.error('[BUFF] Erro ao consumir cópia:', e)
+    }
+  }
+
   return (
     <div className="bg-[#18181B] border-r border-[#27272A] flex flex-col h-full overflow-hidden w-64 xl:w-72 flex-shrink-0">
       <div className="p-4 border-b border-[#27272A] flex flex-col gap-3">
@@ -190,13 +198,19 @@ export default function PlayersSidebar({
             <div className="flex items-center gap-2">
               <button
                 onClick={handleRequestInitiativeWrapped}
-                className={`px-3 py-1.5 rounded text-[10px] font-bold transition-colors ${
+                disabled={requestingInitiative}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-bold transition-all ${
                   requestingInitiative
-                    ? 'bg-[#F97316] text-white ring-2 ring-[#F97316]/30 animate-pulse'
+                    ? 'bg-[#F97316]/20 text-[#F97316] ring-1 ring-[#F97316]/50 cursor-not-allowed shadow-[0_0_10px_rgba(249,115,22,0.2)]'
                     : 'bg-[#27272A] text-[#A1A1AA] hover:bg-[#3F3F46] hover:text-white'
                 }`}
               >
-                {requestingInitiative ? 'Aguardando...' : 'Pedir Iniciativa'}
+                {requestingInitiative ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-[#F97316] animate-pulse"></span>
+                    Aguardando...
+                  </>
+                ) : 'Pedir Iniciativa'}
               </button>
               <button
                 onClick={handleNextTurn}
@@ -306,6 +320,39 @@ export default function PlayersSidebar({
                 ) : (
                   <div className="h-[46px] bg-[#09090B]/50 rounded border border-dashed border-[#27272A] flex items-center justify-center">
                     <span className="text-[#3F3F46] text-[10px] font-medium italic">Status ocultado</span>
+                  </div>
+                )}
+
+                {/* Exibição de Cópias de Rituais (Embaralhar) */}
+                {!isMonster && (entity.activeBuffs || entity.character?.activeBuffs)?.some((b: any) => b.data?.remainingCopies > 0) && (
+                  <div className="mt-3 space-y-1.5">
+                    {(entity.activeBuffs || entity.character?.activeBuffs)
+                      .filter((b: any) => b.data?.remainingCopies > 0)
+                      .map((buff: any) => (
+                        <div key={buff.id} className="bg-[#18181B] border border-cyan-500/20 rounded p-2 flex items-center justify-between">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-bold text-cyan-400 uppercase leading-none">
+                              {buff.label}
+                            </span>
+                            <div className="flex gap-0.5">
+                              {Array.from({ length: buff.data.copies || 0 }).map((_, i) => (
+                                <div
+                                  key={i}
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    i < buff.data.remainingCopies ? 'bg-cyan-500 shadow-[0_0_5px_rgba(6,182,212,0.5)]' : 'bg-zinc-800'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleConsumeRemoteBuff(entity.characterId || entity.id, buff.buffId)}
+                            className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-2 py-1 rounded text-[9px] font-black uppercase transition-all"
+                          >
+                            Destruir Cópia
+                          </button>
+                        </div>
+                      ))}
                   </div>
                 )}
 

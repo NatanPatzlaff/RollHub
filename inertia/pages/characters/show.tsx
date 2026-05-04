@@ -551,7 +551,20 @@ export default function CharacterShow(initialProps: CharacterProps) {
         if (isMe) setTimeout(() => setIsMyTurn(false), 8000)
       }
       
-      if (data.characterId === character.id) {
+        if (data.type === 'BUFF_COPY_CONSUMED') {
+          if (Number(data.characterId) === Number(character.id)) {
+            if (data.remainingCopies <= 0) {
+              removeRitualBuff(data.buffId)
+            } else {
+              updateRitualBuff(data.buffId, {
+                remainingCopies: data.remainingCopies,
+                defenseBonus: data.newDefenseBonus
+              })
+            }
+          }
+        }
+
+        if (data.characterId === character.id) {
         if (data.type === 'ITEM_COLLECTED') {
           addToast({ title: 'Item Coletado', description: 'Você coletou um item da cena.', color: 'success' })
           router.reload({ only: ['character'] })
@@ -663,6 +676,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
     skillAdvantage?: string[]
     weaponCritMultiplierBonus?: number
     weaponDamageStepBonus?: number
+    copies?: number
+    remainingCopies?: number
+    defensePerCopy?: number
+    skillBonus?: number
   }
   const [activeRitualBuffs, setActiveRitualBuffs] = useState<ActiveRitualBuff[]>([])
   const activeRitualBuffsRef = useRef<ActiveRitualBuff[]>(activeRitualBuffs)
@@ -1880,6 +1897,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
       buffDuration: buff.buffDuration,
       targetWeaponId: chosenWeapon,
       skillAdvantage: buff.skillAdvantage,
+      copies: buff.copies,
+      remainingCopies: buff.copies,
+      defensePerCopy: buff.defensePerCopy,
+      skillBonus: buff.skillBonus,
     }
 
     // Cura de PV
@@ -2006,6 +2027,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
     }
   }, [activeRitualBuffs, handleHealByDamage])
 
+  const updateRitualBuff = (buffId: string, updates: Partial<ActiveRitualBuff>) => {
+    setActiveRitualBuffs((prev) =>
+      prev.map((b) => (b.id === buffId ? { ...b, ...updates } : b))
+    )
+  }
+
   /** Remove um buff ativo pelo id */
   const removeRitualBuff = (buffId: string) => {
     setActiveRitualBuffs((prev) => {
@@ -2078,6 +2105,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
         buff.skillAdvantage?.length ||
         buff.elementChoice ||
         buff.tempModification ||
+        buff.skillBonus ||
         (buff.attributeChoice?.length ?? 0) > 0
 
       if (!hasEffect) {
@@ -3585,6 +3613,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
             ritualDodgeBonus={ritualDodgeBonus}
             activeRitualBuffs={activeRitualBuffs}
             onRemoveRitualBuff={removeRitualBuff}
+            onUpdateRitualBuff={updateRitualBuff}
             onClearAllBuffs={clearAllRitualBuffs}
             tempHp={tempHp}
             onSetTempHp={setTempHp}

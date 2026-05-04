@@ -4,8 +4,6 @@ import { BaseSeeder } from '@adonisjs/lucid/seeders'
 export default class EnergyMonsterSeeder extends BaseSeeder {
   async run() {
     const monsters: any[] = [
-
-      // ─── Anárquico ───────────────────────────────────────────────────
       {
         name: 'Anárquico',
         type: 'Criatura Médio',
@@ -22,34 +20,33 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: -2, perceptionBonus: 0,
         initiativeDice: 3, initiativeBonus: 5,
         fortitudeDice: 1, fortitudeBonus: 0,
-        reflexDice: 3,  reflexBonus: 10,
-        willDice: -2,   willBonus: 0,
+        reflexDice: 3, reflexBonus: 10,
+        willDice: -2, willBonus: 0,
         attacks: [
           { name: 'Pancada Errática', range: 'Corpo a corpo', attackCount: 1, dice: 2, bonus: 5, damage: '2d12', damageType: 'impacto' },
           {
-            name: 'Luz Prismática (Habilidade)',
+            name: 'Luz Prismática',
             description: 'Projeta luz prismática que causa 2d8 de Energia e atordoa (Fortitude DT 14 reduz).',
             range: 'Curto', damage: '2d8', damageType: 'energia'
           },
           {
-            name: 'Explosão (Habilidade)',
+            name: 'Explosão',
             description: 'Explosão de energia em área (Reflexos DT 14 reduz).',
             range: 'Área', damage: '2d6', damageType: 'energia'
           },
           {
-            name: 'Brilho Enlouquecedor (Livre)',
-            description: '1/rodada. 1d6 mental no visual médio (Vontade DT 14).',
+            name: 'Brilho Enlouquecedor',
+            description: 'Livre. 1/rodada. 1d6 mental no visual médio (Vontade DT 14).',
             range: 'Médio', damage: '1d6', damageType: 'mental'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
           { name: 'Comportamento Errático', description: 'No começo do seu turno, a criatura age de modo aleatório rolando 1d6.' },
-          { name: 'Fortalecimento Paranormal (Movimento)', description: 'Buff de +d20 em fisicos e +2d4 Conhec. em ataques baseados no Brilho.' }
+          { name: 'Fortalecimento Paranormal', description: 'Movimento. Buff de +d20 em fisicos e +2d4 Conhec. em ataques baseados no Brilho.' }
         ],
         disturbingPresenceDt: 14, disturbingPresenceDamage: '2d6'
       },
-
-      // ─── Anárquico Descontrolado ──────────────────────────────────────
       {
         name: 'Anárquico Descontrolado',
         type: 'Criatura Médio',
@@ -64,31 +61,31 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 2, perceptionBonus: 5,
         initiativeDice: 4, initiativeBonus: 10,
         fortitudeDice: 3, fortitudeBonus: 10,
-        reflexDice: 4,  reflexBonus: 10,
-        willDice: 2,    willBonus: 5,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 } 
+        reflexDice: 4, reflexBonus: 10,
+        willDice: 2, willBonus: 5,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 }
         },
         vulnerabilities: 'conhecimento',
         attacks: [
           { name: 'Pancada Energética', range: 'Corpo a corpo', attackCount: 2, dice: 4, bonus: 15, damage: '4d12', damageType: 'impacto' },
           {
-            name: 'Autodestruição (Movimento)',
-            description: 'Concentra energia e explode, causando 8d12 de dano de Energia em alcance curto (Reflexos DT 25 reduz) e morre imediatamente.',
+            name: 'Autodestruição',
+            description: 'Movimento. Concentra energia e explode, causando 8d12 de dano de Energia em alcance curto (Reflexos DT 25 reduz) e morre imediatamente.',
             range: 'Curto', damage: '8d12', damageType: 'energia'
           },
           {
-            name: 'Aceleração (Livre)',
-            description: 'Sempre que um alvo sofre dano da pancada energética, entra em estado de aceleração e pode sofrer 4d12 de dano de Energia se realizar ação padrão e de movimento no turno.',
+            name: 'Aceleração',
+            description: 'Livre. Sempre que um alvo sofre dano da pancada energética, entra em estado de aceleração e pode sofrer 4d12 de dano de Energia se realizar ação padrão e de movimento no turno.',
             range: 'Corpo a corpo', damage: '4d12', damageType: 'energia'
           }
         ],
-        abilities: [],
+        abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' }
+        ],
         disturbingPresenceDt: 21, disturbingPresenceDamage: '4d6'
       },
-
-      // ─── Anomalia ─────────────────────────────────────────────────────
       {
         name: 'Anomalia',
         type: 'Criatura Médio',
@@ -103,29 +100,28 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 0, perceptionBonus: 0,
         initiativeDice: 0, initiativeBonus: 0,
         fortitudeDice: 5, fortitudeBonus: 15,
-        reflexDice: 5,  reflexBonus: 15,
-        willDice: 5,    willBonus: 15,
+        reflexDice: 5, reflexBonus: 15,
+        willDice: 5, willBonus: 15,
         attacks: [
           {
-            name: 'Romper Consciência (Livre)',
-            description: 'Sorteia alvo visual e causa 10d6 de dano mental (Vontade DT 41 reduz); absorve a vítima se ela enlouquecer.',
+            name: 'Romper Consciência',
+            description: 'Livre. Sorteia alvo visual e causa 10d6 de dano mental (Vontade DT 41 reduz); absorve a vítima se ela enlouquecer.',
             range: 'Visual', damage: '10d6', damageType: 'mental'
           },
           {
-            name: 'Manipular Ondas da Existência (Livre)',
-            description: 'Pode ativar/desativar até 6 itens tecnológicos ou sobrecarregá-los, causando 2d12 de dano de Energia por objeto em área (Reflexos DT 30 reduz).',
+            name: 'Manipular Ondas da Existência',
+            description: 'Livre. Pode ativar/desativar até 6 itens tecnológicos ou sobrecarregá-los, causando 2d12 de dano de Energia por objeto em área (Reflexos DT 30 reduz).',
             range: 'Médio', damage: '2d12', damageType: 'energia'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
           { name: 'Imaterial', description: 'Possui um corpo físico desprezível e é imune a dano e condições; derrotá-la exige resolver seu Enigma de Medo.' },
           { name: 'Existência Impossível', description: 'Só existe em um objeto ou porta aberta.' },
-          { name: 'Manifestar o Impossível (Completa)', description: 'Invoca criaturas de Energia de até 240 VD.' }
+          { name: 'Manifestar o Impossível', description: 'Completa. Invoca criaturas de Energia de até 240 VD.' }
         ],
         disturbingPresenceDt: 45, disturbingPresenceDamage: '9d8'
       },
-
-      // ─── Anomiático ───────────────────────────────────────────────────
       {
         name: 'Anomiático',
         type: 'Criatura Médio',
@@ -140,26 +136,26 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 4, perceptionBonus: 10,
         initiativeDice: 5, initiativeBonus: 15,
         fortitudeDice: 3, fortitudeBonus: 10,
-        reflexDice: 5,  reflexBonus: 20,
-        willDice: 4,    willBonus: 15,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 } 
+        reflexDice: 5, reflexBonus: 20,
+        willDice: 4, willBonus: 15,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 }
         },
         vulnerabilities: 'conhecimento',
         attacks: [
           { name: 'Garra Desintegradora', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 30, damage: '4d12+20', damageType: 'energia' },
           {
-            name: 'Comportamento Errático (Livre)',
-            description: 'Rola 1d6 três vezes e age aleatoriamente (salta, facho de energia, explode, risada ou toque extremo).',
+            name: 'Comportamento Errático',
+            description: 'Livre. Rola 1d6 três vezes e age aleatoriamente (salta, facho de energia, explode, risada ou toque extremo).',
             range: 'Variável', damage: 'Especial', damageType: 'energia'
           }
         ],
-        abilities: [],
+        abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' }
+        ],
         disturbingPresenceDt: 30, disturbingPresenceDamage: '6d8'
       },
-
-      // ─── Ciborgue ─────────────────────────────────────────────────────
       {
         name: 'Ciborgue',
         type: 'Criatura Grande',
@@ -176,33 +172,32 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 2, perceptionBonus: 5,
         initiativeDice: 3, initiativeBonus: 10,
         fortitudeDice: 3, fortitudeBonus: 10,
-        reflexDice: 3,  reflexBonus: 5,
-        willDice: 2,    willBonus: 0,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 } 
+        reflexDice: 3, reflexBonus: 5,
+        willDice: 2, willBonus: 0,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 }
         },
         attacks: [
           { name: 'Braço Laminado (Alpha)', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 10, damage: '1d12+10', damageType: 'corte' },
           { name: 'Punho Energizado (Beta)', range: 'Corpo a corpo', attackCount: 1, dice: 3, bonus: 10, damage: '2d8+10', damageType: 'impacto' },
           { name: 'Canhão (Gama)', range: 'Distância', attackCount: 1, dice: 3, bonus: 10, damage: '4d12+5', damageType: 'energia' },
-          { name: 'Raio Energético (Delta)', range: 'Distância', attackCount: 1, dice: 3, bonus: 10, damage: '1d12+5', damageType: 'energia', description: 'Causa Desorientar (alquebra ou atordoa alvo via Vontade DT 20).' },
+          { name: 'Raio Energético (Delta)', range: 'Distância', attackCount: 1, dice: 3, bonus: 10, damage: '1d12+5', damageType: 'energia', description: 'Padrão. Causa Desorientar (alquebra ou atordoa alvo via Vontade DT 20).' },
           {
-            name: 'Investida Energética (Completa/Beta)',
-            description: 'Avança 24m e ataca (+2d8 dano e derruba).',
+            name: 'Investida Energética (Beta)',
+            description: 'Completa. Avança 24m e ataca (+2d8 dano e derruba).',
             range: '24m', damage: '2d8', damageType: 'impacto'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
           { name: 'Estado de Combate', description: 'No começo do turno pode alternar entre estados Alpha, Beta, Gama ou Delta.' },
           { name: 'Regeneração Energética', description: 'Recupera 20 PV no começo do turno.' },
-          { name: 'Criar Barreira (Movimento/Delta)', description: 'Recebe +5 na Defesa.' },
-          { name: 'Reiniciar (Movimento)', description: 'Encerra uma condição.' }
+          { name: 'Criar Barreira (Delta)', description: 'Movimento. Recebe +5 na Defesa.' },
+          { name: 'Reiniciar', description: 'Movimento. Encerra uma condição.' }
         ],
         disturbingPresenceDt: 15, disturbingPresenceDamage: '2d6'
       },
-
-      // ─── Infecticídio ─────────────────────────────────────────────────
       {
         name: 'Infecticídio',
         type: 'Criatura Enorme',
@@ -219,29 +214,28 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 1, perceptionBonus: 10,
         initiativeDice: 3, initiativeBonus: 15,
         fortitudeDice: 5, fortitudeBonus: 20,
-        reflexDice: 3,  reflexBonus: 15,
-        willDice: 1,    willBonus: 15,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 20, 'corte': 20, 'perfuração': 20, 'energia': 20 } 
+        reflexDice: 3, reflexBonus: 15,
+        willDice: 1, willBonus: 15,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 20, 'corte': 20, 'perfuração': 20, 'energia': 20 }
         },
         attacks: [
           { name: 'Pancadas Infectadas', range: 'Corpo a corpo', attackCount: 3, dice: 5, bonus: 30, damage: '4d12+20', damageType: 'energia' },
           {
-            name: 'Atropelar (Completa)',
-            description: 'Move o dobro e ataca alvos no trajeto.',
+            name: 'Atropelar',
+            description: 'Completa. Move o dobro e ataca alvos no trajeto.',
             range: 'Movimento', damage: '4d12+20', damageType: 'energia'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
           { name: 'Horda', description: 'Sofre metade do dano de alvo único, o dobro em área.' },
-          { name: 'Infecção (Livre)', description: 'Vítima atingida pelo dano contrai vírus (Fortitude DT 30 evita).' },
-          { name: 'Consumação Insidiosa (Reação)', description: 'Recupera 50 PV se derrubar a vítima.' }
+          { name: 'Infecção', description: 'Livre. Vítima atingida pelo dano contrai vírus (Fortitude DT 30 evita).' },
+          { name: 'Consumação Insidiosa', description: 'Reação. Recupera 50 PV se derrubar a vítima.' }
         ],
         disturbingPresenceDt: 35, disturbingPresenceDamage: '8d6'
       },
-
-      // ─── Perturbado de Energia ───────────────────────────────────────
       {
         name: 'Perturbado de Energia',
         type: 'Criatura Médio',
@@ -256,26 +250,26 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: -2, perceptionBonus: 0,
         initiativeDice: 4, initiativeBonus: 10,
         fortitudeDice: -2, fortitudeBonus: 0,
-        reflexDice: 4,  reflexBonus: 10,
-        willDice: -2,   willBonus: 0,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 5, 'corte': 5, 'perfuração': 5, 'energia': 10 } 
+        reflexDice: 4, reflexBonus: 10,
+        willDice: -2, willBonus: 0,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 5, 'corte': 5, 'perfuração': 5, 'energia': 10 }
         },
         vulnerabilities: 'conhecimento',
         attacks: [
           { name: 'Toque Plasmático', range: 'Corpo a corpo', attackCount: 2, dice: 4, bonus: 10, damage: '2d12', damageType: 'energia' },
           {
-            name: 'Implantar Confusão (Livre)',
-            description: 'Agarra o alvo após acerto plasmático (4d20+10) e causa 2d8 mental mais vulnerabilidade à Energia (Vontade DT 15 reduz).',
+            name: 'Implantar Confusão',
+            description: 'Livre. Agarra o alvo após acerto plasmático (4d20+10) e causa 2d8 mental mais vulnerabilidade à Energia (Vontade DT 15 reduz).',
             range: 'Corpo a corpo', damage: '2d8', damageType: 'mental'
           }
         ],
-        abilities: [],
+        abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' }
+        ],
         disturbingPresenceDt: 15, disturbingPresenceDamage: '2d8'
       },
-
-      // ─── Sukkalgir ────────────────────────────────────────────────────
       {
         name: 'Sukkalgir',
         type: 'Criatura Médio',
@@ -293,30 +287,25 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 3, perceptionBonus: 10,
         initiativeDice: 3, initiativeBonus: 10,
         fortitudeDice: 2, fortitudeBonus: 5,
-        reflexDice: 3,  reflexBonus: 10,
-        willDice: 3,    willBonus: 15,
+        reflexDice: 3, reflexBonus: 10,
+        willDice: 3, willBonus: 15,
         resistances: { flatRD: 0, byType: { 'impacto': 10, 'energia': 10 } },
         attacks: [
           { name: 'Mordida do Outro Lado', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 15, damage: '2d12', damageType: 'mental' },
           {
-            name: 'Aura Desesperada (Passiva/Ataque)',
-            description: 'Seres ao redor sofrem 2d12 mental (Vontade DT 25 reduz).',
-            range: 'Curto', damage: '2d12', damageType: 'mental'
-          },
-          {
-            name: 'Grito de Desespero (Completa)',
-            description: '3d12 mental em alcance médio (Vontade DT 20 reduz).',
+            name: 'Grito de Desespero',
+            description: 'Completa. 3d12 mental em alcance médio (Vontade DT 20 reduz).',
             range: 'Médio', damage: '3d12', damageType: 'mental'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
+          { name: 'Aura Desesperada', description: 'Habilidade Passiva. Seres ao redor sofrem 2d12 mental (Vontade DT 25 reduz).' },
           { name: 'Espírito Plasmático', description: 'A criatura é intangível e pode atravessar paredes.' },
-          { name: 'Agarrão (Livre)', description: 'Agarra seres de tamanho Médio ou menor (Teste 3d20+15).' }
+          { name: 'Agarrão', description: 'Livre. Agarra seres de tamanho Médio ou menor (Teste 3d20+15).' }
         ],
         disturbingPresenceDt: 25, disturbingPresenceDamage: '4d8'
       },
-
-      // ─── Telopsia ─────────────────────────────────────────────────────
       {
         name: 'Telopsia',
         type: 'Criatura Médio',
@@ -333,33 +322,32 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 5, perceptionBonus: 25,
         initiativeDice: 4, initiativeBonus: 20,
         fortitudeDice: 2, fortitudeBonus: 15,
-        reflexDice: 4,  reflexBonus: 20,
-        willDice: 5,    willBonus: 25,
+        reflexDice: 4, reflexBonus: 20,
+        willDice: 5, willBonus: 25,
         additionalSkills: [{ name: 'Furtividade', dice: 4, bonus: 20 }],
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 20, 'corte': 20, 'perfuração': 20, 'energia': 20 } 
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 20, 'corte': 20, 'perfuração': 20, 'energia': 20 }
         },
         attacks: [
           { name: 'Toque Desintegrador', range: 'Corpo a corpo', attackCount: 3, dice: 4, bonus: 35, damage: '6d12+30', damageType: 'energia' },
           {
-            name: 'Tela Zumbificadora (Padrão)',
-            description: 'Causa 6d6 mental e condição de confusão ou fascínio (Vontade DT 30 reduz/evita).',
+            name: 'Tela Zumbificadora',
+            description: 'Padrão. Causa 6d6 mental e condição de confusão ou fascínio (Vontade DT 30 reduz/evita).',
             range: 'Curto', damage: '6d6', damageType: 'mental'
           },
           {
-            name: 'Prender na Tela (Completa)',
-            description: 'Desintegra um alvo para a tela, paralisando e gerando 2d12 mental por turno (Fortitude DT 30 evita).',
+            name: 'Prender na Tela',
+            description: 'Completa. Desintegra um alvo para a tela, paralisando e gerando 2d12 mental por turno (Fortitude DT 30 evita).',
             range: 'Curto', damage: '2d12', damageType: 'mental'
           }
         ],
         abilities: [
-          { name: 'Viajar pela Tela (Movimento)', description: 'A criatura se desmaterializa em outra tela em alcance longo.' }
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
+          { name: 'Viajar pela Tela', description: 'Movimento. A criatura se desmaterializa em outra tela em alcance longo.' }
         ],
         disturbingPresenceDt: 40, disturbingPresenceDamage: '10d6'
       },
-
-      // ─── Tempestuoso ──────────────────────────────────────────────────
       {
         name: 'Tempestuoso',
         type: 'Criatura Médio',
@@ -374,37 +362,32 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 5, perceptionBonus: 20,
         initiativeDice: 5, initiativeBonus: 25,
         fortitudeDice: 4, fortitudeBonus: 20,
-        reflexDice: 5,  reflexBonus: 30,
-        willDice: 5,    willBonus: 25,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 20, 'corte': 20, 'perfuração': 20, 'energia': 20 } 
+        reflexDice: 5, reflexBonus: 30,
+        willDice: 5, willBonus: 25,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 20, 'corte': 20, 'perfuração': 20, 'energia': 20 }
         },
         attacks: [
           { name: 'Garras Radioativas', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 40, damage: '4d20+20', damageType: 'energia' },
           {
-            name: 'Aura Radioativa (Passiva/Ataque)',
-            description: '2d20+20 Energia por turno em alvos no curto alcance (Fortitude DT 40 reduz).',
-            range: 'Curto', damage: '2d20+20', damageType: 'energia'
-          },
-          {
-            name: 'Raio de Energia Radioativa (Livre)',
-            description: 'Se acertar dois ataques, joga um raio em alvo distante, causando 4d20+20 Energia (Reflexos DT 40 reduz).',
+            name: 'Raio de Energia Radioativa',
+            description: 'Livre. Se acertar dois ataques, joga um raio em alvo distante, causando 4d20+20 Energia (Reflexos DT 40 reduz).',
             range: 'Longo', damage: '4d20+20', damageType: 'energia'
           },
           {
-            name: 'Expandir em Radiação (Completa)',
-            description: '10d20+20 Energia em longo alcance à custa de 100 PV (Reflexos DT 40 reduz).',
+            name: 'Expandir em Radiação',
+            description: 'Completa. 10d20+20 Energia em longo alcance à custa de 100 PV (Reflexos DT 40 reduz).',
             range: 'Longo', damage: '10d20+20', damageType: 'energia'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
+          { name: 'Aura Radioativa', description: 'Habilidade Passiva. 2d20+20 Energia por turno em alvos no curto alcance (Fortitude DT 40 reduz).' },
           { name: 'Espectro Radioativo', description: 'Ataques corpo a corpo podem atingir curto alcance.' }
         ],
         disturbingPresenceDt: 40, disturbingPresenceDamage: '8d8'
       },
-
-      // ─── Viajante ─────────────────────────────────────────────────────
       {
         name: 'Viajante',
         type: 'Criatura Médio',
@@ -421,29 +404,28 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 4, perceptionBonus: 15,
         initiativeDice: 4, initiativeBonus: 15,
         fortitudeDice: 2, fortitudeBonus: 10,
-        reflexDice: 4,  reflexBonus: 15,
-        willDice: 4,    willBonus: 15,
-        resistances: { 
-          flatRD: 0, 
-          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 } 
+        reflexDice: 4, reflexBonus: 15,
+        willDice: 4, willBonus: 15,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 10, 'corte': 10, 'perfuração': 10, 'energia': 20 }
         },
         vulnerabilities: 'conhecimento',
         attacks: [
           { name: 'Pancada', range: 'Corpo a corpo', attackCount: 2, dice: 4, bonus: 15, damage: '2d12+10', damageType: 'impacto' },
           {
-            name: 'Devorar Memória (Completa)',
-            description: 'Causa 4d12 mental, a vítima esquece de um aliado, e o Viajante ganha bônus de dano (Vontade DT 29 reduz e evita).',
+            name: 'Devorar Memória',
+            description: 'Completa. Causa 4d12 mental, a vítima esquece de um aliado, e o Viajante ganha bônus de dano (Vontade DT 29 reduz e evita).',
             range: 'Corpo a corpo', damage: '4d12', damageType: 'mental'
           }
         ],
         abilities: [
-          { name: 'Invisibilidade Permanente', description: 'Possui camuflagem total, +15 em Furtividade.' },
-          { name: 'Agarrão (Livre)', description: 'Teste 2d20+15 para agarrar presas.' }
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
+          { name: 'Invisibilidade Permanente', description: 'Possui camuflagem total, +15 em Furtividade e alvos ficam desprevenidos.' },
+          { name: 'Agarrão', description: 'Livre. Teste 2d20+15 para agarrar presas.' }
         ],
         disturbingPresenceDt: 20, disturbingPresenceDamage: '6d6'
       },
-
-      // ─── Anfitrião ────────────────────────────────────────────────────
       {
         name: 'Anfitrião',
         type: 'Criatura Médio',
@@ -459,28 +441,30 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
         perceptionDice: 6, perceptionBonus: 25,
         initiativeDice: 7, initiativeBonus: 35,
         fortitudeDice: 5, fortitudeBonus: 25,
-        reflexDice: 7,  reflexBonus: 35,
-        willDice: 6,    willBonus: 25,
+        reflexDice: 7, reflexBonus: 35,
+        willDice: 6, willBonus: 25,
         attacks: [
           { name: 'Corte Caótico (Liber)', range: 'Corpo a corpo', dice: 7, bonus: 45, damage: '3d12+20', damageType: 'energia' },
           { name: 'Lança e Adaga (Plautus)', range: 'Corpo a corpo', attackCount: 2, dice: 7, bonus: 45, damage: '2d12+20', damageType: 'energia' },
-          { name: 'Corte de Água (Silenus)', range: 'Corpo a corpo', dice: 7, bonus: 45, damage: '5d12+20', damageType: 'energia', description: 'Causa afogamento/asfixia, Fortitude DT 35 evita.' },
+          { name: 'Corte de Água (Silenus)', range: 'Corpo a corpo', dice: 7, bonus: 45, damage: '5d12+20', damageType: 'energia', description: 'Padrão. Causa afogamento/asfixia, Fortitude DT 35 evita.' },
           {
-            name: 'Teatro (Amphitruo/Padrão)',
-            description: 'Vítima recita texto (Artes DT 35) ou sofre 10d6 mental (Vontade DT 45 evita).',
+            name: 'Teatro (Amphitruo)',
+            description: 'Padrão. Vítima recita texto (Artes DT 35) ou sofre 10d6 mental (Vontade DT 45 evita).',
             range: 'Médio', damage: '10d6', damageType: 'mental'
           },
           {
-            name: 'Queimar (Aeneas/Padrão)',
-            description: '10d6+20 Energia em cone (Reflexos DT 45).',
+            name: 'Queimar (Aeneas)',
+            description: 'Padrão. 10d6+20 Energia em cone (Reflexos DT 45).',
             range: 'Curto (Cone)', damage: '10d6+20', damageType: 'energia'
           }
         ],
         abilities: [
+          { name: 'Visão no escuro', description: 'Habilidade Passiva.' },
           { name: 'Transformar a Morte', description: 'Resolve o enigma do Deus da Morte.' },
           { name: 'Potência de Energia', description: '+35 em testes de AGI e INT, +25 nos demais.' },
+          { name: 'Ato 1 / Ato 2', description: 'Inicia dividido em 5 facetas (Amphitruo, Aeneas, Liber, Silenus e Plautus), cada com 250 PV e resistência à dano 20. No Ato 2 (completo), faz 3 ações diferentes.' },
           { name: 'Trilha Sonora', description: 'Ato 2: Dano mental passivo e Roleta Maluca aleatória.' },
-          { name: 'Teletransporte (Movimento)', description: 'Teletransporte global.' }
+          { name: 'Teletransporte', description: 'Movimento. Teletransporte global.' }
         ],
         disturbingPresenceDt: 45, disturbingPresenceDamage: '10d8'
       }
@@ -489,6 +473,5 @@ export default class EnergyMonsterSeeder extends BaseSeeder {
     for (const data of monsters) {
       await Monster.updateOrCreate({ name: data.name }, data)
     }
-    console.log('Energy monsters seeded correctly!')
   }
 }

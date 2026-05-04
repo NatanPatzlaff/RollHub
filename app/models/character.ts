@@ -20,6 +20,7 @@ import Weapon from '#models/weapon'
 import Protection from '#models/protection'
 import Ammunition from '#models/ammunition'
 import GeneralItem from '#models/general_item'
+import CharacterActiveBuff from '#models/character_active_buff'
 
 export default class Character extends BaseModel {
   @column({ isPrimary: true })
@@ -148,4 +149,7 @@ export default class Character extends BaseModel {
     pivotTimestamps: true,
   })
   declare homebrewItems: ManyToMany<typeof HomebrewItem>
+
+  @hasMany(() => CharacterActiveBuff)
+  declare activeBuffs: HasMany<typeof CharacterActiveBuff>
 }

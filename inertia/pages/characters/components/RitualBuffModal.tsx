@@ -99,6 +99,7 @@ export default function RitualBuffModal({
     if (buff.tempHp) parts.push(`${buff.tempHp} PV Temporários`)
     if (buff.tempHpFlat) parts.push(`${buff.tempHpFlat} PV Temporários`)
     if (buff.healDice) parts.push(`Cura ${buff.healDice} PV`)
+    if (buff.skillBonus) parts.push(`+${buff.skillBonus} em Perícias`)
     if (hasAttrChoice) parts.push(`+${attrBonus} em atributo à escolha`)
     return parts.join(', ') || 'Efeito aplicado'
   }

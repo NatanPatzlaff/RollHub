@@ -28,6 +28,9 @@ interface ActiveRitualBuff {
   agiBonus: number
   intBonus: number
   preBonus: number
+  copies?: number
+  remainingCopies?: number
+  defensePerCopy?: number
 }
 
 /** Interface da habilidade ativa (copiada de show.tsx) */
@@ -53,6 +56,8 @@ export interface CombatDefensesCardProps {
   activeRitualBuffs?: ActiveRitualBuff[]
   /** Callback para remover um buff */
   onRemoveRitualBuff?: (buffId: string) => void
+  /** Callback para atualizar um buff (ex: diminuir cópias) */
+  onUpdateRitualBuff?: (buffId: string, updates: Partial<ActiveRitualBuff>) => void
   /** Callback para limpar todos os buffs (fim de cena) */
   onClearAllBuffs?: () => void
   /** PV temporários de rituais */
@@ -84,6 +89,7 @@ export default function CombatDefensesCard({
   ritualDodgeBonus = 0,
   activeRitualBuffs = [],
   onRemoveRitualBuff,
+  onUpdateRitualBuff,
   onClearAllBuffs,
   tempHp = 0,
   onSetTempHp,
@@ -347,66 +353,111 @@ export default function CombatDefensesCard({
             </div>
 
             <div className="space-y-1.5">
-              {activeRitualBuffs.map((buff) => (
-                <div
-                  key={buff.id}
-                  className="flex items-center justify-between bg-zinc-800/80 border border-zinc-700 rounded-lg px-2.5 py-1.5"
-                >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-semibold text-white">{buff.label}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {buff.defenseBonus !== 0 && (
-                        <span className="text-[10px] bg-blue-900/60 text-blue-300 rounded px-1.5 py-0.5">
-                          Defesa {buff.defenseBonus > 0 ? '+' : ''}
-                          {buff.defenseBonus}
+              {activeRitualBuffs.map((buff) => {
+                const hasCopies = buff.copies !== undefined && buff.remainingCopies !== undefined
+
+                const handleConsumeCopy = () => {
+                  if (!hasCopies || buff.remainingCopies! <= 0) return
+                  const nextRemaining = buff.remainingCopies! - 1
+                  if (nextRemaining <= 0) {
+                    onRemoveRitualBuff?.(buff.id)
+                  } else {
+                    onUpdateRitualBuff?.(buff.id, {
+                      remainingCopies: nextRemaining,
+                      defenseBonus: Math.max(0, buff.defenseBonus - (buff.defensePerCopy || 0)),
+                    })
+                  }
+                }
+
+                return (
+                  <div
+                    key={buff.id}
+                    className="flex items-center justify-between bg-zinc-800/80 border border-zinc-700 rounded-lg px-2.5 py-1.5"
+                  >
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-white truncate">
+                          {buff.label}
                         </span>
+                        {hasCopies && (
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: buff.copies! }).map((_, i) => (
+                              <div
+                                key={i}
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  i < buff.remainingCopies! ? 'bg-cyan-400' : 'bg-zinc-600'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {buff.defenseBonus !== 0 && (
+                          <span className="text-[10px] bg-blue-900/60 text-blue-300 rounded px-1.5 py-0.5">
+                            Defesa {buff.defenseBonus > 0 ? '+' : ''}
+                            {buff.defenseBonus}
+                          </span>
+                        )}
+                        {buff.dodgeBonus !== 0 && (
+                          <span className="text-[10px] bg-emerald-900/60 text-emerald-300 rounded px-1.5 py-0.5">
+                            Esquiva {buff.dodgeBonus > 0 ? '+' : ''}
+                            {buff.dodgeBonus}
+                          </span>
+                        )}
+                        {/* ... (outros bônus) */}
+                        {buff.strBonus !== 0 && (
+                          <span className="text-[10px] bg-red-900/60 text-red-300 rounded px-1.5 py-0.5">
+                            FOR {buff.strBonus > 0 ? '+' : ''}
+                            {buff.strBonus}
+                          </span>
+                        )}
+                        {buff.agiBonus !== 0 && (
+                          <span className="text-[10px] bg-green-900/60 text-green-300 rounded px-1.5 py-0.5">
+                            AGI {buff.agiBonus > 0 ? '+' : ''}
+                            {buff.agiBonus}
+                          </span>
+                        )}
+                        {buff.intBonus !== 0 && (
+                          <span className="text-[10px] bg-purple-900/60 text-purple-300 rounded px-1.5 py-0.5">
+                            INT {buff.intBonus > 0 ? '+' : ''}
+                            {buff.intBonus}
+                          </span>
+                        )}
+                        {buff.preBonus !== 0 && (
+                          <span className="text-[10px] bg-yellow-900/60 text-yellow-300 rounded px-1.5 py-0.5">
+                            PRE {buff.preBonus > 0 ? '+' : ''}
+                            {buff.preBonus}
+                          </span>
+                        )}
+                        {buff.tempHp > 0 && (
+                          <span className="text-[10px] bg-cyan-900/60 text-cyan-300 rounded px-1.5 py-0.5">
+                            PV Temp +{buff.tempHp}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {hasCopies && (
+                        <button
+                          onClick={handleConsumeCopy}
+                          className="px-2 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px] font-bold transition-all"
+                          title="Perder uma cópia"
+                        >
+                          −1 Cópia
+                        </button>
                       )}
-                      {buff.dodgeBonus !== 0 && (
-                        <span className="text-[10px] bg-emerald-900/60 text-emerald-300 rounded px-1.5 py-0.5">
-                          Esquiva {buff.dodgeBonus > 0 ? '+' : ''}
-                          {buff.dodgeBonus}
-                        </span>
-                      )}
-                      {buff.strBonus !== 0 && (
-                        <span className="text-[10px] bg-red-900/60 text-red-300 rounded px-1.5 py-0.5">
-                          FOR {buff.strBonus > 0 ? '+' : ''}
-                          {buff.strBonus}
-                        </span>
-                      )}
-                      {buff.agiBonus !== 0 && (
-                        <span className="text-[10px] bg-green-900/60 text-green-300 rounded px-1.5 py-0.5">
-                          AGI {buff.agiBonus > 0 ? '+' : ''}
-                          {buff.agiBonus}
-                        </span>
-                      )}
-                      {buff.intBonus !== 0 && (
-                        <span className="text-[10px] bg-purple-900/60 text-purple-300 rounded px-1.5 py-0.5">
-                          INT {buff.intBonus > 0 ? '+' : ''}
-                          {buff.intBonus}
-                        </span>
-                      )}
-                      {buff.preBonus !== 0 && (
-                        <span className="text-[10px] bg-yellow-900/60 text-yellow-300 rounded px-1.5 py-0.5">
-                          PRE {buff.preBonus > 0 ? '+' : ''}
-                          {buff.preBonus}
-                        </span>
-                      )}
-                      {buff.tempHp > 0 && (
-                        <span className="text-[10px] bg-cyan-900/60 text-cyan-300 rounded px-1.5 py-0.5">
-                          PV Temp +{buff.tempHp}
-                        </span>
-                      )}
+                      <button
+                        onClick={() => onRemoveRitualBuff?.(buff.id)}
+                        className="p-0.5 text-zinc-500 hover:text-red-400 transition-colors"
+                        title="Remover buff"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                  <button
-                    onClick={() => onRemoveRitualBuff?.(buff.id)}
-                    className="ml-2 p-0.5 text-zinc-500 hover:text-red-400 transition-colors"
-                    title="Remover buff"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

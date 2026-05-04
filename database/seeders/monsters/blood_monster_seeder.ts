@@ -4,8 +4,6 @@ import { BaseSeeder } from '@adonisjs/lucid/seeders'
 export default class BloodMonsterSeeder extends BaseSeeder {
   async run() {
     const monsters: any[] = [
-
-      // ─── Aberração de Carne ───────────────────────────────────────────
       {
         name: 'Aberração de Carne',
         type: 'Criatura Grande',
@@ -21,32 +19,22 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 1, perceptionBonus: 5,
         initiativeDice: 1, initiativeBonus: 0,
         fortitudeDice: 3, fortitudeBonus: 10,
-        reflexDice: 1,  reflexBonus: 0,
-        willDice: 1,    willBonus: 0,
+        reflexDice: 1, reflexBonus: 0,
+        willDice: 1, willBonus: 0,
         resistances: {
           flatRD: 0,
           byType: { 'balístico': 5, 'impacto': 5, 'perfuração': 5, 'sangue': 10 }
         },
         attacks: [
           { name: 'Pancada', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 10, damage: '2d6+6', damageType: 'impacto' },
-          { 
-            name: 'Agarrão (Reação)', 
-            description: 'Se acertar pancada, tenta agarrar (teste 3d20+12). Mantém até 2 alvos.',
-            range: 'Corpo a corpo', dice: 3, bonus: 12, damage: '0', damageType: 'agarrado' 
-          },
-          { 
-            name: 'Abocanhar (Movimento)', 
-            description: 'Leva até 2 agarrados para a boca. 3d6 perfuração (Fortitude DT 15 metade) agora e início de turno.',
-            range: 'Corpo a corpo', damage: '3d6', damageType: 'perfuração' 
-          }
+          { name: 'Agarrão', description: 'Reação. Se acertar um ataque de pancada, pode tentar agarrar (teste 3d20+12). Pode manter até dois personagens agarrados por vez.', range: 'Corpo a corpo', dice: 3, bonus: 12, damage: '0', damageType: 'agarrado' },
+          { name: 'Abocanhar', description: 'Movimento. Leva até dois personagens agarrados para dentro da boca. O personagem sofre 3d6 pontos de dano de perfuração (Fortitude DT 15 reduz à metade) ao ser abocanhado e no início de cada turno.', range: 'Corpo a corpo', damage: '3d6', damageType: 'perfuração' }
         ],
         abilities: [
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva. Percebe o ambiente usando outros sentidos que não a visão.' }
         ],
         disturbingPresenceDt: 15, disturbingPresenceDamage: '3d6'
       },
-
-      // ─── Aniquilação ──────────────────────────────────────────────────
       {
         name: 'Aniquilação',
         type: 'Criatura Colossal',
@@ -61,49 +49,27 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 4, perceptionBonus: 20,
         initiativeDice: 4, initiativeBonus: 20,
         fortitudeDice: 5, fortitudeBonus: 30,
-        reflexDice: 4,  reflexBonus: 25,
-        willDice: 4,    willBonus: 20,
+        reflexDice: 4, reflexBonus: 25,
+        willDice: 4, willBonus: 20,
         additionalSkills: [{ name: 'Atletismo', dice: 5, bonus: 20 }],
         resistances: { flatRD: 50, byType: {} },
         attacks: [
           { name: 'Garras', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 40, damage: '4d10+30', damageType: 'sangue' },
           { name: 'Tentáculos Espinhentos', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 40, damage: '2d12+30', damageType: 'sangue' },
           { name: 'Disparo de Espinhos', range: 'Médio', attackCount: 3, dice: 4, bonus: 40, damage: '2d10+20', damageType: 'sangue' },
-          { 
-            name: 'Apertar e Destruir (Livre)', 
-            description: 'Início do turno: 40 de Sangue em quem estiver agarrado.',
-            range: 'Corpo a corpo', damage: '40', damageType: 'sangue' 
-          },
-          { 
-            name: 'Bater as Asas (Movimento)', 
-            description: 'Alcance longo: 8d6 Mental, empurra 6m e Atordoa (Fortitude DT 40 reduz metade/evita).',
-            range: 'Longo', damage: '8d6', damageType: 'mental' 
-          },
-          { 
-            name: 'Estrangulamento Final (Movimento)', 
-            description: 'Move 15m asfixiando adjacentes (Reflexos DT 30 evita).',
-            range: '15m', damage: 'Especial', damageType: 'morte' 
-          },
-          { 
-            name: 'Tempestade de Espinhos (Completa)', 
-            description: '1/cena. Médio sofre 20d6+20 Sangue (Reflexos DT 40 metade). Perde disparos.',
-            range: 'Médio', damage: '20d6+20', damageType: 'sangue' 
-          },
-          { 
-            name: 'Agarrão (Reação)', 
-            description: 'Se acertar tentáculos, tenta agarrar (teste 5d20+50). Mantém até 4.',
-            range: 'Corpo a corpo', dice: 5, bonus: 50, damage: '0', damageType: 'agarrado' 
-          }
+          { name: 'Agarrão', description: 'Reação. Se acertar um ataque de tentáculos, pode tentar agarrar (teste 5d20+50). Mantém até 4 personagens agarrados por vez.', range: 'Corpo a corpo', dice: 5, bonus: 50, damage: '0', damageType: 'agarrado' },
+          { name: 'Instinto Aniquilador', description: 'Reação. Sempre que um personagem em alcance curto se movimenta mais do que 3m, realiza um ataque de tentáculos espinhentos contra ele.', range: 'Curto', damage: 'Especial', damageType: 'sangue' },
+          { name: 'Apertar e Destruir', description: 'Livre. No início do seu turno, causa 40 pontos de dano de Sangue aos personagens agarrados.', range: 'Corpo a corpo', damage: '40', damageType: 'sangue' },
+          { name: 'Bater as Asas', description: 'Movimento. Personagens em alcance longo sofrem 8d6 pontos de dano Mental, empurrados 6m e ficam atordoados por 1 rodada (Fortitude DT 40 reduz metade e evita efeitos).', range: 'Longo', damage: '8d6', damageType: 'mental' },
+          { name: 'Estrangulamento Final', description: 'Movimento. Desloca 15m agarrando e asfixiando os adjacentes (Reflexos DT 30 evita). Escapar gasta ação padrão + Reflexos (DT 30).', range: 'Corpo a corpo', damage: 'Especial', damageType: 'morte' },
+          { name: 'Tempestade de Espinhos', description: 'Completa. Alcance médio sofre 20d6+20 dano de Sangue (Reflexos DT 40 reduz metade). 1x por cena. Perde o ataque "Disparo de Espinhos" até o fim da cena.', range: 'Médio', damage: '20d6+20', damageType: 'sangue' }
         ],
         abilities: [
-          { name: 'Instinto Aniquilador', description: 'Reação. Se alguém mover +3m em curto, ataca com tentáculos.' },
-          { name: 'Enigma de Medo', description: 'Resolvido: perde resistência e Tempestade de Espinhos.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Enigma de Medo', description: 'Quando resolvido, perde sua resistência a dano e sua habilidade Tempestade de Espinhos.' }
         ],
         disturbingPresenceDt: 45, disturbingPresenceDamage: '9d8'
       },
-
-      // ─── Carente ──────────────────────────────────────────────────────
       {
         name: 'Carente',
         type: 'Criatura Grande',
@@ -120,8 +86,8 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 3, perceptionBonus: 10,
         initiativeDice: 4, initiativeBonus: 15,
         fortitudeDice: 4, fortitudeBonus: 25,
-        reflexDice: 4,  reflexBonus: 25,
-        willDice: 3,    willBonus: 15,
+        reflexDice: 4, reflexBonus: 25,
+        willDice: 3, willBonus: 15,
         additionalSkills: [{ name: 'Atletismo', dice: 4, bonus: 20 }, { name: 'Enganação', dice: 3, bonus: 15 }],
         resistances: {
           flatRD: 0,
@@ -131,32 +97,18 @@ export default class BloodMonsterSeeder extends BaseSeeder {
           { name: 'Garras de Sangue', range: 'Corpo a corpo', attackCount: 2, dice: 4, bonus: 35, damage: '2d8+20', damageType: 'sangue' },
           { name: 'Ferrão de Sangue', range: 'Corpo a corpo', attackCount: 1, dice: 4, bonus: 35, damage: '2d12+20', damageType: 'sangue' },
           { name: 'Tentáculo', range: 'Corpo a corpo', attackCount: 1, dice: 4, bonus: 35, damage: '2d8+20', damageType: 'sangue' },
-          { 
-            name: 'Rasteira de Tentáculo (Reação)', 
-            description: '1/rodada, adjacente a 2+, ataque de tentáculo derruba e empurra 6m.',
-            range: 'Corpo a corpo', dice: 4, bonus: 35, damage: '0', damageType: 'derrubar' 
-          },
-          { 
-            name: 'Sugada Mortal (Livre)', 
-            description: 'Alvo do ferrão fica Debilitado e Enjoado (Fortitude DT 35 evita).',
-            range: 'Corpo a corpo', damage: '0', damageType: 'enjoo' 
-          },
-          { 
-            name: 'Você é minha mamãe? (Movimento)', 
-            description: 'Abraça alvo. Ele fica Paralisado (Reflexos DT 25 evita). Solto com dano de Energia.',
-            range: 'Corpo a corpo', damage: '0', damageType: 'paralisia' 
-          }
+          { name: 'Forma Infantil', description: 'Movimento. Contorce de volta para o corpo da criança para passar em espaços pequenos. Não abre a primeira porta.', range: 'Pessoal', damage: '0', damageType: 'nenhum' },
+          { name: 'Rasteira de Tentáculo', description: 'Reação. 1x por rodada, adjacente a 2+ seres, ataque de tentáculo derruba e empurra 6m.', range: 'Corpo a corpo', damage: '0', damageType: 'impacto' },
+          { name: 'Sugada Mortal', description: 'Livre. Alvo do ferrão fica debilitado e enjoado (Fortitude DT 35 evita).', range: 'Corpo a corpo', damage: '0', damageType: 'status' },
+          { name: 'Você é minha mamãe?', description: 'Movimento. Abraça um alvo que fica paralisado (Reflexos DT 25 evita). Solto se o carente sofrer dano de Energia.', range: 'Corpo a corpo', damage: '0', damageType: 'paralisia' }
         ],
         abilities: [
-          { name: 'Carência', description: 'Ser que já gerou outro recebe +d20 em testes contra ele (e vice-versa).' },
-          { name: 'Regeneração de Sangue', description: 'Cura Acelerada 20. Para se sofrer Energia.' },
-          { name: 'Forma Infantil', description: 'Passa em locais pequenos.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Carência', description: 'Ser que já gerou/gestou outro ser recebe +d20 em ataques contra ele, porém o carente também recebe +d20 em ataques contra esse ser.' },
+          { name: 'Regeneração de Sangue', description: 'Cura Acelerada 20. Desativa se inconsciente ou sofrer dano de Energia.' }
         ],
         disturbingPresenceDt: 35, disturbingPresenceDamage: '7d8'
       },
-
-      // ─── Dama de Sangue ───────────────────────────────────────────────
       {
         name: 'Dama de Sangue',
         type: 'Criatura Enorme',
@@ -173,59 +125,29 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 2, perceptionBonus: 10,
         initiativeDice: 2, initiativeBonus: 0,
         fortitudeDice: 2, fortitudeBonus: 10,
-        reflexDice: 2,  reflexBonus: 5,
-        willDice: 2,    willBonus: 0,
+        reflexDice: 2, reflexBonus: 5,
+        willDice: 2, willBonus: 0,
         resistances: {
           flatRD: 0,
           byType: { 'balístico': 10, 'impacto': 10, 'perfuração': 10, 'sangue': 20 }
         },
         attacks: [
           { name: 'Tentáculo', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 10, damage: '2d6+5', damageType: 'impacto' },
-          { 
-            name: 'Arremessar (Flor Rosa)', 
-            description: 'Movimento. Arremessa alvo curto, 2d6 impacto + Caído (Reflexos DT 15 evita).',
-            range: 'Curto', damage: '2d6', damageType: 'impacto' 
-          },
-          { 
-            name: 'Chuva de Ácido (Flor Vermelha)', 
-            description: 'Movimento. 4d4 Químico em curto (Fortitude DT 15 metade).',
-            range: 'Curto', damage: '4d4', damageType: 'químico' 
-          },
-          { 
-            name: 'Espinhos (Flor Amarela)', 
-            description: 'Movimento. 3 alvos médio, 2d8 perfuração (Reflexos DT 15 metade).',
-            range: 'Médio', attackCount: 3, damage: '2d8', damageType: 'perfuração' 
-          },
-          { 
-            name: 'Grito Devastador (Flor Roxa)', 
-            description: 'Movimento. Confusão em curto (Vontade DT 15 evita).',
-            range: 'Curto', damage: '0', damageType: 'mental' 
-          },
-          { 
-            name: 'Miasma Fétido (Flor Azul)', 
-            description: 'Padrão. Enjoo por 1d4+1 rodadas em curto (Fortitude DT 15 reduz p/ 1).',
-            range: 'Curto', damage: '0', damageType: 'químico' 
-          },
-          { 
-            name: 'Prisão de Tentáculos (Flor Verde)', 
-            description: 'Padrão. Agarra alvo curto até tentáculos (20 PV) serem destruídos.',
-            range: 'Curto', damage: '0', damageType: 'agarrado' 
-          },
-          { 
-            name: 'Visão Macabra (Flor Laranja)', 
-            description: 'Movimento. 1d6 mental em médio (Vontade DT 15 metade).',
-            range: 'Médio', damage: '1d6', damageType: 'mental' 
-          }
+          { name: 'Arremessar (Flor Rosa)', description: 'Movimento. Arremessa alvo curto, 2d6 impacto + caído (Reflexos DT 15 evita).', range: 'Curto', damage: '2d6', damageType: 'impacto' },
+          { name: 'Chuva de Ácido (Flor Vermelha)', description: 'Movimento. 4d4 químico em alcance curto (Fortitude DT 15 metade).', range: 'Curto', damage: '4d4', damageType: 'químico' },
+          { name: 'Espinhos (Flor Amarela)', description: 'Movimento. 3 alvos médio, 2d8 perfuração (Reflexos DT 15 metade).', range: 'Médio', damage: '2d8', damageType: 'perfuração' },
+          { name: 'Grito Devastador (Flor Roxa)', description: 'Movimento. Confusão alcance curto (Vontade DT 15 evita).', range: 'Curto', damage: '0', damageType: 'mental' },
+          { name: 'Miasma Fétido (Flor Azul)', description: 'Padrão. Enjoo por 1d4+1 rodadas alcance curto (Fortitude DT 15 reduz para 1).', range: 'Curto', damage: '0', damageType: 'status' },
+          { name: 'Prisão de Tentáculos (Flor Verde)', description: 'Padrão. Agarra alvo curto até tentáculos (20 PV) serem destruídos.', range: 'Curto', damage: '0', damageType: 'agarrado' },
+          { name: 'Visão Macabra (Flor Laranja)', description: 'Movimento. 1d6 mental alcance médio (Vontade DT 15 metade).', range: 'Médio', damage: '1d6', damageType: 'mental' }
         ],
         abilities: [
-          { name: 'Consumir', description: 'Ganha habilidades das flores ao consumir cadáveres adjacentes.' },
-          { name: 'Enigma de Medo', description: 'Resolvido: exige explorar fraquezas botânicas de cada flor.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Consumir', description: 'Precisa gastar ação padrão adjacente a cadáveres. Cada um dá uma habilidade nova.' },
+          { name: 'Enigma de Medo', description: 'Exige explorar cada fraqueza botânica listada nas habilidades.' }
         ],
         disturbingPresenceDt: 20, disturbingPresenceDamage: '3d6'
       },
-
-      // ─── Enpap-X ──────────────────────────────────────────────────────
       {
         name: 'Enpap-X',
         type: 'Criatura Grande',
@@ -242,8 +164,8 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 2, perceptionBonus: 10,
         initiativeDice: 2, initiativeBonus: 10,
         fortitudeDice: 3, fortitudeBonus: 15,
-        reflexDice: 2,  reflexBonus: 15,
-        willDice: 2,    willBonus: 10,
+        reflexDice: 2, reflexBonus: 15,
+        willDice: 2, willBonus: 10,
         resistances: {
           flatRD: 0,
           byType: { 'balístico': 10, 'impacto': 10, 'perfuração': 10, 'sangue': 20 }
@@ -251,27 +173,17 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         attacks: [
           { name: 'Socão', range: 'Corpo a corpo', attackCount: 4, dice: 4, bonus: 20, damage: '2d10+10', damageType: 'impacto' },
           { name: 'Correntes', range: 'Curto', attackCount: 3, dice: 2, bonus: 15, damage: '2d8+10', damageType: 'impacto' },
-          { 
-            name: 'Acorrentar (Livre)', 
-            description: 'Acerto de correntes: tenta agarrar (teste 2d20+17). Estrangula (4d6 impacto).',
-            range: 'Curto', dice: 2, bonus: 17, damage: '4d6', damageType: 'impacto' 
-          },
-          { 
-            name: 'Marcas do Terror (Movimento)', 
-            description: '4d6 mental (Vontade DT 25 metade).',
-            range: 'Curto', damage: '4d6', damageType: 'mental' 
-          }
+          { name: 'Acorrentar', description: 'Livre. Se acertar corrente, pode tentar agarrar à distância (teste 2d20+17). Estrangula no início do turno (4d6 impacto).', range: 'Curto', dice: 2, bonus: 17, damage: '4d6', damageType: 'impacto' },
+          { name: 'Marcas do Terror', description: 'Movimento. 4d6 mental (Vontade DT 25 reduz metade).', range: 'Especial', damage: '4d6', damageType: 'mental' }
         ],
         abilities: [
-          { name: 'Transformação', description: 'Começa como Existido. Morreu: vira Enpap-X com full HP.' },
-          { name: 'Forma Desencadeada (Reação)', description: 'Crítico: Derruba ou Empurra 3m.' },
-          { name: 'Crescer (Reação)', description: 'Acerto de socão: +1d6 no próximo socão do turno.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Transformação', description: 'Inicia o combate usando as estatísticas do Existido comum. Reduzido a 0 PV, transforma-se no Enpap-X, recupera até 360 PV.' },
+          { name: 'Forma Desencadeada', description: 'Reação. Crítico permite derrubar ou empurrar 3m.' },
+          { name: 'Crescer', description: 'Reação. Acerto de socão dá +1d6 de dano cumulativo no próximo socão do mesmo turno.' }
         ],
         disturbingPresenceDt: 25, disturbingPresenceDamage: '6d6'
       },
-
-      // ─── Kerberos ─────────────────────────────────────────────────────
       {
         name: 'Kerberos',
         type: 'Criatura Enorme',
@@ -287,8 +199,8 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 3, perceptionBonus: 20,
         initiativeDice: 4, initiativeBonus: 15,
         fortitudeDice: 5, fortitudeBonus: 25,
-        reflexDice: 4,  reflexBonus: 20,
-        willDice: 3,    willBonus: 15,
+        reflexDice: 4, reflexBonus: 20,
+        willDice: 3, willBonus: 15,
         additionalSkills: [{ name: 'Atletismo', dice: 5, bonus: 25 }],
         resistances: {
           flatRD: 0,
@@ -297,25 +209,15 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         attacks: [
           { name: 'Mordida', range: 'Corpo a corpo', attackCount: 1, dice: 5, bonus: 40, damage: '4d12+30', damageType: 'sangue' },
           { name: 'Disparo de Espinhos', range: 'Médio', attackCount: 1, dice: 4, bonus: 35, damage: '4d8+20', damageType: 'sangue' },
-          { 
-            name: 'Devorar (Livre)', 
-            description: '1/cena. Se matar com mordida, devora (Fortitude DT 40 evita morte) e recupera metade do PV do alvo.',
-            range: 'Corpo a corpo', damage: 'Especial', damageType: 'sangue' 
-          },
-          { 
-            name: 'Derrubar e Devorar (Completa)', 
-            description: 'Tenta derrubar (5d20+45). Venceu: faz 3 mordidas causando 4d12+40 cada.',
-            range: 'Corpo a corpo', dice: 5, bonus: 45, damage: 'Especial', damageType: 'sangue' 
-          }
+          { name: 'Devorar', description: 'Livre. 1x por cena, se alvo chegar a 0 PV com mordida, ele devora e mata instantaneamente (Fortitude DT 40 evita).', range: 'Corpo a corpo', damage: 'Especial', damageType: 'sangue' },
+          { name: 'Derrubar e Devorar', description: 'Completa. Tenta derrubar (teste 5d20+45). Se vencer, dá 3 ataques de mordida causando 4d12+40 cada.', range: 'Corpo a corpo', dice: 5, bonus: 45, damage: 'Especial', damageType: 'sangue' }
         ],
         abilities: [
-          { name: 'Ataque Flexível', description: '4 ataques/rodada, máximo 3 iguais.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Ataque Flexível', description: '4 ataques por rodada, máximo 3 vezes o mesmo ataque.' }
         ],
         disturbingPresenceDt: 35, disturbingPresenceDamage: '10d6'
       },
-
-      // ─── Minotauro ────────────────────────────────────────────────────
       {
         name: 'Minotauro',
         type: 'Criatura Grande',
@@ -331,8 +233,8 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         perceptionDice: 3, perceptionBonus: 20,
         initiativeDice: 4, initiativeBonus: 15,
         fortitudeDice: 5, fortitudeBonus: 20,
-        reflexDice: 4,  reflexBonus: 15,
-        willDice: 3,    willBonus: 10,
+        reflexDice: 4, reflexBonus: 15,
+        willDice: 3, willBonus: 10,
         additionalSkills: [{ name: 'Atletismo', dice: 5, bonus: 20 }],
         resistances: {
           flatRD: 0,
@@ -341,236 +243,191 @@ export default class BloodMonsterSeeder extends BaseSeeder {
         attacks: [
           { name: 'Chifres', range: 'Corpo a corpo', attackCount: 1, dice: 5, bonus: 30, damage: '6d12+20', damageType: 'perfuração' },
           { name: 'Machado', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 32, damage: '4d12+20', damageType: 'corte' },
-          { 
-            name: 'Pisotear (Movimento)', 
-            description: 'Pisa em seres Médios ou menor no caminho. 4d10+20 impacto + Caído (Reflexos DT 30 metade e evita queda).',
-            range: 'Movimento', damage: '4d10+20', damageType: 'impacto' 
-          },
-          { 
-            name: 'Rugido Aterrorizante (Padrão)', 
-            description: 'Em curto: apavorado por 1d4 rodadas (Vontade DT 30 evita). Outros ficam abalados.',
-            range: 'Curto', damage: '0', damageType: 'mental' 
-          }
+          { name: 'Cravar Chifres', description: 'Livre. Se investir e acertar, agarra. Alvo agarrado sofre 4d12+20 Sangue no final do seu próprio turno.', range: 'Corpo a corpo', damage: '4d12+20', damageType: 'sangue' }
         ],
         abilities: [
-          { name: 'Labirinto Mental', description: 'Imune a labirintos e efeitos de confusão.' },
-          { name: 'Fúria Bovina (Reação)', description: 'Se sofrer dano, ganha +2 em ataques e dano até fim da cena (cumulativo 5x).' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' }
         ],
         disturbingPresenceDt: 35, disturbingPresenceDamage: '8d6'
       },
-
-      // ─── Nereida ──────────────────────────────────────────────────────
       {
-        name: 'Nereida',
-        type: 'Criatura Médio',
-        size: 'Médio',
+        name: 'Mulher Afogada',
+        type: 'Criatura Grande',
+        size: 'Grande',
         element: 'sangue',
-        secondaryElements: 'morte',
+        secondaryElements: 'energia',
         vd: 140,
-        defense: 29,
-        hpMax: 210, hpCurrent: 210,
+        defense: 28,
+        hpMax: 240, hpCurrent: 240,
         movement: 9,
         nexImmune: 50,
-        vulnerabilities: 'energia',
-        agi: 3, str: 3, int: 2, pre: 3, vig: 3,
-        perceptionDice: 3, perceptionBonus: 15,
-        initiativeDice: 3, initiativeBonus: 10,
-        fortitudeDice: 3, fortitudeBonus: 15,
-        reflexDice: 3,  reflexBonus: 15,
-        willDice: 3,    willBonus: 10,
+        vulnerabilities: 'morte',
+        agi: 4, str: 3, int: 2, pre: 2, vig: 3,
+        perceptionDice: 2, perceptionBonus: 5,
+        initiativeDice: 4, initiativeBonus: 10,
+        fortitudeDice: 3, fortitudeBonus: 10,
+        reflexDice: 4, reflexBonus: 10,
+        willDice: 2, willBonus: 5,
         resistances: {
           flatRD: 0,
-          byType: { 'balístico': 10, 'impacto': 10, 'perfuração': 10, 'sangue': 20 }
+          byType: { 'balístico': 10, 'energia': 10, 'impacto': 10, 'perfuração': 10, 'sangue': 20 }
         },
         attacks: [
-          { name: 'Tentáculo Espinhoso', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 20, damage: '2d8+10', damageType: 'perfuração' },
-          { 
-            name: 'Jato (Movimento)', 
-            description: 'Jato de sangue ácido. 6d6 químico alcance médio (Reflexos DT 25 metade).',
-            range: 'Médio', damage: '6d6', damageType: 'químico' 
-          },
-          { 
-            name: 'Abraço Mortífero (Completa)', 
-            description: 'Agarra alvo. 3d10 Sangue por rodada + sufocamento rápida.',
-            range: 'Corpo a corpo', damage: '3d10', damageType: 'sangue' 
-          }
+          { name: 'Mordida', range: 'Corpo a corpo', attackCount: 1, dice: 4, bonus: 10, damage: '4d8+8', damageType: 'perfuração' },
+          { name: 'Garras', range: 'Corpo a corpo', attackCount: 2, dice: 4, bonus: 10, damage: '4d6+6', damageType: 'corte' },
+          { name: 'Jato de Sangue', range: 'Distância', attackCount: 1, dice: 4, bonus: 10, damage: '4d8+8', damageType: 'sangue' },
+          { name: 'Sugar Sangue', description: 'Movimento. Devora corpo morto adjacente, recuperando 40 PV.', range: 'Corpo a corpo', damage: '0', damageType: 'nenhum' },
+          { name: 'Afogar em Sangue', description: 'Padrão (Forma de Sangue). Asfixia alvo. Teste de Fortitude (DT 24) encerra e repele.', range: 'Corpo a corpo', damage: '0', damageType: 'status' },
+          { name: 'Arrancar Sangue', description: 'Reação (Forma de Sangue). Se arrancada de um alvo, causa 6d6 Sangue e o deixa fraco.', range: 'Corpo a corpo', damage: '6d6', damageType: 'sangue' },
+          { name: 'Invadir Órgãos', description: 'Movimento (Forma de Sangue). 6d6 de Sangue e deixa o alvo enjoado.', range: 'Corpo a corpo', damage: '6d6', damageType: 'sangue' }
         ],
         abilities: [
-          { name: 'Canto da Sereia (Padrão)', description: 'Fascina seres em alcance médio (Vontade DT 25 evita).' },
-          { name: 'Anfíbio', description: 'Respira na água.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Forma de Sangue', description: 'Estado líquido. Deslocamento 36m. Resistência a corte 20. Dá ações especiais.' },
+          { name: 'Enigma de Medo', description: 'Bloquear saídas de água forçando manifestação e retirando a Forma de Sangue.' }
         ],
-        disturbingPresenceDt: 25, disturbingPresenceDamage: '5d6'
+        disturbingPresenceDt: 25, disturbingPresenceDamage: '4d8'
       },
-
-      // ─── O Diabo ──────────────────────────────────────────────────────
       {
-        name: 'O Diabo',
-        type: 'Relíquia Médio',
-        size: 'Médio',
-        element: 'sangue',
-        secondaryElements: 'conhecimento',
-        vd: 400,
-        defense: 60,
-        hpMax: 1500, hpCurrent: 1500,
-        movement: 15,
-        agi: 5, str: 6, int: 5, pre: 6, vig: 6,
-        perceptionDice: 6, perceptionBonus: 25,
-        initiativeDice: 5, initiativeBonus: 35,
-        fortitudeDice: 6, fortitudeBonus: 35,
-        reflexDice: 5,  reflexBonus: 35,
-        willDice: 6,    willBonus: 35,
-        resistances: {
-          flatRD: 40,
-          byType: { 'sangue': 100 }
-        },
-        attacks: [
-          { name: 'Tridente do Ódio', range: 'Corpo a corpo', attackCount: 3, dice: 6, bonus: 45, damage: '4d12+40', damageType: 'sangue' },
-          { 
-            name: 'Comandar o Caos (Livre)', 
-            description: '1/rodada. Alvos em médio atacam uns aos outros (Vontade DT 48 evita).',
-            range: 'Médio', damage: '0', damageType: 'mental' 
-          },
-          { 
-            name: 'Explosão de Êxtase (Completa)', 
-            description: 'Curto: 20d10 Sangue + Enlouquecido (Fortitude DT 48 metade).',
-            range: 'Curto', damage: '20d10', damageType: 'sangue' 
-          },
-          { 
-            name: 'Pular na Garganta (Movimento)', 
-            description: 'Teleporta e ataca com Tridente (+2d12 dano).',
-            range: 'Médio', damage: '6d12+40', damageType: 'sangue' 
-          }
-        ],
-        abilities: [
-          { name: 'O Trato', description: 'Pode oferecer desejos em troca de sanidade/servidão.' },
-          { name: 'Onipresença (Livre)', description: 'Teletransporte ilimitado.' },
-          { name: 'Regeneração Sangrenta', description: 'Cura Acelerada 50. Só para com Morte Verdadeira.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
-        ],
-        disturbingPresenceDt: 48, disturbingPresenceDamage: '15d6'
-      },
-
-      // ─── Terror de Duas Cabeças ───────────────────────────────────────
-      {
-        name: 'Terror de Duas Cabeças',
+        name: 'Titã de Sangue',
         type: 'Criatura Enorme',
         size: 'Enorme',
         element: 'sangue',
         vd: 220,
         defense: 35,
-        hpMax: 450, hpCurrent: 450,
-        movement: 15,
+        hpMax: 550, hpCurrent: 550,
+        movement: 12,
         nexImmune: 70,
         vulnerabilities: 'morte',
-        agi: 3, str: 5, int: 0, pre: 3, vig: 4,
-        perceptionDice: 3, perceptionBonus: 15,
-        initiativeDice: 3, initiativeBonus: 10,
-        fortitudeDice: 4, fortitudeBonus: 20,
-        reflexDice: 3,  reflexBonus: 15,
-        willDice: 3,    willBonus: 10,
+        agi: 2, str: 5, int: 1, pre: 1, vig: 4,
+        perceptionDice: 1, perceptionBonus: 15,
+        initiativeDice: 2, initiativeBonus: 10,
+        fortitudeDice: 4, fortitudeBonus: 15,
+        reflexDice: 2, reflexBonus: 10,
+        willDice: 1, willBonus: 10,
         resistances: {
           flatRD: 0,
-          byType: { 'balístico': 10, 'impacto': 10, 'perfuração': 10, 'sangue': 20 }
+          byType: { 'balístico': 20, 'impacto': 20, 'perfuração': 20, 'sangue': 20 }
         },
         attacks: [
-          { name: 'Duas Mordidas', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 25, damage: '3d12+15', damageType: 'sangue' },
-          { name: 'Patada', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 25, damage: '2d10+15', damageType: 'impacto' },
-          { 
-            name: 'Garras de Sangue (Reação)', 
-            description: 'Se for atacado, realiza contra-ataque de patada.',
-            range: 'Corpo a corpo', dice: 5, bonus: 25, damage: '2d10+15', damageType: 'impacto' 
-          },
-          { 
-            name: 'Atropelar (Completa)', 
-            description: 'Move 15m. Tudo no caminho sofre 6d10 impacto + Caído (Reflexos DT 28 metade).',
-            range: '15m', damage: '6d10', damageType: 'impacto' 
-          }
+          { name: 'Mordida', range: 'Corpo a corpo', attackCount: 1, dice: 5, bonus: 25, damage: '4d12+10', damageType: 'perfuração' },
+          { name: 'Garras', range: 'Corpo a corpo', attackCount: 2, dice: 5, bonus: 25, damage: '4d8+10', damageType: 'corte' },
+          { name: 'Estraçalhar', description: 'Livre. Se acertar mordida, causa +4d12+10 perfuração e condição sangrando (Reflexos DT 30 reduz metade e evita sangramento).', range: 'Corpo a corpo', damage: '4d12+10', damageType: 'perfuração' }
         ],
         abilities: [
-          { name: 'Duas Cabeças', description: 'Faz 2 testes de percepção/iniciativa e escolhe o melhor. Imune a flanqueado.' },
-          { name: 'Fúria Incontrolável', description: 'Metade do HP: ganha +2d20 de ataque mas perde esquiva.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Sede de Sangue', description: 'Ataques dão +4d6 Sangue em machucados ou sangrando.' }
         ],
-        disturbingPresenceDt: 30, disturbingPresenceDamage: '6d8'
+        disturbingPresenceDt: 30, disturbingPresenceDamage: '7d6'
       },
-
-      // ─── Zumbi de Sangue ──────────────────────────────────────────────
       {
         name: 'Zumbi de Sangue',
         type: 'Criatura Médio',
         size: 'Médio',
         element: 'sangue',
         vd: 20,
-        defense: 12,
+        defense: 17,
         hpMax: 45, hpCurrent: 45,
-        movement: 6,
+        movement: 9,
         nexImmune: 25,
         vulnerabilities: 'morte',
-        agi: 1, str: 2, int: 0, pre: 1, vig: 2,
+        agi: 2, str: 2, int: 0, pre: 1, vig: 2,
         perceptionDice: 1, perceptionBonus: 10,
         initiativeDice: 2, initiativeBonus: 5,
         fortitudeDice: 2, fortitudeBonus: 5,
-        reflexDice: 2,  reflexBonus: 5,
-        willDice: 1,    willBonus: 5,
+        reflexDice: 2, reflexBonus: 5,
+        willDice: 1, willBonus: 5,
         resistances: {
           flatRD: 0,
           byType: { 'balístico': 5, 'impacto': 5, 'perfuração': 5, 'sangue': 10 }
         },
         attacks: [
-          { name: 'Mordida', range: 'Corpo a corpo', attackCount: 1, dice: 2, bonus: 5, damage: '1d8+5', damageType: 'sangue' },
-          { name: 'Garras', range: 'Corpo a corpo', attackCount: 1, dice: 2, bonus: 5, damage: '1d6+5', damageType: 'corte' },
-          { 
-            name: 'Abocanhar (Movimento)', 
-            description: 'Se mordeu, fica agarrado. Próxima mordida tem +d20.',
-            range: 'Corpo a corpo', damage: '0', damageType: 'agarrado' 
-          }
+          { name: 'Garras', range: 'Corpo a corpo', attackCount: 2, dice: 2, bonus: 5, damage: '1d6+5', damageType: 'corte' }
         ],
         abilities: [
-          { name: 'Lerdeza', description: 'Sempre age por último na rodada.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' }
         ],
-        disturbingPresenceDt: 15, disturbingPresenceDamage: '1d8'
+        disturbingPresenceDt: 15, disturbingPresenceDamage: '2d6'
       },
-
-      // ─── Zumbi de Sangue Bestial ──────────────────────────────────────
       {
         name: 'Zumbi de Sangue Bestial',
-        type: 'Criatura Médio',
-        size: 'Médio',
+        type: 'Criatura Grande',
+        size: 'Grande',
         element: 'sangue',
-        vd: 60,
-        defense: 18,
-        hpMax: 90, hpCurrent: 90,
+        vd: 100,
+        defense: 23,
+        hpMax: 200, hpCurrent: 200,
         movement: 12,
-        nexImmune: 35,
+        nexImmune: 45,
         vulnerabilities: 'morte',
-        agi: 3, str: 3, int: 0, pre: 1, vig: 2,
+        agi: 2, str: 3, int: 0, pre: 2, vig: 3,
         perceptionDice: 2, perceptionBonus: 10,
         initiativeDice: 2, initiativeBonus: 15,
         fortitudeDice: 3, fortitudeBonus: 10,
-        reflexDice: 2,  reflexBonus: 5,
-        willDice: 2,    willBonus: 5,
+        reflexDice: 2, reflexBonus: 5,
+        willDice: 2, willBonus: 5,
+        additionalSkills: [{ name: 'Furtividade', dice: 2, bonus: 13 }],
         resistances: {
           flatRD: 0,
           byType: { 'balístico': 5, 'impacto': 5, 'perfuração': 5, 'sangue': 10 }
         },
         attacks: [
-          { name: 'Mordida', range: 'Corpo a corpo', attackCount: 1, dice: 3, bonus: 10, damage: '2d8+5', damageType: 'sangue' },
-          { name: 'Garras x2', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 10, damage: '1d8+5', damageType: 'corte' }
+          { name: 'Mordida de Sangue', range: 'Corpo a corpo', attackCount: 1, dice: 3, bonus: 15, damage: '2d10+5', damageType: 'perfuração' },
+          { name: 'Garras de Sangue', range: 'Corpo a corpo', attackCount: 2, dice: 3, bonus: 15, damage: '2d6+5', damageType: 'corte' }
         ],
         abilities: [
-          { name: 'Bote (Completa)', description: 'Faz carga e realiza todos os ataques juntos.' },
-          { name: 'Percepção às cegas', description: 'Habilidade Passiva. A criatura percebe o ambiente usando outros sentidos que não a visão.' }
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Furtivo e Letal', description: '+d20 ataque em alvo desprevenido e +2 dados de dano base do mesmo tipo.' },
+          { name: 'Instinto Predatório', description: 'Sem penalidade Furtividade movendo normal.' }
         ],
-        disturbingPresenceDt: 20, disturbingPresenceDamage: '2d8'
+        disturbingPresenceDt: 20, disturbingPresenceDamage: '4d6'
+      },
+      {
+        name: 'O Diabo',
+        type: 'Criatura Médio',
+        size: 'Médio',
+        element: 'sangue',
+        secondaryElements: 'conhecimento',
+        vd: 400,
+        defense: 66,
+        hpMax: 1666, hpCurrent: 1666,
+        movement: 18,
+        vulnerabilities: 'morte',
+        immunities: 'Atordoado, paralisia, dano direto, e todos efeitos de Sangue',
+        agi: 6, str: 6, int: 6, pre: 6, vig: 6,
+        perceptionDice: 6, perceptionBonus: 25,
+        initiativeDice: 6, initiativeBonus: 35,
+        fortitudeDice: 6, fortitudeBonus: 35,
+        reflexDice: 6, reflexBonus: 35,
+        willDice: 6, willBonus: 35,
+        resistances: {
+          flatRD: 0,
+          byType: { 'balístico': 20, 'impacto': 20, 'perfuração': 20 }
+        },
+        attacks: [
+          { name: 'Arma Sangrenta', range: 'Corpo a corpo', attackCount: 2, dice: 6, bonus: 45, damage: '2d10+50', damageType: 'sangue' },
+          { name: 'Chifre do Diabo', range: 'Corpo a corpo', attackCount: 1, dice: 6, bonus: 45, damage: '2d8+50', damageType: 'sangue' },
+          { name: 'Arma Sangrenta (Distância)', range: 'Distância', attackCount: 2, dice: 6, bonus: 45, damage: '2d10+50', damageType: 'sangue' },
+          { name: 'Explodir em Sangue', description: 'Livre (2x/turno). Contato causa 10d6 Sangue extra.', range: 'Corpo a corpo', damage: '10d6', damageType: 'sangue' },
+          { name: 'Sangrar', description: 'Livre. Deixa chifre preso (vulnerabilidade Sangue). Tirar dá 8d8 Sangue.', range: 'Corpo a corpo', damage: '8d8', damageType: 'sangue' },
+          { name: 'Transportar pelo Sangue', description: 'Movimento. Surge em sangue/alvos morrendo.', range: 'Especial', damage: '0', damageType: 'nenhum' },
+          { name: 'Senhor do Sangue', description: 'Padrão. 1/cena, invoca Sangue de VD somado até 400.', range: 'Especial', damage: '0', damageType: 'nenhum' },
+          { name: 'Pacto', description: 'Padrão. Faz promessa por 10d6 mental; se alvo enlouquecer vira lacaio permanente.', range: 'Especial', damage: '10d6', damageType: 'mental' },
+          { name: 'Desejos de Sangue', description: 'Completa. Força alvos em médio a atacar quem o Diabo quiser (Vontade DT 45).', range: 'Médio', damage: '0', damageType: 'mental' }
+        ],
+        abilities: [
+          { name: 'Percepção às cegas', description: 'Habilidade Passiva.' },
+          { name: 'Ardiloso', description: 'Pode ocultar Presença Perturbadora.' },
+          { name: 'Decepar Máscara', description: 'Rompe Enigma da Máscara do Desespero.' },
+          { name: 'Potência de Sangue', description: 'Cura 50 PV turno. Testes FOR/VIG/PRE ganham +35. Resto +25.' },
+          { name: 'Enigma de Medo', description: 'Quando resolvido, perde imunidade a dano e resistência reduz para +25.' }
+        ],
+        disturbingPresenceDt: 45, disturbingPresenceDamage: '10d8'
       }
     ]
 
     for (const data of monsters) {
       await Monster.updateOrCreate({ name: data.name }, data)
     }
-    console.log('Blood monsters seeded CORRECTLY (Interactions fixed)!')
   }
 }

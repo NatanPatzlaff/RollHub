@@ -58,3 +58,4 @@ export default class CombatParticipant extends BaseModel {
     @belongsTo(() => RoomMonster)
     declare roomMonster: BelongsTo<typeof RoomMonster>
 }
+

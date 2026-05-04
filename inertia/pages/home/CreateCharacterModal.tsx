@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
 import { router } from '@inertiajs/react'
-import { X, ChevronRight, ChevronLeft, Check, LucideIcon } from 'lucide-react'
+import { X, ChevronRight, ChevronLeft, Check } from 'lucide-react'
+import { Modal, ModalContent, Slider } from '@heroui/react'
 import { getOriginIcon } from '../../utils/originIcons'
 import { getClassStyle } from '../../utils/classStyles'
 
@@ -94,6 +95,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
 
   // Quando nexIndex muda: auto-seleciona Mundano (NEX 0) ou limpa seleção
   const handleNexChange = (idx: number) => {
+    console.log('[NEX DEBUG] handleNexChange disparado com índice:', idx, 'NEX correspondente:', NEX_VALUES[idx] + '%')
     setNexIndex(idx)
     const isNex0 = NEX_VALUES[idx] === 0
     if (isNex0 && mundanoClass) {
@@ -178,25 +180,23 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
   const className = classes.find((c) => c.id === selectedClass)?.name ?? '-'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* backdrop */}
-      <m.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* container do modal — largura máxima e altura auto para caber sem comprimir */}
-      <m.div
-        initial={{ scale: 0.96, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.96, opacity: 0 }}
-        className="relative w-full max-w-3xl bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ height: 'min(700px, 85vh)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      isOpen={true}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+      size="3xl"
+      placement="center"
+      scrollBehavior="inside"
+      hideCloseButton
+      classNames={{
+        base: 'bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden',
+        wrapper: 'z-[100]',
+        backdrop: 'bg-black/70 backdrop-blur-sm',
+      }}
+      style={{ height: 'min(700px, 85vh)' }}
+    >
+      <ModalContent className="h-full flex flex-col m-0">
         {/* ── CABEÇALHO ──────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800 bg-zinc-900/60 shrink-0">
           <div>
@@ -286,15 +286,19 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
                   </m.div>
 
                   <div className="w-full px-1">
-                    <input
-                      type="range"
-                      min={0}
-                      max={NEX_VALUES.length - 1}
+                    <Slider
+                      step={1}
+                      minValue={0}
+                      maxValue={NEX_VALUES.length - 1}
                       value={nexIndex}
-                      onChange={(e) => handleNexChange(parseInt(e.target.value))}
-                      className={`w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer focus:outline-none ${
-                        isMundano ? 'accent-amber-400' : 'accent-indigo-500'
-                      }`}
+                      onChange={(v) => handleNexChange(v as number)}
+                      color={isMundano ? 'warning' : 'primary'}
+                      className="max-w-md"
+                      classNames={{
+                        track: 'bg-zinc-800 h-2',
+                        filler: isMundano ? 'bg-amber-400' : 'bg-indigo-500',
+                        thumb: 'bg-white shadow-lg after:bg-zinc-100',
+                      }}
                     />
                     <div className="flex justify-between text-xs text-zinc-500 mt-2">
                       <span>0% (Mundano)</span>
@@ -673,7 +677,7 @@ export default function CreateCharacterModal({ classes, origins, onClose, editDa
             )}
           </div>
         </div>
-      </m.div>
-    </div>
+      </ModalContent>
+    </Modal>
   )
 }

@@ -58,8 +58,13 @@ export interface RitualBuffEffect {
   immuneSurprised?: boolean
   /** Bônus de Reflexos */
   reflexBonus?: number
+  skillBonus?: number
   elementChoice?: boolean
   tempModification?: boolean
+  /** Número de cópias/cargas (ex: Embaralhar) */
+  copies?: number
+  /** Bônus de defesa por cópia ativa */
+  defensePerCopy?: number
 }
 
 export interface RitualBuffEntry {
@@ -106,16 +111,22 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
   'embaralhar': {
     base: {
       defenseBonus: 6,
+      copies: 3,
+      defensePerCopy: 2,
       selfOnly: true,
       label: 'Embaralhar',
     },
     discente: {
       defenseBonus: 10,
+      copies: 5,
+      defensePerCopy: 2,
       selfOnly: true,
       label: 'Embaralhar (D)',
     },
     verdadeiro: {
       defenseBonus: 16,
+      copies: 8,
+      defensePerCopy: 2,
       selfOnly: true,
       label: 'Embaralhar (V)',
     },
@@ -245,8 +256,25 @@ export const RITUAL_BUFFS: Record<string, RitualBuffEntry> = {
   },
 
   'coincidência forçada': {
-    // +2/+5 em perícias — não altera stats diretos na ficha
-    // Não incluído aqui
+    base: {
+      label: 'Coincidência Forçada',
+      skillBonus: 2,
+      buffDuration: 'scene',
+      selfOnly: true,
+    },
+    discente: {
+      label: 'Coincidência Forçada (D)',
+      skillBonus: 5,
+      buffDuration: 'scene',
+      selfOnly: false,
+    },
+    verdadeiro: {
+      label: 'Coincidência Forçada (V)',
+      skillBonus: 5,
+      buffDuration: 'scene',
+      selfOnly: false,
+      // Verdadeiro afeta todos os aliados em alcance curto, mas aqui tratamos como alvo individual selecionável
+    },
   },
 
   'proteção contra rituais': {

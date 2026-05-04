@@ -2951,7 +2951,74 @@ export default class CharactersController {
     if (toInsert.length > 0) {
       await CharacterActiveBuff.createMany(toInsert)
     }
+
+    // Broadcast para o mestre ver a mudança em tempo real
+    const character = await Character.query()
+      .where('id', params.id)
+      .preload('campaigns')
+      .first()
+
+    if (character && character.campaigns.length > 0) {
+      const campaignId = character.campaigns[0].id
+      transmit.broadcast(`campaign/${campaignId}/events`, {
+        type: 'BUFFS_UPDATED',
+        characterId: params.id,
+      })
+    }
     
     return response.ok({ success: true })
+  }
+
+  async consumeBuffCopy({ params, request, response }: HttpContext) {
+    const { buffId } = request.only(['buffId'])
+    const characterId = params.id
+
+    const activeBuff = await CharacterActiveBuff.query()
+      .where('characterId', characterId)
+      .where('buffId', buffId)
+      .first()
+
+    if (!activeBuff) {
+      return response.notFound({ error: 'Buff não encontrado' })
+    }
+
+    const data = activeBuff.data as any
+    if (!data.remainingCopies || data.remainingCopies <= 0) {
+      return response.badRequest({ error: 'Não há cópias para consumir' })
+    }
+
+    data.remainingCopies -= 1
+    const defensePerCopy = data.defensePerCopy || 0
+    data.defenseBonus = Math.max(0, (data.defenseBonus || 0) - defensePerCopy)
+
+    if (data.remainingCopies <= 0) {
+      await activeBuff.delete()
+    } else {
+      activeBuff.data = data
+      await activeBuff.save()
+    }
+
+    // Buscar a campanha vinculada para o broadcast
+    const character = await Character.query()
+      .where('id', characterId)
+      .preload('campaigns')
+      .first()
+
+    if (character && character.campaigns.length > 0) {
+      const campaignId = character.campaigns[0].id
+      transmit.broadcast(`campaign/${campaignId}/events`, {
+        type: 'BUFF_COPY_CONSUMED',
+        characterId,
+        buffId,
+        remainingCopies: data.remainingCopies,
+        newDefenseBonus: data.defenseBonus
+      })
+    }
+
+    return response.ok({ 
+      success: true, 
+      remainingCopies: data.remainingCopies,
+      newDefenseBonus: data.defenseBonus 
+    })
   }
 }

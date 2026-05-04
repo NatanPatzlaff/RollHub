@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
     Modal,
     ModalContent,
@@ -91,6 +92,7 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
 }) => {
     const [modTypeFilter, setModTypeFilter] = useState<'Melhoria' | 'Maldição'>(isTempRitual ? 'Melhoria' : 'Melhoria')
     const [modElementFilter, setModElementFilter] = useState<string>('Todos')
+    const [expandedModId, setExpandedModId] = useState<number | null>(null)
 
     useEffect(() => {
         if (isTempRitual) {
@@ -260,31 +262,26 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                                         <div className={`w-1.5 h-1.5 rounded-full ${elementSolidBgs[elemento] || elementSolidBgs.Varia} animate-pulse`} />
                                                         {elemento}
                                                     </h4>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    <div className="columns-1 sm:columns-2 gap-3 space-y-3">
                                                         {mods.map((mod) => {
                                                             const isActive = item.modifications?.some(
                                                                 (m: any) => m.modificationId === mod.id
                                                             )
                                                             const validation = !isActive ? canApplyModification(item, mod.category) : { allowed: true }
+                                                            const isExpanded = expandedModId === mod.id
                                                             const isBlocked = !isActive && !validation.allowed
 
                                                             return (
                                                                 <Card
                                                                     key={mod.id}
-                                                                    isPressable={(!isBlocked || isTempRitual) && !isUpdating}
-                                                                    onPress={(isBlocked && !isTempRitual) || isUpdating ? undefined : () => {
-                                                                        if (isTempRitual && onTempModificationChosen) {
-                                                                            onTempModificationChosen(mod)
-                                                                        } else {
-                                                                            onToggle(item.id, mod.id, isActive ? 'remove' : 'add')
-                                                                        }
-                                                                    }}
-                                                                    className={`border transition-all ${(isBlocked && !isTempRitual)
-                                                                        ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                                                    isPressable
+                                                                    onPress={() => setExpandedModId(isExpanded ? null : mod.id)}
+                                                                    className={`break-inside-avoid mb-3 border transition-all ${(isBlocked && !isTempRitual)
+                                                                        ? 'opacity-40 bg-zinc-950/30 border-zinc-800'
                                                                         : isActive
                                                                             ? `${elementBgs[elemento] || elementBgs.Varia} border-${(elementColors[elemento] || 'text-zinc-400').replace('text-', '')}/50`
                                                                             : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                                                        }`}
+                                                                        } ${isExpanded ? 'ring-1 ring-zinc-700' : ''}`}
                                                                 >
                                                                     <CardBody className="p-3">
                                                                         <div className="flex justify-between items-start mb-1">
@@ -295,15 +292,53 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                                                                 +{mod.category} CAT
                                                                             </Chip>
                                                                         </div>
-                                                                        <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2">
+                                                                        
+                                                                        <p className={`text-[10px] text-zinc-500 leading-relaxed ${isExpanded ? '' : 'line-clamp-1'}`}>
                                                                             {mod.description}
                                                                         </p>
-                                                                        <div className="mt-2 flex items-center justify-between">
-                                                                            <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'}`}>
-                                                                                {isBlocked ? validation.reason : 'MALDIÇÃO'}
-                                                                            </span>
-                                                                            {isActive && <Check size={12} className={elementColors[elemento]} />}
-                                                                        </div>
+
+                                                                        <AnimatePresence>
+                                                                            {isExpanded && (
+                                                                                <motion.div
+                                                                                    initial={{ height: 0, opacity: 0 }}
+                                                                                    animate={{ height: 'auto', opacity: 1 }}
+                                                                                    exit={{ height: 0, opacity: 0 }}
+                                                                                    className="overflow-hidden"
+                                                                                >
+                                                                                    <div className="pt-3 pb-1">
+                                                                                        <Button
+                                                                                            size="sm"
+                                                                                            fullWidth
+                                                                                            isLoading={isUpdating}
+                                                                                            isDisabled={(isBlocked && !isTempRitual)}
+                                                                                            className={`font-black text-[10px] uppercase tracking-wider ${
+                                                                                                isActive 
+                                                                                                ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                                                                                                : `${elementSolidBgs[elemento] || elementSolidBgs.Varia} text-white`
+                                                                                            }`}
+                                                                                            onPress={(e) => {
+                                                                                                if (isTempRitual && onTempModificationChosen) {
+                                                                                                    onTempModificationChosen(mod)
+                                                                                                } else {
+                                                                                                    onToggle(item.id, mod.id, isActive ? 'remove' : 'add')
+                                                                                                }
+                                                                                            }}
+                                                                                        >
+                                                                                            {isActive ? 'Remover Maldição' : (isBlocked ? validation.reason : 'Aplicar Maldição')}
+                                                                                        </Button>
+                                                                                    </div>
+                                                                                </motion.div>
+                                                                            )}
+                                                                        </AnimatePresence>
+
+                                                                        {!isExpanded && (
+                                                                            <div className="mt-2 flex items-center justify-between">
+                                                                                <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'}`}>
+                                                                                    {isBlocked ? validation.reason : 'MALDIÇÃO'}
+                                                                                </span>
+                                                                                {isActive && <Check size={12} className={elementColors[elemento]} />}
+                                                                            </div>
+                                                                        )}
                                                                     </CardBody>
                                                                 </Card>
                                                             )
@@ -313,7 +348,7 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                             )
                                         })
                                     ) : (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="columns-1 sm:columns-2 gap-3 space-y-3">
                                             {catalog
                                                 .filter((m) => {
                                                     if (m.type === 'Maldição') return false
@@ -334,26 +369,21 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                                         (m: any) => m.modificationId === mod.id
                                                     )
                                                     const validation = !isActive ? canApplyModification(item, mod.category) : { allowed: true }
+                                                    const isExpanded = expandedModId === mod.id
                                                     const isBlocked = !isActive && !validation.allowed
                                                     const highlightColor = itemType === 'Weapon' ? 'blue' : itemType === 'Protection' ? 'sky' : 'orange'
 
                                                     return (
                                                         <Card
                                                             key={mod.id}
-                                                            isPressable={(!isBlocked || isTempRitual) && !isUpdating}
-                                                            onPress={(isBlocked && !isTempRitual) || isUpdating ? undefined : () => {
-                                                                if (isTempRitual && onTempModificationChosen) {
-                                                                    onTempModificationChosen(mod)
-                                                                } else {
-                                                                    onToggle(item.id, mod.id, isActive ? 'remove' : 'add')
-                                                                }
-                                                            }}
-                                                            className={`border transition-all ${(isBlocked && !isTempRitual)
-                                                                ? 'opacity-40 cursor-not-allowed bg-zinc-950/30 border-zinc-800'
+                                                            isPressable
+                                                            onPress={() => setExpandedModId(isExpanded ? null : mod.id)}
+                                                            className={`break-inside-avoid mb-3 border transition-all ${(isBlocked && !isTempRitual)
+                                                                ? 'opacity-40 bg-zinc-950/30 border-zinc-800'
                                                                 : isActive
                                                                     ? `bg-${highlightColor}-500/10 border-${highlightColor}-500/50`
                                                                     : 'bg-zinc-950/50 border-zinc-800 hover:border-zinc-700'
-                                                                }`}
+                                                                } ${isExpanded ? 'ring-1 ring-zinc-700' : ''}`}
                                                         >
                                                             <CardBody className="p-3">
                                                                 <div className="flex justify-between items-start mb-1">
@@ -364,15 +394,53 @@ export const ModificationModal: React.FC<ModificationModalProps> = ({
                                                                         +{mod.category} CAT
                                                                     </Chip>
                                                                 </div>
-                                                                <p className="text-[10px] text-zinc-500 leading-relaxed line-clamp-2">
+                                                                
+                                                                <p className={`text-[10px] text-zinc-500 leading-relaxed ${isExpanded ? '' : 'line-clamp-1'}`}>
                                                                     {mod.description}
                                                                 </p>
-                                                                <div className="mt-2 flex items-center justify-between">
-                                                                    <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'}`}>
-                                                                        {isBlocked ? validation.reason : 'MELHORIA'}
-                                                                    </span>
-                                                                    {isActive && <Check size={12} className={`text-${highlightColor}-400`} />}
-                                                                </div>
+
+                                                                <AnimatePresence>
+                                                                    {isExpanded && (
+                                                                        <motion.div
+                                                                            initial={{ height: 0, opacity: 0 }}
+                                                                            animate={{ height: 'auto', opacity: 1 }}
+                                                                            exit={{ height: 0, opacity: 0 }}
+                                                                            className="overflow-hidden"
+                                                                        >
+                                                                            <div className="pt-3 pb-1">
+                                                                                <Button
+                                                                                    size="sm"
+                                                                                    fullWidth
+                                                                                    isLoading={isUpdating}
+                                                                                    isDisabled={(isBlocked && !isTempRitual)}
+                                                                                    className={`font-black text-[10px] uppercase tracking-wider ${
+                                                                                        isActive 
+                                                                                        ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                                                                                        : `bg-${highlightColor}-600 text-white border border-${highlightColor}-500/50`
+                                                                                    }`}
+                                                                                    onPress={() => {
+                                                                                        if (isTempRitual && onTempModificationChosen) {
+                                                                                            onTempModificationChosen(mod)
+                                                                                        } else {
+                                                                                            onToggle(item.id, mod.id, isActive ? 'remove' : 'add')
+                                                                                        }
+                                                                                    }}
+                                                                                >
+                                                                                    {isActive ? 'Remover Melhoria' : (isBlocked ? validation.reason : 'Aplicar Melhoria')}
+                                                                                </Button>
+                                                                            </div>
+                                                                        </motion.div>
+                                                                    )}
+                                                                </AnimatePresence>
+
+                                                                {!isExpanded && (
+                                                                    <div className="mt-2 flex items-center justify-between">
+                                                                        <span className={`text-[9px] uppercase font-bold ${isBlocked ? 'text-red-600' : 'text-zinc-600'}`}>
+                                                                            {isBlocked ? validation.reason : 'MELHORIA'}
+                                                                        </span>
+                                                                        {isActive && <Check size={12} className={`text-${highlightColor}-400`} />}
+                                                                    </div>
+                                                                )}
                                                             </CardBody>
                                                         </Card>
                                                     )
