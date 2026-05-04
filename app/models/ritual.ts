@@ -1,7 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, hasMany } from '@adonisjs/lucid/orm'
-import type { HasMany } from '@adonisjs/lucid/types/relations'
-import RitualAction from './ritual_action.js'
+import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class Ritual extends BaseModel {
   @column({ isPrimary: true })
@@ -54,7 +52,4 @@ export default class Ritual extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
-
-  @hasMany(() => RitualAction)
-  declare actions: HasMany<typeof RitualAction>
 }

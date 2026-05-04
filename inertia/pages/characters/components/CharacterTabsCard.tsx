@@ -996,6 +996,7 @@ export default function CharacterTabsCard({
             {characterRituals && characterRituals.length > 0 ? (
               characterRituals.map((charRitual: any) => {
                 const ritual = charRitual.ritual
+                console.log('Dados do Ritual:', ritual)
                 if (!ritual) return null
                 const elementColorMap: Record<string, string> = {
                   CONHECIMENTO: 'text-amber-400',

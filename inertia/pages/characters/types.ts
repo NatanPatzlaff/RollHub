@@ -47,14 +47,6 @@ export interface ParanormalPower {
     category: number
 }
 
-export interface ActionVariant {
-    id: number
-    label: string
-    peCost: number
-    dt: number | null
-    actionPayload: any
-}
-
 export interface Ritual {
     id: number
     name: string
@@ -74,7 +66,6 @@ export interface Ritual {
     normalDamage?: string | null
     discenteDamage?: string | null
     verdadeiroDamage?: string | null
-    actions?: ActionVariant[]
 }
 
 export interface CatalogWeapon {

@@ -213,9 +213,7 @@ export default class CharactersController {
         .preload('classAbilities', (query) => query.preload('classAbility'))
         .preload('paranormalPowers', (query) => query.preload('paranormalPower'))
         .preload('rituals', (query) =>
-          query.whereNotNull('ritual_id').preload('ritual', (ritualQuery) => {
-            ritualQuery.preload('actions')
-          })
+          query.whereNotNull('ritual_id').preload('ritual')
         )
         .preload('campaigns')
         .preload('homebrewItems')
@@ -292,7 +290,7 @@ export default class CharactersController {
       const paranormalPowers = await ParanormalPower.all()
 
       // Get all rituals
-      const catalogRituals = await Ritual.query().preload('actions')
+      const catalogRituals = await Ritual.all()
 
       // Calculate derived stats
       const attributes = character.attributes
@@ -2429,7 +2427,7 @@ export default class CharactersController {
       const allowedTypes = typeof modification.weapon_type_restriction === 'string'
         ? JSON.parse(modification.weapon_type_restriction)
         : modification.weapon_type_restriction
-      
+
       if (Array.isArray(allowedTypes) && allowedTypes.length > 0) {
         const ammoName = ammunitionData.name || ''
         const isAllowed = allowedTypes.some((type: string) => ammoName.includes(type))
@@ -2789,7 +2787,7 @@ export default class CharactersController {
     }
 
     const rolls = await query.orderBy('rolled_at', 'desc').limit(100)
-    
+
     // Mapear para garantir que dice_values (JSON) seja retornado como diceValues (Array)
     const formattedRolls = rolls.map((r) => ({
       ...r,
@@ -2927,12 +2925,12 @@ export default class CharactersController {
     const { ritualBuffs, abilityBuffs } = request.only([
       'ritualBuffs', 'abilityBuffs'
     ])
-    
+
     // Remove buffs antigos e insere os novos
     await CharacterActiveBuff.query()
       .where('characterId', params.id)
       .delete()
-    
+
     const toInsert = [
       ...(ritualBuffs || []).map((b: any) => ({
         characterId: params.id,
@@ -2949,7 +2947,7 @@ export default class CharactersController {
         data: b,
       })),
     ]
-    
+
     if (toInsert.length > 0) {
       await CharacterActiveBuff.createMany(toInsert)
     }
@@ -2967,7 +2965,7 @@ export default class CharactersController {
         characterId: params.id,
       })
     }
-    
+
     return response.ok({ success: true })
   }
 
@@ -3017,10 +3015,10 @@ export default class CharactersController {
       })
     }
 
-    return response.ok({ 
-      success: true, 
+    return response.ok({
+      success: true,
       remainingCopies: data.remainingCopies,
-      newDefenseBonus: data.defenseBonus 
+      newDefenseBonus: data.defenseBonus
     })
   }
 }
