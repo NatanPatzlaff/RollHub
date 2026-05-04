@@ -213,7 +213,9 @@ export default class CharactersController {
         .preload('classAbilities', (query) => query.preload('classAbility'))
         .preload('paranormalPowers', (query) => query.preload('paranormalPower'))
         .preload('rituals', (query) =>
-          query.whereNotNull('ritual_id').preload('ritual')
+          query.whereNotNull('ritual_id').preload('ritual', (ritualQuery) => {
+            ritualQuery.preload('actions')
+          })
         )
         .preload('campaigns')
         .preload('homebrewItems')
@@ -290,7 +292,7 @@ export default class CharactersController {
       const paranormalPowers = await ParanormalPower.all()
 
       // Get all rituals
-      const catalogRituals = await Ritual.all()
+      const catalogRituals = await Ritual.query().preload('actions')
 
       // Calculate derived stats
       const attributes = character.attributes
