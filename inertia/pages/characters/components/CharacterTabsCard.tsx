@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { RollEntry, ActiveAbilityBuff } from './AttributesDiceTrayCard'
 import BaseModal from './BaseModal'
+import RitualDescriptionFormatter from '../../../components/RitualDescriptionFormatter'
 import CreateHomebrewItemModal from './CreateHomebrewItemModal'
 
 const displayDamage = (w: any): string => {
@@ -52,6 +53,23 @@ const RANK_LIMITS: Record<string, Record<number, number>> = {
   'Agente de Elite': { 1: 3, 2: 3, 3: 3, 4: 2 },
 }
 const CAT_LABELS: Record<number, string> = { 0: '0', 1: 'I', 2: 'II', 3: 'III', 4: 'IV' }
+
+const SPECIAL_RITUAL_ACTIONS: Record<string, {
+  label: string
+  type: 'base' | 'discente' | 'verdadeiro'
+  extraPe?: number
+  actionName?: string
+  damage?: string
+}[]> = {
+  'Chamas do Caos': [
+    { label: 'Chamejar', type: 'base', actionName: 'Chamejar' },
+    { label: 'Esquentar', type: 'base', actionName: 'Esquentar' },
+    { label: 'Extinguir', type: 'base', actionName: 'Extinguir' },
+    { label: 'Modelar', type: 'base', actionName: 'Modelar' },
+    { label: 'Labareda', type: 'discente', actionName: 'Labareda', damage: '4d6' },
+    { label: 'Labareda', type: 'verdadeiro', actionName: 'Labareda', damage: '8d6' },
+  ]
+}
 
 /** Definição das tabs com ícone Lucide */
 const TABS = [
@@ -413,7 +431,7 @@ export default function CharacterTabsCard({
     return result + mod
   }
 
-  function handleRollRitual(charRitual: any, version: 'base' | 'discente' | 'verdadeiro') {
+  function handleRollRitual(charRitual: any, version: 'base' | 'discente' | 'verdadeiro', subAction?: string) {
     const ritual = charRitual.ritual
     const peInfo = calcPeAjustado(ritual)
     const versionText =
@@ -429,22 +447,33 @@ export default function CharacterTabsCard({
     const trainingBonus =
       ocultismoDegree >= 15 ? 15 : ocultismoDegree >= 10 ? 10 : ocultismoDegree >= 5 ? 5 : 0
     const diceCount = Math.max(1, intellect)
-    const damageDice: string | undefined =
-      version === 'discente'
-        ? ritual.discenteDamage ||
-        parseDamageDice(versionText) ||
-        parseDamageDice(ritual.description || '') ||
-        undefined
-        : version === 'verdadeiro'
-          ? ritual.verdadeiroDamage ||
+
+    let damageDice: string | undefined = undefined
+    
+    // Prioridade para dano de ação especial
+    if (subAction && SPECIAL_RITUAL_ACTIONS[ritual.name]) {
+      const action = SPECIAL_RITUAL_ACTIONS[ritual.name].find(a => a.actionName === subAction && a.type === version)
+      if (action?.damage) damageDice = action.damage
+    }
+
+    if (!damageDice) {
+      damageDice =
+        version === 'discente'
+          ? ritual.discenteDamage ||
           parseDamageDice(versionText) ||
           parseDamageDice(ritual.description || '') ||
           undefined
-          : ritual.normalDamage || parseDamageDice(ritual.description || '') || undefined
+          : version === 'verdadeiro'
+            ? ritual.verdadeiroDamage ||
+            parseDamageDice(versionText) ||
+            parseDamageDice(ritual.description || '') ||
+            undefined
+            : ritual.normalDamage || parseDamageDice(ritual.description || '') || undefined
+    }
 
     // Delegate rolling + 3D animation to the dice bandeja; apply game effects in the callback
     onRollRitual({
-      name: ritual.name,
+      name: subAction ? `${ritual.name}: ${subAction}` : ritual.name,
       version,
       diceCount,
       trainingBonus,
@@ -1092,71 +1121,106 @@ export default function CharacterTabsCard({
 
                     {/* Botões de rolagem de ritual */}
                     <div className="flex flex-wrap gap-1.5">
-                      {pe >= calcPeAjustado(ritual).ajustado &&
-                        calcPeAjustado(ritual).ajustado <= Math.floor(nex / 5) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRollRitual(charRitual, 'base')
-                            }}
-                            className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
-                            title={`Rolar ${ritual.name} — base`}
-                          >
-                            <Dices size={11} />
-                            Base · {calcPeAjustado(ritual).ajustado} PE · DT{' '}
-                            {20 + calcPeAjustado(ritual).ajustado}
-                          </button>
-                        )}
-                      {ritual.discente &&
-                        canUseRitualUpgrade(
-                          ritual.discente,
-                          ritual.element ?? '',
-                          circuloMaximo,
-                          characterAffinity
-                        ) &&
-                        pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) &&
-                        calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) <=
-                        Math.floor(nex / 5) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRollRitual(charRitual, 'discente')
-                            }}
-                            className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
-                            title={`Rolar ${ritual.name} — discente`}
-                          >
-                            <Dices size={11} />
-                            Discente{' '}
-                            {calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente)} PE ·
-                            DT{' '}
-                            {20 + calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente)}
-                          </button>
-                        )}
-                      {ritual.verdadeiro &&
-                        canUseRitualUpgrade(
-                          ritual.verdadeiro,
-                          ritual.element ?? '',
-                          circuloMaximo,
-                          characterAffinity
-                        ) &&
-                        pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) &&
-                        calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) <=
-                        Math.floor(nex / 5) && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleRollRitual(charRitual, 'verdadeiro')
-                            }}
-                            className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 border border-violet-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
-                            title={`Rolar ${ritual.name} — verdadeiro`}
-                          >
-                            <Dices size={11} />
-                            Verdadeiro{' '}
-                            {calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro)} PE ·
-                            DT{' '}
-                            {20 + calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro)}
-                          </button>
-                        )}
+                      {ritual.actions && ritual.actions.length > 0 ? (
+                        ritual.actions.map((action) => {
+                          const totalPe = action.peCost
+                          const isAllowed = pe >= totalPe && totalPe <= Math.floor(nex / 5)
+                          const labelLower = action.label.toLowerCase()
+                          
+                          const colorClass = labelLower.includes('base') ? 'bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border-purple-500/20' :
+                                             labelLower.includes('discente') ? 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border-blue-500/20' :
+                                             labelLower.includes('verdadeiro') ? 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/20' :
+                                             'bg-zinc-500/10 hover:bg-zinc-500/20 text-zinc-400 border-zinc-500/20'
+
+                          const version: 'base' | 'discente' | 'verdadeiro' = 
+                            labelLower.includes('discente') ? 'discente' :
+                            labelLower.includes('verdadeiro') ? 'verdadeiro' : 'base'
+
+                          return (
+                            <button
+                              key={action.id}
+                              disabled={!isAllowed}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRollRitual(charRitual, version, action.label)
+                              }}
+                              className={`flex items-center gap-1 px-2 py-1 border rounded text-[10px] font-bold uppercase tracking-wide transition-colors ${isAllowed ? colorClass : 'opacity-40 grayscale cursor-not-allowed'}`}
+                              title={`Rolar ${ritual.name}: ${action.label}`}
+                            >
+                              <Dices size={11} />
+                              {action.label} · {totalPe} PE {action.dt ? `· DT ${action.dt}` : ''}
+                            </button>
+                          )
+                        })
+                      ) : (
+                        <>
+                          {pe >= calcPeAjustado(ritual).ajustado &&
+                            calcPeAjustado(ritual).ajustado <= Math.floor(nex / 5) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleRollRitual(charRitual, 'base')
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                                title={`Rolar ${ritual.name} — base`}
+                              >
+                                <Dices size={11} />
+                                Base · {calcPeAjustado(ritual).ajustado} PE · DT{' '}
+                                {20 + calcPeAjustado(ritual).ajustado}
+                              </button>
+                            )}
+                          {ritual.discente &&
+                            canUseRitualUpgrade(
+                              ritual.discente,
+                              ritual.element ?? '',
+                              circuloMaximo,
+                              characterAffinity
+                            ) &&
+                            pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) &&
+                            calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente) <=
+                            Math.floor(nex / 5) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleRollRitual(charRitual, 'discente')
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                                title={`Rolar ${ritual.name} — discente`}
+                              >
+                                <Dices size={11} />
+                                Discente{' '}
+                                {calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente)} PE ·
+                                DT{' '}
+                                {20 + calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.discente)}
+                              </button>
+                            )}
+                          {ritual.verdadeiro &&
+                            canUseRitualUpgrade(
+                              ritual.verdadeiro,
+                              ritual.element ?? '',
+                              circuloMaximo,
+                              characterAffinity
+                            ) &&
+                            pe >= calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) &&
+                            calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro) <=
+                            Math.floor(nex / 5) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleRollRitual(charRitual, 'verdadeiro')
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/20 rounded text-[10px] font-bold uppercase tracking-wide transition-colors"
+                                title={`Rolar ${ritual.name} — verdadeiro`}
+                              >
+                                <Dices size={11} />
+                                Verdadeiro{' '}
+                                {calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro)} PE ·
+                                DT{' '}
+                                {20 + calcPeAjustado(ritual).ajustado + parseExtraPe(ritual.verdadeiro)}
+                              </button>
+                            )}
+                        </>
+                      )}
                     </div>
 
                     {isExpanded && (
@@ -1180,9 +1244,10 @@ export default function CharacterTabsCard({
                         </div>
 
                         {ritual.description && (
-                          <p className="text-sm text-zinc-300 italic leading-relaxed">
-                            {ritual.description}
-                          </p>
+                          <RitualDescriptionFormatter
+                            description={ritual.description}
+                            className="text-zinc-300 italic"
+                          />
                         )}
 
                         {(ritual.discente || ritual.verdadeiro) && (
@@ -1195,10 +1260,9 @@ export default function CharacterTabsCard({
                                 characterAffinity
                               ) && (
                                 <div>
-                                  <span className="text-blue-400 font-bold uppercase mr-1">
-                                    Discente:
-                                  </span>
-                                  {ritual.discente}
+                                  <RitualDescriptionFormatter
+                                    description={`Discente: ${ritual.discente}`}
+                                  />
                                 </div>
                               )}
                             {ritual.verdadeiro &&
@@ -1209,10 +1273,9 @@ export default function CharacterTabsCard({
                                 characterAffinity
                               ) && (
                                 <div>
-                                  <span className="text-purple-400 font-bold uppercase mr-1">
-                                    Verdadeiro:
-                                  </span>
-                                  {ritual.verdadeiro}
+                                  <RitualDescriptionFormatter
+                                    description={`Verdadeiro: ${ritual.verdadeiro}`}
+                                  />
                                 </div>
                               )}
                           </div>

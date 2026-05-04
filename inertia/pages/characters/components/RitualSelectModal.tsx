@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { m, AnimatePresence } from 'framer-motion'
 import { Filter, Sparkles, CircleDot, Check } from 'lucide-react'
 import BaseModal from './BaseModal'
+import RitualDescriptionFormatter from '../../../components/RitualDescriptionFormatter'
 
 /** Representação de um ritual do catálogo */
 export interface CatalogRitual {
@@ -308,9 +309,10 @@ export default function RitualSelectModal({
                       transition={{ duration: 0.2 }}
                       className="overflow-hidden"
                     >
-                      <p className="mb-4 text-sm leading-relaxed text-zinc-300">
-                        {ritual.description}
-                      </p>
+                      <RitualDescriptionFormatter 
+                        description={ritual.description} 
+                        className="mb-4"
+                      />
                     </m.div>
                   )}
                 </AnimatePresence>
