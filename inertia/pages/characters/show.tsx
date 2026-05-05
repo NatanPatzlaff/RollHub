@@ -58,6 +58,8 @@ import CharacterTabsCard from './components/CharacterTabsCard'
 import CreateCharacterModal from '../home/CreateCharacterModal'
 import RitualBuffModal from './components/RitualBuffModal'
 import { ModificationModal } from './components/ModificationModal'
+import DotTargetModal from './components/DotTargetModal'
+import DotRollModal from './components/DotRollModal'
 import RollHistorySidebar from './components/RollHistorySidebar'
 import {
   getRitualBuff,
@@ -483,6 +485,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [pe, setPe] = useState(calculatedStats?.currentPe || 3)
   const [san, setSan] = useState(calculatedStats?.currentSanity || 12)
   const [permSanLoss, setPermSanLoss] = useState(calculatedStats?.permanentSanityLoss || 0)
+  const [roomItems, setRoomItems] = useState<any[]>([])
 
   const [pendingReaction, setPendingReaction] = useState<any>(null)
   const pendingReactionRef = useRef<any>(null)
@@ -507,6 +510,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
   useEffect(() => {
     console.log('[SSE] useEffect rodou, campaignId:', campaignId, 'character.id:', character.id)
     if (!campaignId) return
+    fetchRoomItems()
 
     const transmitClient = new Transmit({ baseUrl: window.location.origin })
     const subscription = transmitClient.subscription(`character/${character.id}/reactions`)
@@ -539,16 +543,57 @@ export default function CharacterShow(initialProps: CharacterProps) {
         setPendingReaction(data)
         pendingReactionRef.current = data
       }
+      if (data.type === 'COMBAT_STARTED') {
+        setActiveCombatId(data.combatId)
+      }
+      if (data.type === 'TURN_START') {
+        if (data.combatId) setActiveCombatId(data.combatId)
+        if (data.participantId) {
+          // opcional: carregar participantes se ainda não tivermos activeCombatId
+        }
+      }
       if (data.type === 'SCENE_END') {
         resetSceneUses()
         clearAllRitualBuffs()
-        console.log('[SCENE] Fim de cena aplicado — buffs limpos')
+        setActiveCombatId(null)
+        setActiveCombatActions([])
+        console.log('[SCENE] Fim de cena aplicado — buffs e ações de combate limpos')
+      }
+      if (data.type === 'ROOM_ITEMS_UPDATED') {
+        fetchRoomItems()
+        router.reload({ preserveScroll: true, preserveState: true })
       }
       if (data.type === 'TURN_START') {
         const isMe = data.characterId === character.id
         setIsMyTurn(isMe)
         // Auto-dismiss após 8 segundos
         if (isMe) setTimeout(() => setIsMyTurn(false), 8000)
+
+        // Lógica de DoT (Esquentar) - Modal Visual com dddice
+        if (isMe && (data.combatId || activeCombatId)) {
+          const cId = data.combatId || activeCombatId
+          fetch(`/api/combats/${cId}/participants`)
+            .then(r => r.json())
+            .then((allParticipants: any[]) => {
+              setCombatParticipants(allParticipants)
+
+              const myDebuffs = allParticipants.filter(p =>
+                p.status?.debuffs?.some((d: any) => d.type === 'esquentar' && d.casterId === character.id)
+              )
+
+              if (myDebuffs.length === 0) return
+
+              const targets = myDebuffs.map(p => ({
+                id: p.id,
+                name: p.name,
+                isPlayer: p.status.debuffs.find((d: any) => d.type === 'esquentar' && d.casterId === character.id).targetIsPlayer
+              }))
+
+              setDotRollTargets(targets)
+              setDotRollModalOpen(true)
+            })
+            .catch(err => console.error('[DoT] Erro ao processar:', err))
+        }
       }
       
         if (data.type === 'BUFF_COPY_CONSUMED') {
@@ -647,7 +692,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setActiveRitualBuffs(prev => [...prev, tempBuff])
     setIsTempRitual(false)
     onModifyWeaponModalOpenChange()
-    addToast({ title: 'Modificação temporária aplicada!', variant: 'success' })
+    addToast({ title: 'Modificação temporária aplicada!', color: 'success' })
   }
 
   // ── Estado de buffs ativos de rituais ───────────────────────────────────────
@@ -674,7 +719,6 @@ export default function CharacterShow(initialProps: CharacterProps) {
     buffDuration?: 'scene' | 'sustained' | 'next_attack'
     targetWeaponId?: string
     skillAdvantage?: string[]
-    weaponCritMultiplierBonus?: number
     weaponDamageStepBonus?: number
     copies?: number
     remainingCopies?: number
@@ -707,6 +751,16 @@ export default function CharacterShow(initialProps: CharacterProps) {
     version: 'base' | 'discente' | 'verdadeiro'
     buff: RitualBuffEffect
   } | null>(null)
+  
+  const [dotTargetModalOpen, setDotTargetModalOpen] = useState(false)
+  const [pendingDotPayload, setPendingDotPayload] = useState<any>(null)
+  const [activeCombatId, setActiveCombatId] = useState<number | null>(null)
+  const [combatParticipants, setCombatParticipants] = useState<any[]>([])
+  
+  const [dotRollModalOpen, setDotRollModalOpen] = useState(false)
+  const [dotRollTargets, setDotRollTargets] = useState<Array<{ id: number; name: string; isPlayer: boolean }>>([])
+  
+  const [activeCombatActions, setActiveCombatActions] = useState<any[]>([])
 
   // Persistir HP no backend
   useEffect(() => {
@@ -1417,7 +1471,12 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     router.post(
       `/characters/${character.id}/items`,
-      { type, itemId, quantity: qty, chosenSkillBonusName },
+      { 
+        type, 
+        itemId: Number(itemId), 
+        quantity: qty, 
+        chosenSkillBonusName: chosenSkillBonusName ?? '' 
+      },
       {
         preserveState: true,
         preserveScroll: true,
@@ -1430,6 +1489,43 @@ export default function CharacterShow(initialProps: CharacterProps) {
         },
       }
     )
+  }
+
+  const fetchRoomItems = useCallback(async () => {
+    if (!campaignId) return
+    try {
+      const response = await axios.get(`/api/campaigns/${campaignId}/room-items`)
+      setRoomItems(response.data)
+    } catch (err) {
+      console.error('Erro ao buscar itens da sala:', err)
+    }
+  }, [campaignId])
+
+  const handleDropInventoryItem = async (itemType: string, itemId: number) => {
+    try {
+      await axios.post(`/api/characters/${character.id}/drop-item`, { itemType, itemId })
+      fetchRoomItems()
+      router.reload({ preserveScroll: true, preserveState: true })
+    } catch (err) {
+      console.error('Erro ao largar item:', err)
+    }
+  }
+
+  const handlePickupItem = async (roomItemId: number) => {
+    try {
+      await axios.post(`/api/room-items/${roomItemId}/pickup`, { characterId: character.id })
+      fetchRoomItems()
+      router.reload({ preserveScroll: true, preserveState: true })
+    } catch (err) {
+      console.error('Erro ao pegar item:', err)
+    }
+  }
+
+  const handleRollCombatAction = (damageDice: string, label: string) => {
+    const [qtyStr, sidesStr] = damageDice.split('d')
+    const qty = parseInt(qtyStr)
+    const sides = parseInt(sidesStr)
+    diceTrayRef.current?.rollDice(sides, qty, label, 'sum', 0, [])
   }
 
   const selectTrail = (trailId: number) => {
@@ -2072,15 +2168,166 @@ export default function CharacterShow(initialProps: CharacterProps) {
     })
     setTempHp(0)
   }
+  
+  /** Handler para ações de ritual vindas do banco (ritual_actions.action_payload) */
+  const handleRitualAction = (actionPayload: any) => {
+    console.log('[DEBUG] handleRitualAction chamado:', actionPayload)
+
+    if (actionPayload.type === 'combatAction') {
+      const newAction = {
+        id: `${actionPayload.label}-${Date.now()}`,
+        label: actionPayload.label,
+        damageDice: actionPayload.damageDice,
+        damageElement: actionPayload.damageElement,
+        duration: actionPayload.duration,
+        type: 'combatAction'
+      }
+      setActiveCombatActions(prev => {
+        const semDuplicata = prev.filter(a => a.label !== newAction.label)
+        return [...semDuplicata, newAction]
+      })
+      return
+    }
+
+    if (actionPayload.type === 'weaponBuff') {
+      handleRitualBuffSuccess({
+        label: actionPayload.label,
+        weaponExtraDamageDice: actionPayload.weaponExtraDamageDice,
+        weaponDamageElement: actionPayload.weaponDamageElement,
+        buffDuration: actionPayload.buffDuration,
+        selfOnly: actionPayload.selfOnly
+      })
+      return
+    }
+    if (actionPayload.type === 'dotDebuff') {
+      const startRitualFlow = (combatId: number) => {
+        axios.get(`/api/combats/${combatId}/participants`)
+          .then(res => {
+            setCombatParticipants(res.data)
+            setPendingDotPayload(actionPayload)
+            setDotTargetModalOpen(true)
+          })
+          .catch(err => {
+            console.error('[DoT] Erro ao carregar participantes:', err)
+            addToast({ title: 'Erro', description: 'Não foi possível carregar os participantes do combate.', color: 'danger' })
+          })
+      }
+
+      if (activeCombatId) {
+        startRitualFlow(activeCombatId)
+      } else if (campaignId) {
+        // Tentar buscar o combate ativo da campanha se não tivermos no state
+        axios.get(`/api/campaigns/${campaignId}/active-combat`)
+          .then(res => {
+            if (res.data && res.data.id) {
+              setActiveCombatId(res.data.id)
+              startRitualFlow(res.data.id)
+            } else {
+              addToast({ title: 'Aviso', description: 'O combate precisa estar ativo para usar este ritual.', color: 'warning' })
+            }
+          })
+          .catch(() => {
+            addToast({ title: 'Aviso', description: 'O combate precisa estar ativo para usar este ritual.', color: 'warning' })
+          })
+      } else {
+        addToast({ title: 'Aviso', description: 'O combate precisa estar ativo para usar este ritual.', color: 'warning' })
+      }
+      return
+    }
+    // Outros tipos de payload podem ser adicionados aqui no futuro (ex: damage, heal, etc)
+  }
+
+  const handleDotTargetConfirm = async (participantId: number, isPlayer: boolean) => {
+    if (!pendingDotPayload) return
+
+    try {
+      await axios.patch(`/api/combat-participants/${participantId}/debuff`, {
+        debuff: {
+          type: 'esquentar',
+          casterId: character.id,
+          damageDice: pendingDotPayload.turnDamageDice,
+          element: pendingDotPayload.damageElement,
+          targetIsPlayer: isPlayer
+        }
+      })
+      addToast({ title: 'Sucesso', description: 'Ritual aplicado ao alvo.', color: 'success' })
+    } catch (err) {
+      console.error('[DoT] Erro ao aplicar debuff:', err)
+      addToast({ title: 'Erro', description: 'Falha ao aplicar ritual ao alvo.', color: 'danger' })
+    }
+
+    setDotTargetModalOpen(false)
+    setPendingDotPayload(null)
+  }
+
+  const handleDotRoll = (targetId: number, isPlayer: boolean, onSuccess: () => void) => {
+    diceTrayRef.current?.openDiceTray()
+    diceTrayRef.current?.rollDice(
+      6,
+      1,
+      `Esquentar`,
+      'sum',
+      0,
+      [],
+      async (damage: number) => {
+        if (!isPlayer) {
+          try {
+            await axios.patch(`/api/combat-participants/${targetId}/damage`, {
+              damage,
+              damageType: 'Fogo'
+            })
+          } catch (err) {
+            console.error('[DoT] Erro ao aplicar dano:', err)
+            addToast({ 
+              title: 'Erro', 
+              description: 'Falha ao sincronizar dano com o servidor.', 
+              color: 'danger' 
+            })
+          }
+        } else {
+          addToast({
+            title: 'Ritual Esquentar',
+            description: `🔥 Alvo sofre ${damage} de dano de fogo. Desconte manualmente.`,
+            color: 'warning'
+          })
+        }
+        
+        // Notifica o modal que a rolagem terminou
+        onSuccess()
+      }
+    )
+  }
+
+  const activeCombatParticipantId = combatParticipants.find(p => p.characterId === character.id)?.id
+
+  const handleDropItem = async () => {
+    if (!activeCombatParticipantId) return
+    try {
+      await axios.delete(`/api/combat-participants/${activeCombatParticipantId}/debuff/esquentar`)
+      addToast({ title: 'Sucesso', description: 'Você largou o objeto e parou de queimar.', color: 'success' })
+    } catch (e) {
+      console.error('[DROP] Erro ao largar objeto:', e)
+    }
+  }
 
   /** Callback chamado quando um ritual de buff é conjurado com sucesso */
   const handleRitualBuffSuccess = (
-    ritualName: string,
-    version: 'base' | 'discente' | 'verdadeiro'
+    ritualNameOrPayload: string | any,
+    version: 'base' | 'discente' | 'verdadeiro' = 'base'
   ) => {
-    console.log('[DEBUG] handleRitualBuffSuccess chamado para:', ritualName, version)
+    console.log('[DEBUG] handleRitualBuffSuccess chamado para:', ritualNameOrPayload, version)
     try {
-      const buff = getRitualBuff(ritualName, version)
+      let buff: RitualBuffEffect | undefined
+      let ritualName: string
+      
+      if (typeof ritualNameOrPayload === 'object') {
+        buff = ritualNameOrPayload as RitualBuffEffect
+        ritualName = buff.label || 'Buff de Ritual'
+      } else {
+        ritualName = ritualNameOrPayload
+        buff = getRitualBuff(ritualName, version)
+      }
+      
       console.log('[DEBUG] buff retornado:', buff)
       
       if (!buff) {
@@ -3237,6 +3484,8 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
           {/* TABS SECTION */}
           <CharacterTabsCard
+            activeCombatActions={activeCombatActions}
+            onRollCombatAction={handleRollCombatAction}
             inventory={inventory}
             inventoryCapacity={inventoryCapacity}
             categoryConsumption={categoryConsumption}
@@ -3244,6 +3493,10 @@ export default function CharacterShow(initialProps: CharacterProps) {
             isUpdatingRank={isUpdatingRank}
             expandedItemId={expandedItemId}
             inventoryWeapons={inventoryWeapons}
+            combatParticipantId={activeCombatParticipantId}
+            onDropItem={handleDropInventoryItem}
+            onPickupItem={handlePickupItem}
+            roomItems={roomItems}
             onAddItem={onAddItemModalOpen}
             onRankChange={setRank}
             onModifyWeapon={(item) => {
@@ -3545,6 +3798,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
               diceTrayRef.current?.rollRitual({ ...params, isHeal, healByDamageFactor })
             }}
             onRitualBuffSuccess={handleRitualBuffSuccess}
+            onRitualActionSuccess={handleRitualAction}
             characterSkills={character.skills || []}
             attrMap={{
               FOR: strength,
@@ -4601,6 +4855,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
           }}
         />
       )}
+
+      <DotTargetModal
+        open={dotTargetModalOpen}
+        participants={combatParticipants.filter(p => p.characterId !== character.id)}
+        onConfirm={handleDotTargetConfirm}
+        onClose={() => setDotTargetModalOpen(false)}
+      />
+
+      <DotRollModal
+        open={dotRollModalOpen}
+        targets={dotRollTargets}
+        onRoll={handleDotRoll}
+        onClose={() => {
+          setDotRollModalOpen(false)
+          setDotRollTargets([])
+        }}
+      />
       </div>
 
       {/* Modal de Confirmação de Limpeza de Histórico */}

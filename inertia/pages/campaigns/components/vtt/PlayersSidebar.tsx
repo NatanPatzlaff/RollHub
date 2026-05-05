@@ -167,6 +167,14 @@ export default function PlayersSidebar({
     }
   }
 
+  const handleRemoveDebuff = async (participantId: number, debuffType: string) => {
+    try {
+      await axios.delete(`/api/combat-participants/${participantId}/debuff/${debuffType}`)
+    } catch (e) {
+      console.error('[DEBUFF] Erro ao remover debuff:', e)
+    }
+  }
+
   return (
     <div className="bg-[#18181B] border-r border-[#27272A] flex flex-col h-full overflow-hidden w-64 xl:w-72 flex-shrink-0">
       <div className="p-4 border-b border-[#27272A] flex flex-col gap-3">
@@ -354,6 +362,19 @@ export default function PlayersSidebar({
                         </div>
                       ))}
                   </div>
+                )}
+
+                {/* Botão de Largar Objeto (Esquentar) */}
+                {isMonster && entity.status?.debuffs?.some((d: any) => d.type === 'esquentar') && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleRemoveDebuff(entity.id, 'esquentar')
+                    }}
+                    className="mt-3 w-full py-1.5 bg-orange-900/40 hover:bg-orange-800/60 text-orange-300 text-[10px] font-bold rounded border border-orange-700 transition-colors uppercase tracking-widest flex items-center justify-center gap-2"
+                  >
+                    🔥 Largar Objeto (Esquentar)
+                  </button>
                 )}
 
                 {onAttackCharacter && !entity.isMonster && (

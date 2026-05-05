@@ -10,13 +10,26 @@ export default class extends BaseSeeder {
         ritualId: 340,
         label: 'BASE: CHAMEJAR',
         peCost: 3,
-        actionPayload: { type: 'buff', effect: '+1d6', element: 'fogo' }
+        actionPayload: {
+          type: 'weaponBuff',
+          label: 'Chamejar',
+          weaponExtraDamageDice: '1d6',
+          weaponDamageElement: 'Fogo',
+          buffDuration: 'scene',
+          selfOnly: false
+        }
       },
       {
         ritualId: 340,
         label: 'BASE: ESQUENTAR',
         peCost: 3,
-        actionPayload: { type: 'damage', roll: '1d6', element: 'fogo' }
+        actionPayload: {
+          type: 'dotDebuff',
+          label: 'Esquentar',
+          turnDamageDice: '1d6',
+          damageElement: 'Fogo',
+          duration: 'scene'
+        }
       },
       {
         ritualId: 340,
@@ -28,7 +41,13 @@ export default class extends BaseSeeder {
         ritualId: 340,
         label: 'BASE: MODELAR',
         peCost: 3,
-        actionPayload: { type: 'damage', roll: '3d6', element: 'fogo' }
+        actionPayload: {
+          type: 'combatAction',
+          label: 'Chama Modelada',
+          damageDice: '3d6',
+          damageElement: 'Fogo',
+          duration: 'scene'
+        }
       },
       {
         ritualId: 340,

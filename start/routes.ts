@@ -74,6 +74,9 @@ router
     router.post('/characters/:id/items', [CharactersController, 'addItem'])
     router.delete('/characters/:id/items/:itemId', [CharactersController, 'removeItem'])
     router.patch('/characters/:id/items/:itemId/equip', [CharactersController, 'equipItem'])
+    router.post('/api/characters/:id/drop-item', [CharactersController, 'dropItem'])
+    router.post('/api/room-items/:roomItemId/pickup', [CharactersController, 'pickupItem'])
+    router.get('/api/campaigns/:campaignId/room-items', [CharactersController, 'getRoomItems'])
 
     // Weapon Modifications
     router.post('/characters/:id/weapons/:characterWeaponId/modifications', [
@@ -157,9 +160,13 @@ router
     router.post('/campaigns/:campaignId/combats/request-initiative', [CombatsController, 'requestInitiative'])
     router.post('/combats/:combatId/participants', [CombatsController, 'addParticipant'])
     router.patch('/combats/:combatId/next-turn', [CombatsController, 'nextTurn'])
-    router.patch('/combat-participants/:participantId/damage', [CombatsController, 'applyDamage'])
+    router.patch('/api/combat-participants/:participantId/damage', [CombatsController, 'applyDamage'])
+    router.patch('/api/combat-participants/:participantId/debuff', [CombatsController, 'applyDebuff'])
+    router.delete('/api/combat-participants/:participantId/debuff/:debuffType', [CombatsController, 'removeDebuff'])
     router.patch('/combat-participants/:participantId/initiative', [CombatsController, 'updateInitiative'])
     router.patch('/combats/:combatId/end', [CombatsController, 'endCombat'])
+    router.get('/api/combats/:combatId/participants', [CombatsController, 'getParticipants'])
+    router.get('/api/campaigns/:campaignId/active-combat', [CombatsController, 'getActiveCombat'])
 
     // Monstros
     router.post('/monsters', [MonstersController, 'store'])

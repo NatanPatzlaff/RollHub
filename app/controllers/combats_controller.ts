@@ -138,6 +138,7 @@ export default class CombatsController {
 
     await transmit.broadcast(`campaign/${combat.campaignId}/events`, {
       type: 'TURN_START',
+      combatId: combat.id,
       characterId: nextParticipant.characterId, // For compatibility
       participantId: nextParticipant.id,
       characterName: nextParticipant.name,
@@ -177,7 +178,53 @@ export default class CombatsController {
       isDead: participant.hpCurrent === 0
     })
 
+    if (request.url().startsWith('/api/')) {
+      return response.ok({ hpCurrent: participant.hpCurrent })
+    }
+
     return response.redirect().back()
+  }
+
+  async applyDebuff({ params, request, response }: HttpContext) {
+    const participant = await CombatParticipant.findOrFail(params.participantId)
+    const { debuff } = request.only(['debuff'])
+
+    const currentStatus = participant.status ?? {}
+    const currentDebuffs: any[] = currentStatus.debuffs ?? []
+
+    const semDuplicata = currentDebuffs.filter(
+      (d) => !(d.type === debuff.type && d.casterId === debuff.casterId)
+    )
+
+    participant.status = {
+      ...currentStatus,
+      debuffs: [...semDuplicata, debuff]
+    }
+
+    await participant.save()
+
+    return response.ok({ success: true })
+  }
+
+  async removeDebuff({ params, response }: HttpContext) {
+    const participant = await CombatParticipant.findOrFail(params.participantId)
+    const currentStatus = participant.status ?? {}
+    const currentDebuffs: any[] = currentStatus.debuffs ?? []
+
+    participant.status = {
+      ...currentStatus,
+      debuffs: currentDebuffs.filter((d) => d.type !== params.debuffType)
+    }
+
+    await participant.save()
+
+    const combat = await Combat.findOrFail(participant.combatId)
+    await transmit.broadcast(`campaign/${combat.campaignId}/events`, {
+      type: 'BUFFS_UPDATED',
+      participantId: participant.id
+    })
+
+    return response.ok({ success: true })
   }
 
   async updateInitiative({ params, request, response }: HttpContext) {
@@ -212,5 +259,19 @@ export default class CombatsController {
     })
 
     return response.redirect().back()
+  }
+
+  async getParticipants({ params, response }: HttpContext) {
+    const { combatId } = params
+    const participants = await CombatParticipant.query().where('combat_id', combatId)
+    return response.ok(participants)
+  }
+
+  async getActiveCombat({ params, response }: HttpContext) {
+    const combat = await Combat.query()
+      .where('campaign_id', params.campaignId)
+      .where('active', true)
+      .first()
+    return response.ok(combat)
   }
 }

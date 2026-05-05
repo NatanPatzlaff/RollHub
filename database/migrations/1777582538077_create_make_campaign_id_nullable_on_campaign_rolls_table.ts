@@ -4,9 +4,9 @@ export default class extends BaseSchema {
   protected tableName = 'campaign_rolls'
 
   async up() {
-    this.schema.alterTable(this.tableName, (table) => {
-      table.integer('campaign_id').unsigned().nullable().alter()
-    })
+    // this.schema.alterTable(this.tableName, (table) => {
+    //   table.integer('campaign_id').unsigned().nullable().alter()
+    // })
   }
 
   async down() {

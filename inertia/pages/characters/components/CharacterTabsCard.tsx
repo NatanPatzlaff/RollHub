@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { router } from '@inertiajs/react'
 import { m, AnimatePresence } from 'framer-motion'
 import { Card, CardBody, Divider, Chip, Button, Tabs, Tab, Tooltip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@heroui/react'
 import {
@@ -233,6 +234,18 @@ export interface CharacterTabsCardProps {
   characterSkills?: any[]
   attrMap?: Record<string, number>
   activeRitualBuffs?: any[]
+  onRitualActionSuccess?: (actionPayload: any) => void
+  combatParticipantId?: number
+  onDropItem?: (itemType: 'weapon' | 'protection' | 'general' | 'ammunition', itemId: number) => void
+  onPickupItem?: (roomItemId: number) => void
+  roomItems?: any[]
+  activeCombatActions?: Array<{
+    id: string
+    label: string
+    damageDice: string
+    damageElement: string
+  }>
+  onRollCombatAction?: (damageDice: string, label: string) => void
 }
 
 import { canUseRitualUpgrade, circuloMaximoFromNex } from '../../../utils/ritualReqs'
@@ -329,8 +342,37 @@ export default function CharacterTabsCard({
   characterSkills = [],
   attrMap = { FOR: 0, AGI: 0, INT: 0, VIG: 0, PRE: 0 },
   activeRitualBuffs = [],
+  onRitualActionSuccess,
+  combatParticipantId,
+  onDropItem,
+  onPickupItem,
+  roomItems,
+  activeCombatActions,
+  onRollCombatAction,
 }: CharacterTabsCardProps) {
-  const [activeTab, setActiveTab] = useState<string>('inventario')
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['id']>('inventario')
+  const [isHomebrewModalOpen, setIsHomebrewModalOpen] = useState(false)
+  const [isDropMode, setIsDropMode] = useState(false)
+  const [selectedDropItems, setSelectedDropItems] = useState<{ id: number, type: 'weapon' | 'protection' | 'general' | 'ammunition' }[]>([])
+  const [isPickupModalOpen, setIsPickupModalOpen] = useState(false)
+
+  const handleConfirmDrop = async () => {
+    for (const item of selectedDropItems) {
+      await onDropItem?.(item.type, item.id)
+    }
+    setSelectedDropItems([])
+    setIsDropMode(false)
+    router.reload({ preserveScroll: true, preserveState: true })
+  }
+
+  const toggleItemSelection = (id: number, type: 'weapon' | 'protection' | 'general' | 'ammunition') => {
+    setSelectedDropItems(prev => {
+      const exists = prev.find(i => i.id === id && i.type === type)
+      if (exists) return prev.filter(i => !(i.id === id && i.type === type))
+      return [...prev, { id, type }]
+    })
+  }
+
   const [isCreateItemOpen, setIsCreateItemOpen] = useState(false)
 
   // Estados para filtro e ordenação do inventário
@@ -431,7 +473,10 @@ export default function CharacterTabsCard({
     return result + mod
   }
 
-  function handleRollRitual(charRitual: any, version: 'base' | 'discente' | 'verdadeiro', subAction?: string) {
+  function handleRollRitual(charRitual: any, version: 'base' | 'discente' | 'verdadeiro', action?: any) {
+    const subAction = action?.label
+    const actionPayload = action?.actionPayload
+
     const ritual = charRitual.ritual
     const peInfo = calcPeAjustado(ritual)
     const versionText =
@@ -471,6 +516,12 @@ export default function CharacterTabsCard({
             : ritual.normalDamage || parseDamageDice(ritual.description || '') || undefined
     }
 
+    // Se for uma ação de combate persistente (combatAction), NÃO rola o dano agora.
+    // O dano será rolado manualmente pelo card que aparecerá no Combate.
+    if (actionPayload?.type === 'combatAction') {
+      damageDice = undefined
+    }
+
     // Delegate rolling + 3D animation to the dice bandeja; apply game effects in the callback
     onRollRitual({
       name: subAction ? `${ritual.name}: ${subAction}` : ritual.name,
@@ -493,7 +544,11 @@ export default function CharacterTabsCard({
           if (failPermanent > 0) onDeductPermSan(failPermanent)
         } else {
           // Ritual passou → disparar aplicação de buffs (se houver)
-          onRitualBuffSuccess?.(ritual.name, version)
+          if (actionPayload) {
+            onRitualActionSuccess?.(actionPayload)
+          } else {
+            onRitualBuffSuccess?.(ritual.name, version)
+          }
         }
 
         setRitualRollResults((prev) => ({
@@ -571,6 +626,34 @@ export default function CharacterTabsCard({
                 <Plus className="w-4 h-4" />
                 Catálogo
               </button>
+              <button
+                onClick={() => setIsPickupModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 rounded-md text-sm font-bold transition-colors"
+              >
+                <ArrowUpRight className="w-4 h-4" />
+                Coletar Itens
+              </button>
+              {onDropItem && (
+                <button
+                  onClick={isDropMode ? handleConfirmDrop : () => setIsDropMode(true)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-colors shadow-lg ${
+                    isDropMode 
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20' 
+                      : 'bg-orange-900/40 hover:bg-orange-800/60 text-orange-300 border border-orange-700 shadow-orange-950/20'
+                  }`}
+                >
+                  {isDropMode ? <Check className="w-4 h-4" /> : <Flame className="w-4 h-4 animate-pulse" />}
+                  {isDropMode ? 'Confirmar Descarte' : 'Largar Objeto'}
+                </button>
+              )}
+              {isDropMode && (
+                <button
+                  onClick={() => { setIsDropMode(false); setSelectedDropItems([]); }}
+                  className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-md text-sm font-medium"
+                >
+                  Cancelar
+                </button>
+              )}
             </div>
           </div>
 
@@ -740,6 +823,17 @@ export default function CharacterTabsCard({
                     className="flex items-center justify-between p-3 cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
+                      {isDropMode && (
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-zinc-700 bg-zinc-800 text-emerald-500 accent-emerald-500 cursor-pointer"
+                          checked={selectedDropItems.some(i => i.id === item.id && i.type === (item.itemKind || 'general'))}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleItemSelection(item.id, (item.itemKind || 'general'));
+                          }}
+                        />
+                      )}
                       <div className={`p-2.5 rounded-lg border ${getIconColors()}`}>
                         {getIconForItem()}
                       </div>
@@ -1143,7 +1237,7 @@ export default function CharacterTabsCard({
                               disabled={!isAllowed}
                               onClick={(e) => {
                                 e.stopPropagation()
-                                handleRollRitual(charRitual, version, action.label)
+                                handleRollRitual(charRitual, version, action)
                               }}
                               className={`flex items-center gap-1 px-2 py-1 border rounded text-[10px] font-bold uppercase tracking-wide transition-colors ${isAllowed ? colorClass : 'opacity-40 grayscale cursor-not-allowed'}`}
                               title={`Rolar ${ritual.name}: ${action.label}`}
@@ -1517,6 +1611,24 @@ export default function CharacterTabsCard({
                 </div>
               </div>
             )}
+
+            {activeCombatActions?.map(action => (
+              <div
+                key={action.id}
+                className="flex items-center justify-between p-3 rounded-lg bg-zinc-900 border border-orange-700/40"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-semibold text-orange-300">🔥 {action.label}</span>
+                  <span className="text-xs text-zinc-400">{action.damageDice} · {action.damageElement}</span>
+                </div>
+                <button
+                  onClick={() => onRollCombatAction?.(action.damageDice, action.label)}
+                  className="text-xs px-3 py-1.5 rounded bg-orange-900/40 text-orange-300 border border-orange-700 hover:bg-orange-800/60"
+                >
+                  Rolar Dano
+                </button>
+              </div>
+            ))}
 
             {/* Habilidades de Combate */}
             {classAbilities && classAbilities.length > 0 ? (
@@ -3035,6 +3147,69 @@ export default function CharacterTabsCard({
           })()}
         </BaseModal>
       )}
+
+      <BaseModal
+        isOpen={isPickupModalOpen}
+        onOpenChange={setIsPickupModalOpen}
+        onClose={() => setIsPickupModalOpen(false)}
+        title="Itens Disponíveis na Sala"
+      >
+        <div className="space-y-4 py-2">
+          {(!roomItems || roomItems.length === 0) ? (
+            <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+              <Activity size={32} className="opacity-20 mb-3" />
+              <p className="text-sm italic">Não há itens no chão desta sala.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+              {roomItems.map((ri: any) => {
+                const itemName = ri.characterWeapon?.weapon?.name || 
+                               ri.characterProtection?.protection?.name || 
+                               ri.characterGeneralItem?.generalItem?.name || 
+                               ri.itemName || 
+                               `Item #${ri.id}`
+                
+                return (
+                  <div
+                    key={ri.id}
+                    className="flex items-center justify-between p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-emerald-500/30 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 group-hover:scale-110 transition-transform">
+                        <ArrowUpRight size={16} className="rotate-180" />
+                      </div>
+                      <div>
+                        <span className="text-sm font-bold text-emerald-50/90 block">
+                          {itemName}
+                        </span>
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                          {ri.itemType === 'weapon' ? 'Arma' : ri.itemType === 'protection' ? 'Armadura' : 'Item'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        onPickupItem?.(ri.id);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-lg shadow-lg shadow-emerald-900/20 transition-all active:scale-95"
+                    >
+                      <Plus size={14} /> PEGAR
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <Button
+            fullWidth
+            variant="light"
+            className="mt-4 text-zinc-400 font-bold"
+            onClick={() => setIsPickupModalOpen(false)}
+          >
+            FECHAR
+          </Button>
+        </div>
+      </BaseModal>
 
       <CreateHomebrewItemModal
         isOpen={isCreateItemOpen}

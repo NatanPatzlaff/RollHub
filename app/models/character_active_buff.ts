@@ -2,6 +2,7 @@ import { DateTime } from 'luxon'
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 
 export default class CharacterActiveBuff extends BaseModel {
+  public static table = 'character_active_buffs'
   @column({ isPrimary: true })
   declare id: number
 

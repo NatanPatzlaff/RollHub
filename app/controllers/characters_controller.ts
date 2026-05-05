@@ -23,6 +23,11 @@ import CampaignRoll from '#models/campaign_roll'
 import Ammunition from '#models/ammunition'
 import CharacterActiveBuff from '#models/character_active_buff'
 import HomebrewItem from '#models/homebrew_item'
+import Room from '#models/room'
+import RoomItem from '#models/room_item'
+import CharacterWeapon from '#models/character_weapon'
+import CharacterProtection from '#models/character_protection'
+import CharacterGeneralItem from '#models/character_general_item'
 import {
   storeCharacterValidator,
   updateCharacterValidator,
@@ -3022,5 +3027,188 @@ export default class CharactersController {
       remainingCopies: data.remainingCopies,
       newDefenseBonus: data.defenseBonus
     })
+  }
+
+  async dropItem({ params, request, response }: HttpContext) {
+    console.log(`[DROP_ITEM] Início - Personagem ID: ${params.id}`)
+    try {
+      const character = await Character.findOrFail(params.id)
+      const { itemType, itemId } = request.only(['itemType', 'itemId'])
+      console.log(`[DROP_ITEM] Payload: type=${itemType}, id=${itemId}`)
+
+      const member = await db.from('campaign_members').where('character_id', character.id).first()
+      if (!member) {
+        console.warn(`[DROP_ITEM] Personagem ${character.id} não está em uma campanha.`)
+        return response.badRequest({ error: 'Personagem não está em uma campanha.' })
+      }
+      const campaignId = member.campaign_id
+      console.log(`[DROP_ITEM] Campanha ID: ${campaignId}`)
+
+      const activeRoom = await Room.query()
+        .whereHas('mission', (q) => q.where('campaign_id', campaignId))
+        .where('state', 'active')
+        .first()
+
+      if (!activeRoom) {
+        console.warn(`[DROP_ITEM] Nenhuma sala ativa para campanha ${campaignId}`)
+        return response.badRequest({ error: 'Nenhuma sala ativa encontrada.' })
+      }
+      console.log(`[DROP_ITEM] Sala Ativa ID: ${activeRoom.id}`)
+
+      const roomItemData: any = {
+        roomId: activeRoom.id,
+        collected: false,
+        itemType,
+      }
+
+      if (itemType === 'weapon') {
+        console.log(`[DROP_ITEM] Processando Arma ID: ${itemId}`)
+        const weapon = await CharacterWeapon.findOrFail(itemId)
+        await CharacterWeapon.query().where('id', itemId).update({ characterId: null })
+        roomItemData.characterWeaponId = weapon.id
+        roomItemData.name = weapon.customName ?? `Arma #${weapon.weaponId}`
+        roomItemData.itemName = roomItemData.name
+      } else if (itemType === 'protection') {
+        console.log(`[DROP_ITEM] Processando Proteção ID: ${itemId}`)
+        const protection = await CharacterProtection.findOrFail(itemId)
+        await CharacterProtection.query().where('id', itemId).update({ characterId: null })
+        roomItemData.characterProtectionId = protection.id
+        roomItemData.name = protection.customName ?? `Proteção #${protection.protectionId}`
+        roomItemData.itemName = roomItemData.name
+      } else if (itemType === 'general') {
+        console.log(`[DROP_ITEM] Processando Item Geral ID: ${itemId}`)
+        const generalItem = await CharacterGeneralItem.findOrFail(itemId)
+        await CharacterGeneralItem.query().where('id', itemId).update({ characterId: null })
+        roomItemData.characterGeneralItemId = generalItem.id
+        roomItemData.name = `Item #${generalItem.generalItemId}`
+        roomItemData.itemName = roomItemData.name
+      } else if (itemType === 'ammunition') {
+        console.log(`[DROP_ITEM] Processando Munição ID: ${itemId}`)
+        const ammunition = await db.from('character_ammunitions').where('id', itemId).first()
+        if (!ammunition) throw new Error('Munição não encontrada no banco')
+        await db.from('character_ammunitions').where('id', itemId).update({ character_id: null })
+        roomItemData.characterGeneralItemId = itemId
+        roomItemData.name = `Munição #${ammunition.ammunition_id}`
+        roomItemData.itemName = roomItemData.name
+      }
+
+      console.log(`[DROP_ITEM] Criando RoomItem com dados:`, roomItemData)
+      await RoomItem.create(roomItemData)
+      
+      console.log(`[DROP_ITEM] Broadcast de atualização para campanha ${campaignId}`)
+      transmit.broadcast(`campaign/${campaignId}/events`, { type: 'ROOM_ITEMS_UPDATED' })
+
+      console.log(`[DROP_ITEM] Sucesso!`)
+      return response.ok({ success: true })
+    } catch (error) {
+      console.error(`[DROP_ITEM] ERRO CRÍTICO:`, error)
+      return response.status(500).send({ 
+        error: error.message,
+        stack: error.stack,
+        detail: 'Erro interno ao processar o drop de item. Verifique os logs do servidor.'
+      })
+    }
+  }
+
+  async pickupItem({ params, request, response }: HttpContext) {
+    console.log(`[PICKUP_ITEM] Início - RoomItemID: ${params.roomItemId}`)
+    try {
+      const { characterId } = request.only(['characterId'])
+      const roomItem = await RoomItem.findOrFail(params.roomItemId)
+      console.log(`[PICKUP_ITEM] Item da Sala: ${roomItem.name} (Tipo: ${roomItem.itemType}) - Personagem: ${characterId}`)
+
+      if (roomItem.collected) {
+        console.warn(`[PICKUP_ITEM] Item ${roomItem.id} já foi coletado.`)
+        return response.badRequest({ error: 'Item já foi coletado.' })
+      }
+
+      if (roomItem.itemType === 'weapon' && roomItem.characterWeaponId) {
+        console.log(`[PICKUP_ITEM] Atribuindo Arma ${roomItem.characterWeaponId} ao Personagem ${characterId}`)
+        await CharacterWeapon.query()
+          .where('id', roomItem.characterWeaponId)
+          .update({ characterId: characterId, isEquipped: false })
+        
+        await CharacterActiveBuff.query()
+          .where((q) => {
+            q.whereRaw("json_extract(data, '$.targetWeaponId') = ?", [roomItem.characterWeaponId])
+              .orWhereRaw("json_extract(data, '$.targetWeaponId') = ?", [String(roomItem.characterWeaponId)])
+          })
+          .update({ characterId: characterId })
+      } else if (roomItem.itemType === 'protection' && roomItem.characterProtectionId) {
+        console.log(`[PICKUP_ITEM] Atribuindo Proteção ${roomItem.characterProtectionId} ao Personagem ${characterId}`)
+        await CharacterProtection.query()
+          .where('id', roomItem.characterProtectionId)
+          .update({ characterId: characterId, isEquipped: false })
+
+        await CharacterActiveBuff.query()
+          .where((q) => {
+            q.whereRaw("json_extract(data, '$.targetProtectionId') = ?", [roomItem.characterProtectionId])
+              .orWhereRaw("json_extract(data, '$.targetProtectionId') = ?", [String(roomItem.characterProtectionId)])
+          })
+          .update({ characterId: characterId })
+      } else if (roomItem.itemType === 'general' && roomItem.characterGeneralItemId) {
+        console.log(`[PICKUP_ITEM] Atribuindo Item Geral ${roomItem.characterGeneralItemId} ao Personagem ${characterId}`)
+        await CharacterGeneralItem.query()
+          .where('id', roomItem.characterGeneralItemId)
+          .update({ characterId: characterId })
+      }
+
+      console.log(`[PICKUP_ITEM] Marcando RoomItem como coletado`)
+      await RoomItem.query()
+        .where('id', roomItem.id)
+        .update({ 
+          collected: true, 
+          collectedByCharacterId: characterId 
+        })
+
+      const member = await db.from('campaign_members').where('character_id', characterId).first()
+      if (member) {
+        console.log(`[PICKUP_ITEM] Broadcast de atualização para campanha ${member.campaign_id}`)
+        transmit.broadcast(`campaign/${member.campaign_id}/events`, { 
+          type: 'ROOM_ITEMS_UPDATED' 
+        })
+        transmit.broadcast(`campaign/${member.campaign_id}/events`, {
+          type: 'BUFFS_UPDATED',
+          characterId: characterId,
+        })
+      }
+
+      console.log(`[PICKUP_ITEM] Sucesso!`)
+      return response.ok({ success: true })
+    } catch (error) {
+      console.error(`[PICKUP_ITEM] ERRO CRÍTICO:`, error)
+      return response.status(500).send({ 
+        error: error.message,
+        stack: error.stack,
+        detail: 'Erro interno ao processar a coleta de item.'
+      })
+    }
+  }
+
+  async getRoomItems({ params, response }: HttpContext) {
+    try {
+      const activeRoom = await Room.query()
+        .whereHas('mission', (q) => q.where('campaign_id', params.campaignId))
+        .where('state', 'active')
+        .first()
+
+      if (!activeRoom) return response.ok([])
+
+      const items = await RoomItem.query()
+        .where('room_id', activeRoom.id)
+        .where('collected', false)
+        .preload('characterWeapon', (q) => q.preload('weapon'))
+        .preload('characterProtection', (q) => q.preload('protection'))
+        .preload('characterGeneralItem', (q) => q.preload('generalItem'))
+
+      return response.ok(items)
+    } catch (error) {
+      console.error('[GET_ROOM_ITEMS_ERROR]', error)
+      return response.status(500).send({ 
+        error: error.message, 
+        stack: error.stack,
+        detail: 'Erro ao buscar itens da sala. Verifique os relacionamentos nos models.'
+      })
+    }
   }
 }

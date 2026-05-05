@@ -747,7 +747,7 @@ function GeneralItemRow({
   description: string | null
   expandedKey: string | null
   onToggle: (k: string) => void
-  onAdd: AddItemModalProps['onAdd']
+  onAdd: (itemId: number, quantity?: number, chosenSkillBonusName?: string) => void
 }) {
   const [selectedSkill, setSelectedSkill] = useState<string>('')
   const key = `general-${item.id}`
@@ -762,7 +762,7 @@ function GeneralItemRow({
         description={description}
         expandedKey={expandedKey}
         onToggle={onToggle}
-        onAdd={() => onAdd('general', item.id, 1, isChoosable ? selectedSkill : undefined)}
+        onAdd={() => onAdd(item.id, 1, isChoosable ? selectedSkill : undefined)}
         addDisabled={isChoosable && !selectedSkill}
         expandedContent={
           <>

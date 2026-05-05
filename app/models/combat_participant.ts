@@ -37,7 +37,10 @@ export default class CombatParticipant extends BaseModel {
     @column()
     declare hpMax: number
 
-    @column({ prepare: (value: any) => JSON.stringify(value) })
+    @column({ 
+        prepare: (value: any) => JSON.stringify(value),
+        consume: (value: any) => typeof value === 'string' ? JSON.parse(value) : value
+    })
     declare status: any | null
 
     @column.dateTime({ autoCreate: true })

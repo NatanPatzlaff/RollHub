@@ -132,7 +132,8 @@ export interface AttributesDiceTrayCardHandle {
     label?: string,
     mode?: 'sum' | 'highest',
     bonus?: number,
-    extraDice?: string[]
+    extraDice?: string[],
+    onResult?: (total: number) => void
   ) => void
   /** Rola ataque + dano de uma arma e exibe na bandeja */
   rollWeapon: (
@@ -569,14 +570,17 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       const bonus = pendingBonusRef.current
 
       if (rollType === 'attribute') {
+        const targetSides = rollParams?.sides || 20
         const mainDice = roll.values
-          .filter((v: any) => v.type === 'd20' && !v.is_dropped)
+          .filter((v: any) => v.type === `d${targetSides}` && !v.is_dropped)
           .map((v: any) => v.value)
         const extraDice = roll.values
-          .filter((v: any) => v.type !== 'd20' && !v.is_dropped)
+          .filter((v: any) => v.type !== `d${targetSides}` && !v.is_dropped)
           .map((v: any) => v.value)
         const isHighest = rollParams?.mode === 'highest'
-        const baseValue = isHighest ? Math.max(...mainDice) : mainDice.reduce((acc: number, v: number) => acc + v, 0)
+        const baseValue = mainDice.length > 0 
+          ? (isHighest ? Math.max(...mainDice) : mainDice.reduce((acc: number, v: number) => acc + v, 0))
+          : 0
         const extraValue = extraDice.reduce((acc: number, v: number) => acc + v, 0)
         const total = baseValue + bonus + extraValue
 
@@ -606,6 +610,11 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
           diceValues: mainDice.length > 0 ? [...mainDice, ...extraDice] : undefined
         })
+
+        if (rollParams?.onResult) {
+          console.log('[DICE] chamando callback onResult com total:', total)
+          rollParams.onResult(total)
+        }
       } else if (rollType === 'weapon') {
         const weapon = rollParams?.weapon
         const isFirstRoll = rollParams?.isFirstWeaponRoll
@@ -979,7 +988,8 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
       label?: string,
       mode: 'sum' | 'highest' = 'sum',
       bonus = 0,
-      extraDice: string[] = []
+      extraDice: string[] = [],
+      onResult?: (total: number) => void
     ) => {
       if (!dddiceRoomSlug) {
         console.warn('[DICE] abortou: sem roomSlug')
@@ -1038,7 +1048,7 @@ const AttributesDiceTrayCard = forwardRef<AttributesDiceTrayCardHandle, Attribut
           const totalBonus = bonus + abilityBonus
           pendingBonusRef.current = totalBonus
           pendingRollTypeRef.current = 'attribute'
-          pendingRollParamsRef.current = { label: diceLabel, mode }
+          pendingRollParamsRef.current = { sides, count, label: diceLabel, mode, attr: label, onResult }
 
         console.log('[DICE] chamando dddice.roll()')
         await dddiceRef.current.roll(diceToRoll, undefined, { room: dddiceRoomSlug })
