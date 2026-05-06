@@ -244,8 +244,11 @@ export interface CharacterTabsCardProps {
     label: string
     damageDice: string
     damageElement: string
+    duration?: string
+    sustainCostPerTurn?: number
   }>
   onRollCombatAction?: (damageDice: string, label: string) => void
+  onDeactivateCombatAction?: (actionId: string) => void
 }
 
 import { canUseRitualUpgrade, circuloMaximoFromNex } from '../../../utils/ritualReqs'
@@ -349,6 +352,7 @@ export default function CharacterTabsCard({
   roomItems,
   activeCombatActions,
   onRollCombatAction,
+  onDeactivateCombatAction,
 }: CharacterTabsCardProps) {
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['id']>('inventario')
   const [isHomebrewModalOpen, setIsHomebrewModalOpen] = useState(false)
@@ -1356,7 +1360,7 @@ export default function CharacterTabsCard({
                               ) && (
                                 <div>
                                   <RitualDescriptionFormatter
-                                    description={`Discente: ${ritual.discente}`}
+                                    description={ritual.discente}
                                   />
                                 </div>
                               )}
@@ -1369,7 +1373,7 @@ export default function CharacterTabsCard({
                               ) && (
                                 <div>
                                   <RitualDescriptionFormatter
-                                    description={`Verdadeiro: ${ritual.verdadeiro}`}
+                                    description={ritual.verdadeiro}
                                   />
                                 </div>
                               )}
@@ -1619,14 +1623,29 @@ export default function CharacterTabsCard({
               >
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold text-orange-300">🔥 {action.label}</span>
-                  <span className="text-xs text-zinc-400">{action.damageDice} · {action.damageElement}</span>
+                  <span className="text-xs text-zinc-400">
+                    {action.damageDice} · {action.damageElement}
+                    {action.duration === 'sustained' && (
+                      <span className="ml-1 text-yellow-500">· 1 PE/turno</span>
+                    )}
+                  </span>
                 </div>
-                <button
-                  onClick={() => onRollCombatAction?.(action.damageDice, action.label)}
-                  className="text-xs px-3 py-1.5 rounded bg-orange-900/40 text-orange-300 border border-orange-700 hover:bg-orange-800/60"
-                >
-                  Rolar Dano
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onRollCombatAction?.(action.damageDice, action.label)}
+                    className="text-xs px-3 py-1.5 rounded bg-orange-900/40 text-orange-300 border border-orange-700 hover:bg-orange-800/60"
+                  >
+                    Rolar Dano
+                  </button>
+                  {action.duration === 'sustained' && (
+                    <button
+                      onClick={() => onDeactivateCombatAction?.(action.id)}
+                      className="text-xs px-2 py-1.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-red-900/40 hover:text-red-300 hover:border-red-700"
+                    >
+                      Desativar
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
 

@@ -3211,4 +3211,32 @@ export default class CharactersController {
       })
     }
   }
+
+  async listCampaignCharacters({ params, request, response }: HttpContext) {
+    const { excludeCharacterId } = request.only(['excludeCharacterId'])
+
+    const characters = await Character.query()
+      .whereHas('campaigns', (query) => {
+        query.where('campaigns.id', params.campaignId)
+      })
+      .whereNot('id', excludeCharacterId)
+      .preload('weapons', (weaponsQuery) => {
+        weaponsQuery.pivotColumns(['id', 'custom_name', 'is_equipped'])
+      })
+      .select(['id', 'name'])
+
+    return response.ok(characters)
+  }
+
+  async receiveBuff({ params, request, response }: HttpContext) {
+    const { buff, casterName } = request.only(['buff', 'casterName'])
+
+    await transmit.broadcast(`character/${params.characterId}/reactions`, {
+      type: 'BUFF_RECEIVED',
+      buff,
+      casterName,
+    })
+
+    return response.ok({ success: true })
+  }
 }

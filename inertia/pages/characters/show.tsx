@@ -60,6 +60,7 @@ import RitualBuffModal from './components/RitualBuffModal'
 import { ModificationModal } from './components/ModificationModal'
 import DotTargetModal from './components/DotTargetModal'
 import DotRollModal from './components/DotRollModal'
+import AllyBuffModal from './components/AllyBuffModal'
 import RollHistorySidebar from './components/RollHistorySidebar'
 import {
   getRitualBuff,
@@ -527,6 +528,18 @@ export default function CharacterShow(initialProps: CharacterProps) {
         setPendingReaction(data)
         pendingReactionRef.current = data
       }
+      if (data.type === 'BUFF_RECEIVED') {
+        const { buff, casterName } = data
+        setActiveRitualBuffs((prev) => {
+          const semDuplicata = prev.filter((b) => b.label !== buff.label)
+          return [...semDuplicata, { ...buff, id: `${buff.label}-${Date.now()}` }]
+        })
+        addToast({
+          title: `Buff Recebido`,
+          description: `${casterName} aplicou ${buff.label} em você.`,
+          color: 'success',
+        })
+      }
     })
 
     // Canal de eventos gerais da campanha
@@ -593,6 +606,30 @@ export default function CharacterShow(initialProps: CharacterProps) {
               setDotRollModalOpen(true)
             })
             .catch(err => console.error('[DoT] Erro ao processar:', err))
+        }
+
+        // Lógica de Desconto Automático de PE para Ações Sustentadas
+        if (isMe) {
+          const sustainedActions = activeCombatActionsRef.current.filter(
+            a => a.duration === 'sustained' && a.sustainCostPerTurn
+          )
+
+          for (const action of sustainedActions) {
+            setPe(prev => {
+              const newPe = Math.max(0, prev - action.sustainCostPerTurn)
+              if (newPe === 0) {
+                setActiveCombatActions(prevActions =>
+                  prevActions.filter(a => a.id !== action.id)
+                )
+                addToast({
+                  title: 'Ritual Desativado',
+                  description: `${action.label} foi desativado por falta de PE.`,
+                  color: 'warning'
+                })
+              }
+              return newPe
+            })
+          }
         }
       }
       
@@ -756,11 +793,19 @@ export default function CharacterShow(initialProps: CharacterProps) {
   const [pendingDotPayload, setPendingDotPayload] = useState<any>(null)
   const [activeCombatId, setActiveCombatId] = useState<number | null>(null)
   const [combatParticipants, setCombatParticipants] = useState<any[]>([])
+  const [allyBuffModalOpen, setAllyBuffModalOpen] = useState(false)
+  const [pendingAllyBuff, setPendingAllyBuff] = useState<any>(null)
+  const [campaignCharacters, setCampaignCharacters] = useState<any[]>([])
+  const [selectedAlly, setSelectedAlly] = useState<any>(null)
   
   const [dotRollModalOpen, setDotRollModalOpen] = useState(false)
   const [dotRollTargets, setDotRollTargets] = useState<Array<{ id: number; name: string; isPlayer: boolean }>>([])
   
   const [activeCombatActions, setActiveCombatActions] = useState<any[]>([])
+  const activeCombatActionsRef = useRef<any[]>(activeCombatActions)
+  useEffect(() => {
+    activeCombatActionsRef.current = activeCombatActions
+  }, [activeCombatActions])
 
   // Persistir HP no backend
   useEffect(() => {
@@ -2169,18 +2214,23 @@ export default function CharacterShow(initialProps: CharacterProps) {
     setTempHp(0)
   }
   
+  const handleDeactivateCombatAction = (actionId: string) => {
+    setActiveCombatActions(prev => prev.filter(a => a.id !== actionId))
+  }
+
   /** Handler para ações de ritual vindas do banco (ritual_actions.action_payload) */
   const handleRitualAction = (actionPayload: any) => {
     console.log('[DEBUG] handleRitualAction chamado:', actionPayload)
 
-    if (actionPayload.type === 'combatAction') {
+    if (actionPayload.type === 'combatAction' || actionPayload.type === 'sustainedCombatAction') {
       const newAction = {
         id: `${actionPayload.label}-${Date.now()}`,
         label: actionPayload.label,
         damageDice: actionPayload.damageDice,
         damageElement: actionPayload.damageElement,
+        sustainCostPerTurn: actionPayload.sustainCostPerTurn,
         duration: actionPayload.duration,
-        type: 'combatAction'
+        type: actionPayload.type
       }
       setActiveCombatActions(prev => {
         const semDuplicata = prev.filter(a => a.label !== newAction.label)
@@ -2258,6 +2308,48 @@ export default function CharacterShow(initialProps: CharacterProps) {
 
     setDotTargetModalOpen(false)
     setPendingDotPayload(null)
+  }
+
+  const handleAllyBuffConfirm = async (allyId: number, chosenWeaponId?: string, chosenElement?: string) => {
+    if (!pendingAllyBuff) return
+
+    const { buff } = pendingAllyBuff
+    const effects: any = { ...buff.effects }
+
+    if (buff.label === 'Amaldiçoar Arma' || buff.ritualName === 'Amaldiçoar Arma') {
+      effects.damageBonus = '1d6'
+      if (chosenElement) effects.element = chosenElement
+    }
+
+    if (buff.attribute && buff.attributeBonus) effects[buff.attribute] = buff.attributeBonus
+    if (buff.defenseBonus) effects.defense = buff.defenseBonus
+    if (buff.dodgeBonus) effects.dodge = buff.dodgeBonus
+    if (buff.weaponExtraDamageDice) effects.weaponExtraDamageDice = buff.weaponExtraDamageDice
+    if (buff.weaponAttackBonus) effects.weaponAttackBonus = buff.weaponAttackBonus
+    if (chosenElement && !effects.element) effects.damageElement = chosenElement
+    else if (buff.damageElement && !effects.element) effects.damageElement = buff.damageElement
+
+    const targetType = chosenWeaponId ? 'weapon' : 'character'
+    const targetId = chosenWeaponId ? parseInt(chosenWeaponId) : allyId
+
+    const payload = {
+      buff: {
+        ...buff,
+        target_type: targetType,
+        target_id: targetId,
+        effects
+      },
+      casterName: character.name
+    }
+
+    try {
+      await axios.post(`/api/characters/${allyId}/receive-buff`, payload)
+      setAllyBuffModalOpen(false)
+      setPendingAllyBuff(null)
+      addToast({ title: 'Buff Aplicado', description: `${buff.label} enviado para o aliado.`, color: 'success' })
+    } catch (err) {
+      addToast({ title: 'Erro', description: 'Falha ao enviar buff.', color: 'danger' })
+    }
   }
 
   const handleDotRoll = (targetId: number, isPlayer: boolean, onSuccess: () => void) => {
@@ -3486,6 +3578,7 @@ export default function CharacterShow(initialProps: CharacterProps) {
           <CharacterTabsCard
             activeCombatActions={activeCombatActions}
             onRollCombatAction={handleRollCombatAction}
+            onDeactivateCombatAction={handleDeactivateCombatAction}
             inventory={inventory}
             inventoryCapacity={inventoryCapacity}
             categoryConsumption={categoryConsumption}
@@ -4849,12 +4942,50 @@ export default function CharacterShow(initialProps: CharacterProps) {
             setIsRitualBuffModalOpen(false)
             setPendingRitualBuff(null)
           }}
-          onApplyToAlly={() => {
+          onApplyToAlly={async () => {
+            console.log('[ALLY-BUFF] 1. onApplyToAlly chamado')
+            console.log('[ALLY-BUFF] 2. pendingRitualBuff:', JSON.stringify(pendingRitualBuff))
+
+            if (!pendingRitualBuff) {
+              console.log('[ALLY-BUFF] ERRO: pendingRitualBuff é null')
+              return
+            }
+
+            setPendingAllyBuff(pendingRitualBuff)
+            console.log('[ALLY-BUFF] 3. pendingAllyBuff definido:', JSON.stringify(pendingRitualBuff))
             setIsRitualBuffModalOpen(false)
-            setPendingRitualBuff(null)
+
+            console.log('[ALLY-BUFF] 4. Chamando endpoint:', `/api/campaigns/${campaignId}/characters`)
+            try {
+              const { data } = await axios.post(`/api/campaigns/${campaignId}/characters`, {
+                excludeCharacterId: character.id,
+              })
+              console.log('[ALLY-BUFF] 5. Aliados retornados:', JSON.stringify(data))
+              console.log('[ALLY-BUFF] 6. Primeiro aliado weapons:', JSON.stringify(data[0]?.weapons))
+
+              setCampaignCharacters(data)
+              setAllyBuffModalOpen(true)
+              console.log('[ALLY-BUFF] 7. Modal de aliados aberto')
+            } catch (err) {
+              console.error('[Buff] Erro ao carregar aliados:', err)
+              addToast({ title: 'Erro', description: 'Não foi possível carregar aliados.', color: 'danger' })
+            }
           }}
         />
       )}
+
+      <AllyBuffModal
+        open={allyBuffModalOpen}
+        allies={campaignCharacters}
+        buff={pendingAllyBuff?.buff}
+        casterName={character.name}
+        onConfirm={handleAllyBuffConfirm}
+        onClose={() => {
+          setAllyBuffModalOpen(false)
+          setPendingAllyBuff(null)
+          setSelectedAlly(null)
+        }}
+      />
 
       <DotTargetModal
         open={dotTargetModalOpen}

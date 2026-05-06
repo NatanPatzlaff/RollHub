@@ -53,15 +53,27 @@ export default class extends BaseSeeder {
         ritualId: 340,
         label: 'DISCENTE: LABAREDA',
         peCost: 6,
-        dt: 26,
-        actionPayload: { type: 'damage', roll: '4d6', element: 'energia' }
+        actionPayload: {
+          type: 'sustainedCombatAction',
+          label: 'Labareda (Discente)',
+          damageDice: '4d6',
+          damageElement: 'Energia',
+          sustainCostPerTurn: 1,
+          duration: 'sustained'
+        }
       },
       {
         ritualId: 340,
         label: 'VERDADEIRO: LABAREDA',
         peCost: 10,
-        dt: 26,
-        actionPayload: { type: 'damage', roll: '8d6', element: 'energia' }
+        actionPayload: {
+          type: 'sustainedCombatAction',
+          label: 'Labareda (Verdadeiro)',
+          damageDice: '8d6',
+          damageElement: 'Energia',
+          sustainCostPerTurn: 1,
+          duration: 'sustained'
+        }
       },
       {
         ritualId: 388,

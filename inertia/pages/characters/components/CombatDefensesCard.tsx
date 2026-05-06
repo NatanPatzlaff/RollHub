@@ -136,8 +136,9 @@ export default function CombatDefensesCard({
   const defense = useMemo(() => {
     const passiveBonus = abilityEffects?.defenseBonus || 0
     const abilityBuffDefense = (activeAbilityBuffs || []).reduce((total, buff) => {
-      if (buff.effects?.duration === 'scene' && buff.effects?.defense_bonus) {
-        return total + buff.effects.defense_bonus
+      const bonus = Number(buff.effects?.defense_bonus) || Number(buff.effects?.defenseBonus) || 0
+      if (buff.effects?.duration === 'scene' && bonus !== 0) {
+        return total + bonus
       }
       return total
     }, 0)
@@ -148,8 +149,9 @@ export default function CombatDefensesCard({
   const dodge = useMemo(() => {
     const passiveBonus = abilityEffects?.defenseBonus || 0
     const abilityBuffDefense = (activeAbilityBuffs || []).reduce((total, buff) => {
-      if (buff.effects?.duration === 'scene' && buff.effects?.defense_bonus) {
-        return total + buff.effects.defense_bonus
+      const bonus = Number(buff.effects?.defense_bonus) || Number(buff.effects?.defenseBonus) || 0
+      if (buff.effects?.duration === 'scene' && bonus !== 0) {
+        return total + bonus
       }
       return total
     }, 0)
@@ -393,44 +395,43 @@ export default function CombatDefensesCard({
                         )}
                       </div>
                       <div className="flex flex-wrap gap-1">
-                        {buff.defenseBonus !== 0 && (
+                        {buff.defenseBonus && !isNaN(buff.defenseBonus) && buff.defenseBonus !== 0 && (
                           <span className="text-[10px] bg-blue-900/60 text-blue-300 rounded px-1.5 py-0.5">
                             Defesa {buff.defenseBonus > 0 ? '+' : ''}
                             {buff.defenseBonus}
                           </span>
                         )}
-                        {buff.dodgeBonus !== 0 && (
+                        {buff.dodgeBonus && !isNaN(buff.dodgeBonus) && buff.dodgeBonus !== 0 && (
                           <span className="text-[10px] bg-emerald-900/60 text-emerald-300 rounded px-1.5 py-0.5">
                             Esquiva {buff.dodgeBonus > 0 ? '+' : ''}
                             {buff.dodgeBonus}
                           </span>
                         )}
-                        {/* ... (outros bônus) */}
-                        {buff.strBonus !== 0 && (
+                        {buff.strBonus && !isNaN(buff.strBonus) && buff.strBonus !== 0 && (
                           <span className="text-[10px] bg-red-900/60 text-red-300 rounded px-1.5 py-0.5">
                             FOR {buff.strBonus > 0 ? '+' : ''}
                             {buff.strBonus}
                           </span>
                         )}
-                        {buff.agiBonus !== 0 && (
+                        {buff.agiBonus && !isNaN(buff.agiBonus) && buff.agiBonus !== 0 && (
                           <span className="text-[10px] bg-green-900/60 text-green-300 rounded px-1.5 py-0.5">
                             AGI {buff.agiBonus > 0 ? '+' : ''}
                             {buff.agiBonus}
                           </span>
                         )}
-                        {buff.intBonus !== 0 && (
+                        {buff.intBonus && !isNaN(buff.intBonus) && buff.intBonus !== 0 && (
                           <span className="text-[10px] bg-purple-900/60 text-purple-300 rounded px-1.5 py-0.5">
                             INT {buff.intBonus > 0 ? '+' : ''}
                             {buff.intBonus}
                           </span>
                         )}
-                        {buff.preBonus !== 0 && (
+                        {buff.preBonus && !isNaN(buff.preBonus) && buff.preBonus !== 0 && (
                           <span className="text-[10px] bg-yellow-900/60 text-yellow-300 rounded px-1.5 py-0.5">
                             PRE {buff.preBonus > 0 ? '+' : ''}
                             {buff.preBonus}
                           </span>
                         )}
-                        {buff.tempHp > 0 && (
+                        {buff.tempHp && !isNaN(buff.tempHp) && buff.tempHp > 0 && (
                           <span className="text-[10px] bg-cyan-900/60 text-cyan-300 rounded px-1.5 py-0.5">
                             PV Temp +{buff.tempHp}
                           </span>

@@ -63,7 +63,7 @@ Execução: padrão
 Alcance: toque
 Alvo: 1 ser
 Duração: cena
-O alvo tem sua mente energizada por fagulhos do Conhecimento. Ele recebe +1 em Intelecto ou Presença, à escolha dele (PE, perícias treinadas ou graus de treinamento).
+O alvo tem sua mente energizada por fagulhos do Conhecimento. Ele recebe +1 em Intelecto ou Presença, à escolha dele (esse aumento não fornece PE ou perícias treinadas).
 Discente (+3 PE): muda o bônus para +2. Requer 3º círculo.
 Verdadeiro (+7 PE): muda o bônus para +3. Requer 4º círculo e afinidade.
 
