@@ -27,5 +27,3 @@ yarn-error.log
 # SQLite temporary files
 *.sqlite-shm
 *.sqlite-wal
-
-!/database.sqlite
